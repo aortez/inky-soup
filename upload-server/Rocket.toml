@@ -1,13 +1,13 @@
 [development]
 address = "::"
-port = 8000
 keep_alive = 5
 log = "debug"
-limits = { forms = 32768 }
+port = 8000
+template_dir = "templates"
 
 [production]
 address = "::"
-port = 8000
 keep_alive = 5
 log = "debug"
-limits = { forms = 32768 }
+port = 8000
+template_dir = "templates"

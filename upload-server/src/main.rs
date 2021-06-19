@@ -1,14 +1,23 @@
-#![feature(proc_macro_hygiene, decl_macro)]
-
 #[macro_use] extern crate rocket;
 
-use rocket::response::content;
+use rocket_dyn_templates::Template;
+use rocket::form::{Context};
+use rocket::fs::{FileServer, relative};
 
 #[get("/")]
-fn index() -> &'static str {
+fn hello() -> &'static str {
     "Hello, world!"
 }
 
-fn main() {
-    rocket::ignite().mount("/", routes![index]).launch();
+#[get("/upload")]
+fn upload() -> Template {
+    Template::render("index", &Context::default())
+}
+
+#[launch]
+fn rocket() -> _ {
+    rocket::build()
+        .mount("/", routes![hello, upload])
+        .attach(Template::fairing())
+        .mount("/", FileServer::from(relative!("/static")))
 }
