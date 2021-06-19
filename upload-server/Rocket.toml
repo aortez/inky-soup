@@ -1,0 +1,13 @@
+[development]
+address = "::"
+port = 8000
+keep_alive = 5
+log = "debug"
+limits = { forms = 32768 }
+
+[production]
+address = "::"
+port = 8000
+keep_alive = 5
+log = "debug"
+limits = { forms = 32768 }

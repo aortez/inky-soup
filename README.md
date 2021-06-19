@@ -1,2 +1,2 @@
 # inky-soup
-Automation for displaying images on an inky impression e-ink screen.
+Automation for displaying images on the Pimoroni Inky Impression e-ink screen.
