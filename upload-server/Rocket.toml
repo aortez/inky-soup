@@ -1,13 +1,13 @@
-[development]
+[default]
 address = "::"
 keep_alive = 5
-log = "debug"
-port = 8000
+limits = { file = "10 MiB" }
 template_dir = "templates"
 
-[production]
-address = "::"
-keep_alive = 5
-log = "debug"
+[debug]
+log_level = "debug"
 port = 8000
-template_dir = "templates"
+
+[release]
+log_level = "normal"
+port = 8000

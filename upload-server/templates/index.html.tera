@@ -5,7 +5,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width">
-    <title>Rocket Form Example</title>
+    <title>InkSoup - Upload</title>
     <link rel="stylesheet" href="/chota.min.css">
     <style>
       .container {
@@ -17,7 +17,7 @@
   </head>
   <body>
     <div class="container">
-      <h1>Inky Soup Image Uploader</h1>
+      <h1>InkSoup Image Uploader</h1>
 
       {% if errors | length > 1 %}
           <small class="text-error" style="margin-top: -20px">
@@ -28,6 +28,14 @@
       <form action="/" method="post" enctype="multipart/form-data">
 
         <fieldset>
+          <legend>Instructions</legend>
+          <p>
+            Choose an image file to upload.  Sometimes uploading it twice results
+            in a better picture (due to ghosting). Play around with the saturation.
+          </p>
+        </fieldset>
+
+        <fieldset>
           <legend>Metadata</legend>
 
           <div class="row">
@@ -35,8 +43,8 @@
             {{
                 m::select(
                     label="Saturation",
-                    name="submission.rights",
-                    options=["Public", "Reserved", "Exclusive"]
+                    name="submission.saturation",
+                    options=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
                 )
             }}
             </div>
@@ -46,16 +54,6 @@
 
         <fieldset>
           <legend>Contents</legend>
-
-            {{
-                m::textarea(
-                    label="Abstract",
-                    name="submission.abstract",
-                    placeholder="Your abstract, max 250 characters...",
-                    max=250
-                )
-            }}
-
           {{
               m::input(
                   label="File to Upload (Image, max 10MiB)",
@@ -64,11 +62,9 @@
               )
           }}
 
-          <!-- <input type="file" name="submission.file" id="file" required accept=".pdf"> -->
-
           <div class="row">
             <div class="col">
-                {{ m::checkbox(name="submission.ready", label="Submission is ready for review.") }}
+                {{ m::checkbox(name="submission.flash_twice", label="Flash twice (to overcome ghosting).") }}
             </div>
           </div>
 

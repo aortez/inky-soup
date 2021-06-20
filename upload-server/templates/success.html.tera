@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width">
-    <title>Rocket Form Example</title>
+    <title>InkySoup - Upload Result</title>
     <link rel="stylesheet" href="/chota.min.css">
     <style>
       .container {
@@ -16,14 +16,18 @@
   <body>
     <div class="container">
     <h1>Success!</h1>
+      <p>(or maybe Success!... TODO: check if flashing was actually successfull...)</p>
 
-      <h3>Submission Data</h3>
-
+      <h3>Data Submitted</h3>
       <ul>
           {% for key, value in values %}
               <li><strong>{{ key }}</strong> - {{ value }}</li>
           {% endfor %}
       </ul>
+
+      <p>
+        Your image has been uploaded, let's upload some more!
+      </p>
 
       <a href="/">&lt; Submit Another</a>
   </body>
