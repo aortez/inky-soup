@@ -1,0 +1,14 @@
+[Unit]
+Description=Inky Soup image uploader
+After=network.target
+
+[Service]
+ExecStart=/home/pi/inky-soup/upload-server
+WorkingDirectory=/home/pi/inky-soup/
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=pi
+
+[Install]
+WantedBy=multi-user.target
