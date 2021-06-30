@@ -1,4 +1,4 @@
-![A Goose](https://github.com/aortez/inky-soup/blob/main/upload-server/static/favicon.ico "test picture")
+![Example of Web Page](./inky-soup-uploader.png "Example of Web Page")
 
 # Inky Soup
 Automation for displaying images on the Pimoroni Inky Impression e-ink screen.
@@ -6,6 +6,8 @@ Inky Soup provides users with a web page that they can use to flash images
 to their Inky Impression.
 
 Currently it is very specific to my needs and is very WIP, but it works (for me)!
+
+![A Goose](./upload-server/static/favicon.ico "A Goose")
 
 # Instructions
 
