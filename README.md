@@ -1,3 +1,5 @@
+![A Goose](https://github.com/aortez/inky-soup/blob/main/upload-server/static/favicon.ico "test picture")
+
 # Inky Soup
 Automation for displaying images on the Pimoroni Inky Impression e-ink screen.
 Inky Soup provides users with a web page that they can use to flash images
