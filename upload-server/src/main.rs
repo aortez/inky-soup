@@ -41,10 +41,13 @@ async fn submit<'r>(mut form: Form<Contextual<'r, Submit<'r>>>) -> (Status, Temp
             let file = &mut submission.submission.file;
             println!("file name: {:#?}", file.raw_name());
 
-            // Save file to disk.
+            // Save a copy to show as the most recently uploaded image.
+            let result2 = file.copy_to("static/dinosaur").await;
+            println!("result2: {:#?}", result2);
+
+            // Save file to feed to update script.
             let result = file.persist_to(env::temp_dir().join(UPDATE_TEMP_FILE)).await;
             println!("result: {:#?}", result);
-
             println!("wrote {} bytes at {}", file.len(), file.path().unwrap().display());
 
             // Saturation param.

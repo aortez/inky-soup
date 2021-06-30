@@ -25,54 +25,66 @@
           </small>
       {% endif %}
 
-      <form action="/" method="post" enctype="multipart/form-data">
 
-        <fieldset>
-          <legend>Instructions</legend>
-          <p>
-            Choose an image file to upload.  Sometimes uploading it twice results
-            in a better picture (due to ghosting). Play around with the saturation.
-          </p>
-        </fieldset>
+      <fieldset>
+        <legend>Upload New Image</legend>
+        <form action="/" method="post" enctype="multipart/form-data">
 
-        <fieldset>
-          <legend>Metadata</legend>
+          <fieldset>
+            <legend>Instructions</legend>
+            <p>
+              Choose an image file to upload.  Sometimes flashing it twice results
+              in a better picture (due to ghosting). Play around with the saturation.
+              It takes ~15 seconds per flash.
+            </p>
+          </fieldset>
 
-          <div class="row">
-            <div class="col">
+          <fieldset>
+            <legend>Metadata</legend>
+
+            <div class="row">
+              <div class="col">
+              {{
+                  m::select(
+                      label="Saturation",
+                      name="submission.saturation",
+                      options=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+                  )
+              }}
+              </div>
+            </div>
+
+          </fieldset>
+
+          <fieldset>
+            <legend>Contents</legend>
             {{
-                m::select(
-                    label="Saturation",
-                    name="submission.saturation",
-                    options=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+                m::input(
+                    label="File to Upload (Image, max 10MiB)",
+                    type="file",
+                    name="submission.file"
                 )
             }}
+
+            <div class="row">
+              <div class="col">
+                  {{ m::checkbox(name="submission.flash_twice", label="Flash twice (to overcome ghosting).") }}
+              </div>
             </div>
-          </div>
 
-        </fieldset>
+          </fieldset>
 
-        <fieldset>
-          <legend>Contents</legend>
-          {{
-              m::input(
-                  label="File to Upload (Image, max 10MiB)",
-                  type="file",
-                  name="submission.file"
-              )
-          }}
-
-          <div class="row">
-            <div class="col">
-                {{ m::checkbox(name="submission.flash_twice", label="Flash twice (to overcome ghosting).") }}
-            </div>
-          </div>
-
-        </fieldset>
-
-        <br />
-        <input type="submit" value="Submit" class="is-full-width" />
-      </form>
+          <br />
+          <input type="submit" value="Submit" class="is-full-width" />
+        </form>
+      </fieldset>
+      <br />
+      <fieldset>
+        <legend>Previously Uploaded Image</legend>
+        <p>For your reference, refer to the previously uploaded image, down below, there, yep you found it, thanks.
+        </p>
+        <img src="dinosaur">
+      </fieldset>
     </div>
   </body>
 </html>
