@@ -34,8 +34,16 @@ images!
 ## Basic
 * add validator for image types
 * logging
-* auto start server at boot
+
+## Image Gallery
+* [x] Show images in /static directory.
+* [ ] Uploading a new image will put it in the /static dir with the proper name.
+* [ ] Make a /list endpoint for listing the current images.
+* [ ] Make a /delete endpoint for deleting images.
+* [ ] Add delete button next to each image and make it call the /delete endpoint for that image.
+* [ ] Redesign the page so that we have two forms:
+1. One that uploads new images
+2. One that flashes an image from the gallery
 
 ## Advanced
 * preview image before flashing? allow user to crop interactively?
-* remember last n images uploaded and allow the user to change between them

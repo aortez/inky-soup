@@ -1,9 +1,12 @@
 #[macro_use] extern crate rocket;
 
+use glob::glob;
+
 use rocket_dyn_templates::Template;
-use rocket::form::{Form, Contextual, Context};
+use rocket::form::{Form, Contextual};
 use rocket::fs::{FileServer, TempFile};
 use rocket::http::{ContentType, Status};
+use rocket::serde::Serialize;
 
 use std::env;
 use std::process::Command;
@@ -27,9 +30,34 @@ struct Submit<'v> {
     submission: Submission<'v>,
 }
 
+#[derive(Serialize)]
+#[serde(crate = "rocket::serde")]
+struct TemplateContext<'r> {
+    title: &'r str,
+    images: Vec<String>,
+    values: Vec<&'r str>,
+    errors: Vec<&'r str>
+}
+
 #[get("/")]
 fn upload_form() -> Template {
-    Template::render("index", &Context::default())
+    let mut images: Vec<String> = Vec::new();
+    for entry in glob("static/image-*").expect("Failed to read glob pattern") {
+        match entry {
+            Ok(path) => {
+                println!("found image file {:?}", path.file_name().unwrap());
+                images.push(path.file_name().unwrap().to_str().unwrap().to_string());
+            },
+            Err(e) => println!("{:?}", e),
+        }
+    }
+
+    Template::render("index", &TemplateContext {
+        title: "hideho",
+        images: images,
+        values: vec!["One", "Two", "Three"],
+        errors: vec!["One", "Two", "Three"],
+    })
 }
 
 #[post("/", data = "<form>")]

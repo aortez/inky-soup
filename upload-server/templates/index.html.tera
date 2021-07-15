@@ -13,18 +13,26 @@
         margin: 0 auto;
         padding: 20px 10px;
       }
+      .thumbnails img {
+        height: 80px;
+        border: 4px solid #555;
+        padding: 1px;
+        margin: 0 10px 10px 0;
+      }
+      .thumbnails img:hover {
+        border: 4px solid #00ccff;
+        cursor:pointer;
+      }
+      .preview img {
+        border: 4px solid #444;
+        padding: 1px;
+        width: 800px;
+      }
     </style>
   </head>
   <body>
     <div class="container">
       <h1>InkSoup Image Uploader</h1>
-
-      {% if errors | length > 1 %}
-          <small class="text-error" style="margin-top: -20px">
-              {{ errors | length }} field(s) have errors
-          </small>
-      {% endif %}
-
 
       <fieldset>
         <legend>Upload New Image</legend>
@@ -79,11 +87,27 @@
         </form>
       </fieldset>
       <br />
+
       <fieldset>
-        <legend>Previously Uploaded Image</legend>
+        <legend>Previously Uploaded Images</legend>
         <p>For your reference, refer to the previously uploaded image, down below, there, yep you found it, thanks.
         </p>
-        <img src="dinosaur">
+        <div class="thumbnails">
+
+            {% for s in images %}
+              {{ s }}
+              <img
+                onmouseover="getElementById('preview').src = getElementById('{{ s }}').src"
+                id="{{ s }}"
+                src="{{ s }}"
+                align="center"
+              />
+            {% endfor %}
+
+        </div>
+        <div class="preview" align="center">
+           <img id="preview" src="dinosaur" alt=""/>
+        </div>
       </fieldset>
     </div>
   </body>
