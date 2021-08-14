@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="/chota.min.css">
     <style>
       .container {
-        max-width: 800px;
+        max-width: 1200px;
         margin: 0 auto;
         padding: 20px 10px;
       }
@@ -26,7 +26,7 @@
       .preview img {
         border: 4px solid #444;
         padding: 1px;
-        width: 800px;
+        width: 600px;
       }
     </style>
   </head>
@@ -34,38 +34,14 @@
     <div class="container">
       <h1>InkSoup Image Uploader</h1>
 
+
+        <h2>Instructions</h2>
+        <p> Upload an image to the gallery. Once you have your image in the gallery, select it below and flash it.</p>
+
       <fieldset>
         <legend>Upload New Image</legend>
         <form action="/upload" method="post" enctype="multipart/form-data">
 
-          <fieldset>
-            <legend>Instructions</legend>
-            <p>
-              Choose an image file to upload.  Sometimes flashing it twice results
-              in a better picture (due to ghosting). Play around with the saturation.
-              It takes ~15 seconds per flash.
-            </p>
-          </fieldset>
-
-          <fieldset>
-            <legend>Metadata</legend>
-
-            <div class="row">
-              <div class="col">
-              {{
-                  m::select(
-                      label="Saturation",
-                      name="submission.saturation",
-                      options=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-                  )
-              }}
-              </div>
-            </div>
-
-          </fieldset>
-
-          <fieldset>
-            <legend>Contents</legend>
             {{
                 m::input(
                     label="File to Upload (Image, max 10MiB)",
@@ -73,14 +49,6 @@
                     name="submission.file"
                 )
             }}
-
-            <div class="row">
-              <div class="col">
-                  {{ m::checkbox(name="submission.flash_twice", label="Flash twice (to overcome ghosting).") }}
-              </div>
-            </div>
-
-          </fieldset>
 
           <br />
           <input type="submit" value="Upload New Image" class="is-full-width" />
@@ -90,26 +58,52 @@
 
       <form action="/flash" method="post" enctype="multipart/form-data">
         <fieldset>
-          <legend>Image Gallery</legend>
+          <legend>Select an Image</legend>
           <p>This is the list of images available for flashing.</p>
           <div class="thumbnails">
 
+            <div class="col">
               {% for s in images %}
-                {{ s }}
                 <img
-                  onmouseover="getElementById('preview').src = getElementById('{{ s }}').src"
+                  onclick=
+                    "getElementById('submission.image_file_path').value = getElementById('{{ s }}').id;
+                    getElementById('preview').src = getElementById('{{ s }}').src"
                   id="{{ s }}"
                   src="{{ s }}"
                   align="center"
                 />
+                                {{ s }}
               {% endfor %}
 
-          </div>
-          <input type="submit" value="Flash Image" class="is-full-width" />
-          <div class="preview" align="center">
-             <img id="preview" src="dinosaur" alt=""/>
+              </div>
+              <input name="submission.image_file_path" id="submission.image_file_path" value="Mom">
+
           </div>
         </fieldset>
+
+        <fieldset>
+          <legend>Flash Parameters</legend>
+          <div class="row">
+            <div class="col">
+                {{ m::checkbox(name="submission.flash_twice", label="Flash twice (to overcome ghosting).") }}
+            </div>
+            {{
+                m::select(
+                    label="Saturation",
+                    name="submission.saturation",
+                    options=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+                    selected_value=0.5
+                )
+            }}
+          </div>
+
+        </fieldset>
+
+        <div class="preview" align="center">
+          <img id="preview" src="dinosaur" alt=""/>
+          <input type="submit" value="Flash Image" class="is-full-width" />
+        </div>
+
       </form>
     </div>
   </body>

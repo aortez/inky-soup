@@ -51,12 +51,12 @@
     {{ self::errors_for(name=name) }}
 {% endmacro input %}
 
-{% macro select(label, name, options) %}
+{% macro select(label, name, options, selected_value) %}
     <label for="{{ name }}">{{ label }}</label>
     <select name="{{ name }}" id="{{ name }}">
         {% for value in options %}
             <option value="{{ value }}"
-                {% if self::value_for(name=name) == value %} selected {% endif %}
+                {% if selected_value == value %} selected {% endif %}
             >{{ value }}</option>
         {% endfor %}
     </select>

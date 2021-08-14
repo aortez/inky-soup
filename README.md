@@ -36,12 +36,12 @@ images!
 * logging
 
 ## Image Gallery
-* [x] Show images in /static directory.
-* [ ] Uploading a new image will put it in the /static dir with the proper name.
+* [x] Show images in /static/images directory.
+* [x] Uploading a new image will put it in the /static/images dir.
 * [ ] Make a /list endpoint for listing the current images.
 * [ ] Make a /delete endpoint for deleting images.
 * [ ] Add delete button next to each image and make it call the /delete endpoint for that image.
-* [ ] Redesign the page so that we have two forms:
+* [x] Redesign the page so that we have two forms:
 1. One that uploads new images
 2. One that flashes an image from the gallery
 

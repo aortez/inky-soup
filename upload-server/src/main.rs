@@ -15,7 +15,16 @@ use std::process::Command;
 const UPDATE_TEMP_FILE: &str = "inky-soup-update-image";
 
 #[derive(Debug, FromForm)]
-struct Submission<'v> {
+struct FlashSubmission {
+    image_file_path: String,
+
+    saturation: f32,
+
+    flash_twice: bool,
+}
+
+#[derive(Debug, FromForm)]
+struct UploadSubmission<'v> {
     // TODO: validator for any image type that seems to work with the
     // flashing script.
     // #[field(validate = ext(ContentType::PNG))]
@@ -27,8 +36,13 @@ struct Submission<'v> {
 }
 
 #[derive(Debug, FromForm)]
-struct Submit<'v> {
-    submission: Submission<'v>,
+struct SubmitNewImage<'v> {
+    submission: UploadSubmission<'v>,
+}
+
+#[derive(Debug, FromForm)]
+struct SubmitFlashImage {
+    submission: FlashSubmission,
 }
 
 #[derive(Serialize)]
@@ -44,7 +58,7 @@ struct TemplateContext<'r> {
 fn upload_form() -> Template {
 
     println!("populating list of images in gallery...");
-    
+
     let mut images: Vec<String> = Vec::new();
     for entry in glob("static/images/*").expect("Failed to read glob pattern") {
         match entry {
@@ -65,8 +79,44 @@ fn upload_form() -> Template {
     })
 }
 
+#[post("/flash", data = "<form>")]
+async fn submit_flash_image<'r>(mut form: Form<Contextual<'r, SubmitFlashImage>>) -> (Status, Template) {
+    println!("form: {:#?}", form);
+    let template = match form.value {
+        Some(ref mut submission) => {
+            println!("submission: {:#?}", submission);
+
+            // Saturation param.
+            let saturation = &submission.submission.saturation;
+
+            // Run image update script to flash image to display!
+            let mut flash_command = Command::new("python3");
+            let image_file = format!("static/{}", submission.submission.image_file_path.clone());
+            flash_command.arg("./update-image.py")
+                .arg(image_file)
+                .arg(saturation.to_string());
+            flash_command.status()
+                .expect("process failed to execute");
+
+            // Maybe do it a second time.
+            let flash_twice = submission.submission.flash_twice;
+            if flash_twice {
+                println!("flashing a second time...");
+                flash_command.status()
+                    .expect("process failed to execute");
+            }
+
+            // TODO: check success of flashing, as it isn't always a success.
+            Template::render("success", &form.context)
+        }
+        None => Template::render("index", &form.context),
+    };
+
+    (form.context.status(), template)
+}
+
 #[post("/upload", data = "<form>")]
-async fn submit<'r>(mut form: Form<Contextual<'r, Submit<'r>>>) -> (Status, Template) {
+async fn submit_new_image<'r>(mut form: Form<Contextual<'r, SubmitNewImage<'r>>>) -> (Status, Template) {
     let template = match form.value {
         Some(ref mut submission) => {
             println!("submission: {:#?}", submission);
@@ -89,27 +139,6 @@ async fn submit<'r>(mut form: Form<Contextual<'r, Submit<'r>>>) -> (Status, Temp
             println!("result: {:#?}", result);
             println!("wrote {} bytes at {}", file.len(), file.path().unwrap().display());
 
-            // Saturation param.
-            let saturation = &submission.submission.saturation;
-            println!("saturation: {}", saturation);
-
-            // Run image update script to flash new image to display!
-            let mut flash_command = Command::new("python3");
-            flash_command.arg("./update-image.py")
-                .arg(env::temp_dir().join(UPDATE_TEMP_FILE))
-                .arg(saturation.to_string());
-            flash_command.status()
-                .expect("process failed to execute");
-
-            // Maybe do it a second time.
-            let flash_twice = submission.submission.flash_twice;
-            if flash_twice {
-                println!("flashing a second time...");
-                flash_command.status()
-                    .expect("process failed to execute");
-            }
-
-            // TODO: check success of flashing, as it isn't always a success.
             Template::render("success", &form.context)
         }
         None => Template::render("index", &form.context),
@@ -124,7 +153,7 @@ fn rocket() -> _ {
     println!("created images directory: {:#?}", create_result);
 
     rocket::build()
-        .mount("/", routes![submit, upload_form])
+        .mount("/", routes![submit_flash_image, submit_new_image, upload_form])
         .mount("/", FileServer::from("static"))
         .attach(Template::fairing())
 }
