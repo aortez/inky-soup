@@ -36,7 +36,7 @@
 
       <fieldset>
         <legend>Upload New Image</legend>
-        <form action="/" method="post" enctype="multipart/form-data">
+        <form action="/upload" method="post" enctype="multipart/form-data">
 
           <fieldset>
             <legend>Instructions</legend>
@@ -83,32 +83,34 @@
           </fieldset>
 
           <br />
-          <input type="submit" value="Submit" class="is-full-width" />
+          <input type="submit" value="Upload New Image" class="is-full-width" />
         </form>
       </fieldset>
       <br />
 
-      <fieldset>
-        <legend>Previously Uploaded Images</legend>
-        <p>For your reference, refer to the previously uploaded image, down below, there, yep you found it, thanks.
-        </p>
-        <div class="thumbnails">
+      <form action="/flash" method="post" enctype="multipart/form-data">
+        <fieldset>
+          <legend>Image Gallery</legend>
+          <p>This is the list of images available for flashing.</p>
+          <div class="thumbnails">
 
-            {% for s in images %}
-              {{ s }}
-              <img
-                onmouseover="getElementById('preview').src = getElementById('{{ s }}').src"
-                id="{{ s }}"
-                src="{{ s }}"
-                align="center"
-              />
-            {% endfor %}
+              {% for s in images %}
+                {{ s }}
+                <img
+                  onmouseover="getElementById('preview').src = getElementById('{{ s }}').src"
+                  id="{{ s }}"
+                  src="{{ s }}"
+                  align="center"
+                />
+              {% endfor %}
 
-        </div>
-        <div class="preview" align="center">
-           <img id="preview" src="dinosaur" alt=""/>
-        </div>
-      </fieldset>
+          </div>
+          <input type="submit" value="Flash Image" class="is-full-width" />
+          <div class="preview" align="center">
+             <img id="preview" src="dinosaur" alt=""/>
+          </div>
+        </fieldset>
+      </form>
     </div>
   </body>
 </html>

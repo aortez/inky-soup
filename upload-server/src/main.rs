@@ -9,6 +9,7 @@ use rocket::http::{ContentType, Status};
 use rocket::serde::Serialize;
 
 use std::env;
+use std::fs;
 use std::process::Command;
 
 const UPDATE_TEMP_FILE: &str = "inky-soup-update-image";
@@ -41,12 +42,16 @@ struct TemplateContext<'r> {
 
 #[get("/")]
 fn upload_form() -> Template {
+
+    println!("populating list of images in gallery...");
+    
     let mut images: Vec<String> = Vec::new();
-    for entry in glob("static/image-*").expect("Failed to read glob pattern") {
+    for entry in glob("static/images/*").expect("Failed to read glob pattern") {
         match entry {
             Ok(path) => {
-                println!("found image file {:?}", path.file_name().unwrap());
-                images.push(path.file_name().unwrap().to_str().unwrap().to_string());
+                let file_name = format!("images/{}", path.file_name().unwrap().to_str().unwrap().to_string());
+                println!("found image file {}", file_name);
+                images.push(file_name);
             },
             Err(e) => println!("{:?}", e),
         }
@@ -60,7 +65,7 @@ fn upload_form() -> Template {
     })
 }
 
-#[post("/", data = "<form>")]
+#[post("/upload", data = "<form>")]
 async fn submit<'r>(mut form: Form<Contextual<'r, Submit<'r>>>) -> (Status, Template) {
     let template = match form.value {
         Some(ref mut submission) => {
@@ -70,8 +75,14 @@ async fn submit<'r>(mut form: Form<Contextual<'r, Submit<'r>>>) -> (Status, Temp
             println!("file name: {:#?}", file.raw_name());
 
             // Save a copy to show as the most recently uploaded image.
-            let result2 = file.copy_to("static/dinosaur").await;
-            println!("result2: {:#?}", result2);
+            let dinosaur_result = file.copy_to("static/dinosaur").await;
+            println!("dinosaur_result: {:#?}", dinosaur_result);
+
+            // Save as new image in gallery.
+            let image_file_path = format!("static/images/{}", file.raw_name().unwrap().dangerous_unsafe_unsanitized_raw());
+            println!("image_file_path: {}", image_file_path);
+            let gallery_result = file.copy_to(image_file_path.clone()).await;
+            println!("image_file_path: {}, gallery_result: {:#?}", image_file_path, gallery_result);
 
             // Save file to feed to update script.
             let result = file.persist_to(env::temp_dir().join(UPDATE_TEMP_FILE)).await;
@@ -109,6 +120,9 @@ async fn submit<'r>(mut form: Form<Contextual<'r, Submit<'r>>>) -> (Status, Temp
 
 #[launch]
 fn rocket() -> _ {
+    let create_result = fs::create_dir_all("static/images/");
+    println!("created images directory: {:#?}", create_result);
+
     rocket::build()
         .mount("/", routes![submit, upload_form])
         .mount("/", FileServer::from("static"))
