@@ -5,59 +5,66 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width">
-    <title>InkSoup - Upload</title>
     <link rel="stylesheet" href="/chota.min.css">
     <style>
       .container {
-        max-width: 800px;
+        max-width: 1400px;
         margin: 0 auto;
         padding: 20px 10px;
       }
+      .thumbnails img {
+        height: 80px;
+        border: 4px solid #555;
+        padding: 1px;
+        margin: 0 10px 10px 0;
+      }
+      .thumbnails img:hover {
+        border: 4px solid #00ccff;
+        cursor:pointer;
+      }
+      .preview img {
+        border: 4px solid #444;
+        padding: 1px;
+        width: 600px;
+      }
+      .bad {
+        color: red;
+        background-color: black;
+      }
+      .good {
+        color: green;
+        background-color: white;
+      }
     </style>
+  <title>inky-soup - upload</title>
   </head>
   <body>
     <div class="container">
-      <h1>InkSoup Image Uploader</h1>
 
-      {% if errors | length > 1 %}
-          <small class="text-error" style="margin-top: -20px">
-              {{ errors | length }} field(s) have errors
-          </small>
+      {% if errors | length >= 1 %}
+        <small class="text-error" style="margin-top: 20px">
+          Errors:
+          {{ errors | length }} errors(s):
+          {% for s in errors %}
+            <p>{{s}}</p>
+          {% endfor %}
+        </small>
       {% endif %}
 
+      {% if values | length >= 1 %}
+        <small class="good" style="margin-top: 20px">
+          {{ values | length }} Message(s):
+          {% for v in values %}
+            <p> {{v}} </p>
+          {% endfor %}
+        </small>
+      {% endif %}
 
       <fieldset>
         <legend>Upload New Image</legend>
-        <form action="/" method="post" enctype="multipart/form-data">
 
-          <fieldset>
-            <legend>Instructions</legend>
-            <p>
-              Choose an image file to upload.  Sometimes flashing it twice results
-              in a better picture (due to ghosting). Play around with the saturation.
-              It takes ~15 seconds per flash.
-            </p>
-          </fieldset>
+        <form action="/upload" method="post" enctype="multipart/form-data">
 
-          <fieldset>
-            <legend>Metadata</legend>
-
-            <div class="row">
-              <div class="col">
-              {{
-                  m::select(
-                      label="Saturation",
-                      name="submission.saturation",
-                      options=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-                  )
-              }}
-              </div>
-            </div>
-
-          </fieldset>
-
-          <fieldset>
-            <legend>Contents</legend>
             {{
                 m::input(
                     label="File to Upload (Image, max 10MiB)",
@@ -66,25 +73,81 @@
                 )
             }}
 
-            <div class="row">
-              <div class="col">
-                  {{ m::checkbox(name="submission.flash_twice", label="Flash twice (to overcome ghosting).") }}
-              </div>
-            </div>
-
-          </fieldset>
-
           <br />
-          <input type="submit" value="Submit" class="is-full-width" />
+          <input type="submit" value="Upload Image" />
         </form>
       </fieldset>
       <br />
-      <fieldset>
-        <legend>Previously Uploaded Image</legend>
-        <p>For your reference, refer to the previously uploaded image, down below, there, yep you found it, thanks.
-        </p>
-        <img src="dinosaur">
-      </fieldset>
+
+      <form action="/flash" method="post" enctype="multipart/form-data">
+      <div class="row">
+        <div class="col">
+            <fieldset>
+              <legend>Select an Image</legend>
+              <div class="thumbnails">
+
+                <div class="row">
+                  {% for s in images %}
+                  <div class="col">
+                    {{ s }}
+                    <img
+                      onclick=
+                        "getElementById('submission.image_file_path').value = this.id;
+                        getElementById('preview').src = this.src;
+                        this.focus();"
+                      id="{{ s }}"
+                      src="{{ s }}"
+                      align="center"
+                    />
+
+                  </div>
+                  {% endfor %}
+                </div>
+
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Flash Parameters</legend>
+              <div>
+                {{ m::checkbox(name="submission.flash_twice", label="Flash twice (to overcome ghosting).") }}
+              </div>
+              <div>
+                {{
+                    m::select(
+                        label="Saturation",
+                        name="submission.saturation",
+                        options=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+                        selected_value=0.5
+                    )
+                }}
+              </div>
+            </fieldset>
+            <input type="submit" value="Flash Image" class="is-full-width" />
+
+            <br>
+
+            <input type="submit" formaction="/delete" value="Remove Image (warning there is no confirmation and this is permanent)" class="bad"/>
+        </div>
+
+        <fieldset>
+          <legend>Selected Image</legend>
+          {{
+              m::input(
+                  label="Filename:",
+                  name="submission.image_file_path"
+              )
+          }}
+          <br>
+
+          Preview:
+          <div class="preview" align="center">
+            <img id="preview" src="" alt=""/>
+          </div>
+        </fieldset>
+
+      </div>
+
     </div>
   </body>
 </html>
