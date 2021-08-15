@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="/chota.min.css">
     <style>
       .container {
-        max-width: 1200px;
+        max-width: 1400px;
         margin: 0 auto;
         padding: 20px 10px;
       }
@@ -32,6 +32,13 @@
   </head>
   <body>
     <div class="container">
+
+      {% if errors | length > 1 %}
+          <small class="text-error" style="margin-top: -20px">
+              {{ errors | length }} field(s) have errors,
+              errors: {{errors}}
+          </small>
+      {% endif %}
 
       <fieldset>
         <legend>Upload New Image</legend>

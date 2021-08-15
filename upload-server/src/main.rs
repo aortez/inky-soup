@@ -12,8 +12,6 @@ use std::env;
 use std::fs;
 use std::process::Command;
 
-const UPDATE_TEMP_FILE: &str = "inky-soup-update-image";
-
 #[derive(Debug, FromForm)]
 struct FlashSubmission {
     image_file_path: String,
@@ -28,6 +26,7 @@ struct UploadSubmission<'v> {
     // TODO: validator for any image type that seems to work with the
     // flashing script.
     // #[field(validate = ext(ContentType::PNG))]
+    #[field(validate = ext(ContentType::PNG))]
     file: TempFile<'v>,
 
     saturation: f32,
@@ -54,11 +53,7 @@ struct TemplateContext<'r> {
     errors: Vec<&'r str>
 }
 
-#[get("/")]
-fn upload_form() -> Template {
-
-    println!("populating list of images in gallery...");
-
+fn get_gallery_image_paths() -> Vec<String> {
     let mut images: Vec<String> = Vec::new();
     for entry in glob("static/images/*").expect("Failed to read glob pattern") {
         match entry {
@@ -70,12 +65,19 @@ fn upload_form() -> Template {
             Err(e) => println!("{:?}", e),
         }
     }
+    images
+}
+
+#[get("/")]
+fn upload_form() -> Template {
+
+    println!("populating list of images in gallery...");
 
     Template::render("index", &TemplateContext {
         title: "hideho",
-        images: images,
+        images: get_gallery_image_paths(),
         values: vec!["One", "Two", "Three"],
-        errors: vec!["One", "Two", "Three"],
+        errors: vec![],
     })
 }
 
@@ -124,20 +126,11 @@ async fn submit_new_image<'r>(mut form: Form<Contextual<'r, SubmitNewImage<'r>>>
             let file = &mut submission.submission.file;
             println!("file name: {:#?}", file.raw_name());
 
-            // Save a copy to show as the most recently uploaded image.
-            let dinosaur_result = file.copy_to("static/dinosaur").await;
-            println!("dinosaur_result: {:#?}", dinosaur_result);
-
             // Save as new image in gallery.
             let image_file_path = format!("static/images/{}", file.raw_name().unwrap().dangerous_unsafe_unsanitized_raw());
             println!("image_file_path: {}", image_file_path);
             let gallery_result = file.copy_to(image_file_path.clone()).await;
             println!("image_file_path: {}, gallery_result: {:#?}", image_file_path, gallery_result);
-
-            // Save file to feed to update script.
-            let result = file.persist_to(env::temp_dir().join(UPDATE_TEMP_FILE)).await;
-            println!("result: {:#?}", result);
-            println!("wrote {} bytes at {}", file.len(), file.path().unwrap().display());
 
             Template::render("success", &form.context)
         }
