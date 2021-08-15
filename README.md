@@ -47,6 +47,7 @@ images!
 
 ## Image Gallery
 * Hard code some limit to how many pictures can be uploaded?
+* Some kind of confirmation dialog for the delete button?
 
 ## Image Rotation
 * [ ] Add a way to show a random image at a fixed interval.
