@@ -1,11 +1,16 @@
-![Example of Web Page](./inky-soup-uploader.png "Example of Web Page")
-
 # Inky Soup
+
+# Introduction
 Automation for displaying images on the Pimoroni Inky Impression e-ink screen.
 Inky Soup provides users with a web page that they can use to flash images
 to their Inky Impression.
 
-Currently it is very specific to my needs and is very WIP, but it works (for me)!
+## Web Page
+![Example of Web Page](./inky-soup-uploader.png "Example of Web Page")
+
+## Example Display Build
+![Example of Inky Impression Display](./inky-soup-display.jpg "Example of Display")
+
 
 ![A Goose](./upload-server/static/favicon.ico "A Goose")
 
@@ -42,13 +47,12 @@ images!
 * logging
 
 ## Image Gallery
-* [x] Show images in /static/images directory.
-* [x] Uploading a new image will put it in the /static/images dir.
-* [x] Redesign the page so that we have two forms:
-1. One that uploads new images
-2. One that flashes an image from the gallery
-* [ ] Add some way to delete images from the gallery. Maybe a delete button that
-deletes the currently selected image?
+* [] Hard code some limit to how many pictures can be uploaded?
+
+## Image Rotation
+  [] Add a way to show a random image at a fixed interval.
+  [] Add a way to rotate images in sequential order.
+  [] Add a way to configure the change interval.
 
 ## Advanced
 * preview image before flashing? allow user to crop interactively?
