@@ -1,8 +1,8 @@
 # Inky Soup
 
 # Introduction
-Automation for displaying images on the Pimoroni Inky Impression e-ink screen.
-Inky Soup provides users with a web page that they can use to flash images
+Inky Soup is automation for displaying images on the Pimoroni Inky Impression e-ink screen.
+It provides users with a web page that they can use to flash images
 to their Inky Impression.
 
 ## Web Page
@@ -11,12 +11,11 @@ to their Inky Impression.
 ## Example Display Build
 ![Example of Inky Impression Display](./inky-soup-display.jpg "Example of Display")
 
-
 ![A Goose](./upload-server/static/favicon.ico "A Goose")
 
 # Instructions
 
-Te project consists of two components:
+The project consists of two components:
 
 1. A web page - this component is written in Rust using the fine library Rocket
 for all the web stuff.
@@ -47,12 +46,12 @@ images!
 * logging
 
 ## Image Gallery
-* [] Hard code some limit to how many pictures can be uploaded?
+* Hard code some limit to how many pictures can be uploaded?
 
 ## Image Rotation
-  [] Add a way to show a random image at a fixed interval.
-  [] Add a way to rotate images in sequential order.
-  [] Add a way to configure the change interval.
+* [ ] Add a way to show a random image at a fixed interval.
+* [ ] Add a way to rotate images in sequential order.
+* [ ] Add a way to configure the change interval.
 
 ## Advanced
 * preview image before flashing? allow user to crop interactively?
