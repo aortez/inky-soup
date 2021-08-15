@@ -5,7 +5,6 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width">
-    <title>InkSoup - Upload</title>
     <link rel="stylesheet" href="/chota.min.css">
     <style>
       .container {
@@ -29,14 +28,10 @@
         width: 600px;
       }
     </style>
+  <title>inky-soup - upload</title>
   </head>
   <body>
     <div class="container">
-      <h1>InkSoup Image Uploader</h1>
-
-
-        <h2>Instructions</h2>
-        <p> Upload an image to the gallery. Once you have your image in the gallery, select it below and flash it.</p>
 
       <fieldset>
         <legend>Upload New Image</legend>
@@ -51,59 +46,76 @@
             }}
 
           <br />
-          <input type="submit" value="Upload New Image" class="is-full-width" />
+          <input type="submit" value="Upload New Image" />
         </form>
       </fieldset>
       <br />
 
       <form action="/flash" method="post" enctype="multipart/form-data">
-        <fieldset>
-          <legend>Select an Image</legend>
-          <p>This is the list of images available for flashing.</p>
-          <div class="thumbnails">
+      <div class="row">
+        <div class="col">
+            <fieldset>
+              <legend>Select an Image</legend>
+              <div class="thumbnails">
 
-            <div class="col">
-              {% for s in images %}
-                <img
-                  onclick=
-                    "getElementById('submission.image_file_path').value = getElementById('{{ s }}').id;
-                    getElementById('preview').src = getElementById('{{ s }}').src"
-                  id="{{ s }}"
-                  src="{{ s }}"
-                  align="center"
-                />
-                                {{ s }}
-              {% endfor %}
+                <div class="row">
+                  {% for s in images %}
+                  <div class="col">
+                    {{ s }}
+                    <img
+                      onclick=
+                        "getElementById('submission.image_file_path').value = this.id;
+                        getElementById('preview').src = this.src;
+                        this.focus();"
+                      id="{{ s }}"
+                      src="{{ s }}"
+                      align="center"
+                    />
+
+                  </div>
+                  {% endfor %}
+                </div>
 
               </div>
-              <input name="submission.image_file_path" id="submission.image_file_path" value="Mom">
+            </fieldset>
 
-          </div>
-        </fieldset>
-
-        <fieldset>
-          <legend>Flash Parameters</legend>
-          <div class="row">
-            <div class="col">
+            <fieldset>
+              <legend>Flash Parameters</legend>
+              <div>
                 {{ m::checkbox(name="submission.flash_twice", label="Flash twice (to overcome ghosting).") }}
-            </div>
-            {{
-                m::select(
-                    label="Saturation",
-                    name="submission.saturation",
-                    options=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
-                    selected_value=0.5
-                )
-            }}
-          </div>
+              </div>
+              <div>
+                {{
+                    m::select(
+                        label="Saturation",
+                        name="submission.saturation",
+                        options=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+                        selected_value=0.5
+                    )
+                }}
+              </div>
+            </fieldset>
+            <input type="submit" value="Flash Image" class="is-full-width" />
 
-        </fieldset>
-
-        <div class="preview" align="center">
-          <img id="preview" src="dinosaur" alt=""/>
-          <input type="submit" value="Flash Image" class="is-full-width" />
         </div>
 
+        <fieldset>
+          <legend>Image Preview</legend>
+          {{
+              m::input(
+                  label="Filename:",
+                  name="submission.image_file_path"
+              )
+          }}
+          <br>
+
+          Preview:
+          <div class="preview" align="center">
+            <img id="preview" src="" alt=""/>
+          </div>
+        </fieldset>
+
+      </div>
       </form>
     </div>
   </body>

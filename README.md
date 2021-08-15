@@ -22,12 +22,18 @@ Use the deploy script to build and deploy to your Pi.
     INKY_SOUP_IP=<your Pi's IP or hostname> ./deploy.sh
 
 Then, run the image server by hand:
-cd deploy
-./upload-server
+
+    cd inky-soup
+    ./upload-server
+
+Or, run it as a service:
+
+    cd inky-soup
+    cp inky-soup.service /etc/systemd/system/
+    sudo systemctl start inky-soup.service
 
 Now, visit your PI in a web browser (port 8000) over your local network and start uploading
 images!
-
 
 # TODO
 
@@ -38,12 +44,11 @@ images!
 ## Image Gallery
 * [x] Show images in /static/images directory.
 * [x] Uploading a new image will put it in the /static/images dir.
-* [ ] Make a /list endpoint for listing the current images.
-* [ ] Make a /delete endpoint for deleting images.
-* [ ] Add delete button next to each image and make it call the /delete endpoint for that image.
 * [x] Redesign the page so that we have two forms:
 1. One that uploads new images
 2. One that flashes an image from the gallery
+* [ ] Add some way to delete images from the gallery. Maybe a delete button that
+deletes the currently selected image?
 
 ## Advanced
 * preview image before flashing? allow user to crop interactively?

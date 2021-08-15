@@ -13,7 +13,7 @@
     {%- endif -%}
 {% endmacro %}
 
-{% macro input(type, label, name, value="") %}
+{% macro input(type="", label, name, value="") %}
     <label for="{{ name }}">{{ label }}</label>
     <input type="{{ type }}"
            name="{{ name }}"
