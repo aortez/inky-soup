@@ -3,7 +3,9 @@
 # Introduction
 Inky Soup is automation for displaying images on the Pimoroni Inky Impression e-ink screen.
 It provides users with a web page that they can use to flash images
-to their Inky Impression.
+to their Inky Impression.  
+
+I suggest using a Pi Zero W, as it has low compute requirements and when combined with the e-ink display, it has very low power utilization (~1 watt peak).
 
 ## Web Page
 ![Example of Web Page](./inky-soup-uploader.png "Example of Web Page")
