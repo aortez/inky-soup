@@ -5,7 +5,7 @@ use glob::glob;
 use rocket_dyn_templates::Template;
 use rocket::form::{Form, Contextual};
 use rocket::fs::{FileServer, TempFile};
-use rocket::http::{ContentType, Status};
+use rocket::http::Status;
 use rocket::serde::Serialize;
 
 use std::fs;

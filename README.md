@@ -23,9 +23,19 @@ The project consists of two components:
 for all the web stuff.
 1. A python script for flashing the images to the screen.
 
-Use the deploy script to build and deploy to your Pi.
+## First-Time Setup
+
+Set up cross-compilation tools (only needed once):
+
+    ./setup-crosscompile.sh
+
+## Deploy to Your Pi
+
+Use the deploy script to build and deploy to your Pi:
 
     INKY_SOUP_IP=<your Pi's IP or hostname> ./deploy.sh
+
+This builds an optimized release binary and deploys it to your Pi.
 
 Then, run the image server by hand:
 

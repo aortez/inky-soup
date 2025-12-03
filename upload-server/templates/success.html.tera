@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <link rel="stylesheet" href="/chota.min.css">
+    <style>
+      .container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 20px 10px;
+      }
+      .success-message {
+        color: green;
+        background-color: white;
+        padding: 20px;
+        margin: 20px 0;
+        border: 2px solid green;
+        border-radius: 4px;
+        text-align: center;
+      }
+    </style>
+    <title>inky-soup - flash successful</title>
+  </head>
+  <body>
+    <div class="container">
+      <div class="success-message">
+        <h2>✓ Image Flashed Successfully</h2>
+        <p>Your image has been sent to the e-ink display.</p>
+      </div>
+
+      <p>
+        <a href="/" class="button primary">← Back to Gallery</a>
+      </p>
+    </div>
+  </body>
+</html>
