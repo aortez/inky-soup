@@ -110,6 +110,103 @@
         color: #666;
         margin-top: 15px;
       }
+
+      /* Upload preview area. */
+      .upload-preview {
+        display: none;
+        margin: 15px 0;
+        padding: 15px;
+        background: #f5f5f5;
+        border-radius: 8px;
+        text-align: center;
+      }
+      .upload-preview.active {
+        display: block;
+      }
+      .upload-preview img {
+        max-width: 200px;
+        max-height: 150px;
+        border: 2px solid #444;
+        margin-bottom: 10px;
+      }
+      .upload-preview .file-info {
+        font-size: 0.9em;
+        color: #666;
+      }
+      .upload-preview .file-name {
+        font-weight: bold;
+        word-break: break-all;
+      }
+      .upload-preview .file-size {
+        color: #888;
+      }
+
+      /* Upload modal (extends flash modal pattern). */
+      .upload-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+      }
+      .upload-modal.active {
+        display: flex;
+      }
+      .upload-modal-content {
+        background: #1a1a1a;
+        border: 2px solid #00ccff;
+        border-radius: 8px;
+        padding: 30px;
+        text-align: center;
+        max-width: 500px;
+        min-width: 350px;
+        color: #fff;
+      }
+      .upload-modal-content h2 {
+        margin: 0 0 20px 0;
+        color: #00ccff;
+      }
+      .upload-modal-content img {
+        max-width: 300px;
+        max-height: 200px;
+        border: 2px solid #444;
+        margin-bottom: 15px;
+      }
+      .upload-modal-content .filename {
+        font-size: 0.9em;
+        color: #aaa;
+        margin-bottom: 20px;
+        word-break: break-all;
+      }
+      .upload-stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin: 15px 0;
+        font-size: 0.9em;
+      }
+      .upload-stats .stat {
+        text-align: center;
+      }
+      .upload-stats .stat-value {
+        font-size: 1.2em;
+        font-weight: bold;
+        color: #00ccff;
+      }
+      .upload-stats .stat-label {
+        font-size: 0.8em;
+        color: #888;
+      }
+      .upload-note {
+        font-size: 0.8em;
+        color: #666;
+        margin-top: 15px;
+      }
     </style>
   <title>inky-soup - upload</title>
   </head>
@@ -138,7 +235,7 @@
       <fieldset>
         <legend>Upload New Image</legend>
 
-        <form action="/upload" method="post" enctype="multipart/form-data">
+        <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
 
             {{
                 m::input(
@@ -148,8 +245,16 @@
                 )
             }}
 
+          <div id="uploadPreview" class="upload-preview">
+            <img id="uploadPreviewImg" src="" alt="Preview" />
+            <div class="file-info">
+              <div id="uploadFileName" class="file-name"></div>
+              <div id="uploadFileSize" class="file-size"></div>
+            </div>
+          </div>
+
           <br />
-          <input type="submit" value="Upload Image" />
+          <input type="submit" id="uploadBtn" value="Upload Image" />
         </form>
       </fieldset>
       <br />
@@ -163,6 +268,7 @@
 
                 <div class="row">
                   {% for s in images %}
+                  {%- set cache_path = s | replace(from="images/", to="images/cache/") -%}
                   <div class="col" style="text-align: center;">
                     <img
                       onclick="
@@ -172,7 +278,7 @@
                         document.getElementById('preview').src = this.src;
                       "
                       id="{{ s }}"
-                      src="{{ s }}"
+                      src="{{ cache_path }}"
                       alt="{{ s }}"
                     />
                     <div style="font-size: 0.75em;">
@@ -258,6 +364,51 @@
 
         <div id="flashNote" class="flash-note">This takes about 40 seconds per flash...</div>
         <button type="button" id="flashCloseBtn" style="display: none; margin-top: 15px;" onclick="document.getElementById('flashModal').classList.remove('active');">Close</button>
+      </div>
+    </div>
+
+    <!-- Upload progress modal. -->
+    <div id="uploadModal" class="upload-modal">
+      <div class="upload-modal-content">
+        <h2 id="uploadModalTitle">Uploading Image</h2>
+        <img id="uploadModalImage" src="" alt=""/>
+        <div id="uploadModalFilename" class="filename"></div>
+
+        <div id="uploadProgressContainer" class="progress-container">
+          <div class="progress-label">Uploading</div>
+          <div class="progress-bar">
+            <div id="uploadProgress" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <div id="processingProgressContainer" class="progress-container" style="display: none;">
+          <div class="progress-label">Processing</div>
+          <div class="progress-bar">
+            <div id="processingProgress" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <div class="upload-stats">
+          <div class="stat">
+            <div id="uploadPercent" class="stat-value">0%</div>
+            <div class="stat-label">Progress</div>
+          </div>
+          <div class="stat">
+            <div id="uploadSpeed" class="stat-value">-- MB/s</div>
+            <div class="stat-label">Speed</div>
+          </div>
+          <div class="stat">
+            <div id="uploadTransferred" class="stat-value">0 / 0 MB</div>
+            <div class="stat-label">Transferred</div>
+          </div>
+          <div class="stat">
+            <div id="uploadTime" class="stat-value">0:00</div>
+            <div class="stat-label">Elapsed</div>
+          </div>
+        </div>
+
+        <div id="uploadNote" class="upload-note">Uploading to server...</div>
+        <button type="button" id="uploadCloseBtn" style="display: none; margin-top: 15px;" onclick="document.getElementById('uploadModal').classList.remove('active'); window.location.reload();">Close</button>
       </div>
     </div>
 
@@ -394,6 +545,208 @@
         .catch(error => {
           showFlashResult(false, 'Network error: ' + error.message);
         });
+      });
+
+      // Upload functionality with real progress tracking.
+      const uploadForm = document.getElementById('uploadForm');
+      const fileInput = document.querySelector('input[name="submission.file"]');
+      const uploadPreview = document.getElementById('uploadPreview');
+      const uploadPreviewImg = document.getElementById('uploadPreviewImg');
+      const uploadFileName = document.getElementById('uploadFileName');
+      const uploadFileSize = document.getElementById('uploadFileSize');
+
+      // Format bytes to human readable.
+      function formatBytes(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+      }
+
+      // Format seconds to mm:ss.
+      function formatTime(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return mins + ':' + secs.toString().padStart(2, '0');
+      }
+
+      // Show preview when file is selected.
+      fileInput.addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+          // Check if it's an image.
+          if (file.type.startsWith('image/')) {
+            uploadPreviewImg.src = URL.createObjectURL(file);
+            uploadPreviewImg.style.display = 'block';
+          } else {
+            uploadPreviewImg.style.display = 'none';
+          }
+          uploadFileName.textContent = file.name;
+          uploadFileSize.textContent = formatBytes(file.size);
+          uploadPreview.classList.add('active');
+        } else {
+          uploadPreview.classList.remove('active');
+        }
+      });
+
+      // Handle upload form submission.
+      uploadForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const file = fileInput.files[0];
+        if (!file) {
+          alert('Please select a file first.');
+          return;
+        }
+
+        // Reset and show modal.
+        const modal = document.getElementById('uploadModal');
+        const modalImage = document.getElementById('uploadModalImage');
+        const modalFilename = document.getElementById('uploadModalFilename');
+        const progressBar = document.getElementById('uploadProgress');
+        const percentEl = document.getElementById('uploadPercent');
+        const speedEl = document.getElementById('uploadSpeed');
+        const transferredEl = document.getElementById('uploadTransferred');
+        const timeEl = document.getElementById('uploadTime');
+        const noteEl = document.getElementById('uploadNote');
+        const closeBtn = document.getElementById('uploadCloseBtn');
+        const titleEl = document.getElementById('uploadModalTitle');
+
+        const uploadProgressContainer = document.getElementById('uploadProgressContainer');
+        const processingProgressContainer = document.getElementById('processingProgressContainer');
+        const processingProgress = document.getElementById('processingProgress');
+
+        // Set initial state.
+        if (file.type.startsWith('image/')) {
+          modalImage.src = URL.createObjectURL(file);
+          modalImage.style.display = 'block';
+        } else {
+          modalImage.style.display = 'none';
+        }
+        modalFilename.textContent = file.name;
+        progressBar.style.width = '0%';
+        progressBar.classList.remove('complete');
+        processingProgress.style.width = '0%';
+        processingProgress.classList.remove('complete');
+        uploadProgressContainer.style.display = 'block';
+        processingProgressContainer.style.display = 'none';
+        percentEl.textContent = '0%';
+        speedEl.textContent = '-- MB/s';
+        transferredEl.textContent = '0 / ' + formatBytes(file.size);
+        timeEl.textContent = '0:00';
+        noteEl.textContent = 'Uploading to server...';
+        noteEl.style.color = '#666';
+        closeBtn.style.display = 'none';
+        titleEl.textContent = 'Uploading Image';
+        titleEl.style.color = '#00ccff';
+
+        modal.classList.add('active');
+        let processingAnimationId = null;
+
+        // Create XMLHttpRequest for progress tracking.
+        const xhr = new XMLHttpRequest();
+        const startTime = Date.now();
+        let timerInterval;
+
+        // Update elapsed time every second.
+        timerInterval = setInterval(function() {
+          const elapsed = (Date.now() - startTime) / 1000;
+          timeEl.textContent = formatTime(elapsed);
+        }, 1000);
+
+        xhr.upload.addEventListener('progress', function(e) {
+          if (e.lengthComputable) {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            const elapsed = (Date.now() - startTime) / 1000;
+            const speed = e.loaded / elapsed; // bytes per second
+
+            progressBar.style.width = percent + '%';
+            percentEl.textContent = percent + '%';
+            transferredEl.textContent = formatBytes(e.loaded) + ' / ' + formatBytes(e.total);
+
+            if (elapsed > 0.5) { // Wait a bit before showing speed to get stable reading.
+              speedEl.textContent = formatBytes(speed) + '/s';
+            }
+          }
+        });
+
+        // When upload finishes, switch to processing state.
+        xhr.upload.addEventListener('loadend', function() {
+          progressBar.style.width = '100%';
+          progressBar.classList.add('complete');
+          percentEl.textContent = '100%';
+          noteEl.textContent = 'Processing...';
+
+          // Show processing progress bar and animate it.
+          processingProgressContainer.style.display = 'block';
+          const processingStartTime = Date.now();
+          const estimatedProcessingMs = 3000; // Estimate ~3 seconds for processing.
+
+          function animateProcessing() {
+            const elapsed = Date.now() - processingStartTime;
+            // Use asymptotic curve - gets slower as it approaches 95%.
+            const progress = Math.min(95, (elapsed / estimatedProcessingMs) * 80 + (elapsed / (elapsed + 1000)) * 15);
+            processingProgress.style.width = progress + '%';
+            processingAnimationId = requestAnimationFrame(animateProcessing);
+          }
+          animateProcessing();
+        });
+
+        xhr.addEventListener('load', function() {
+          clearInterval(timerInterval);
+          if (processingAnimationId) cancelAnimationFrame(processingAnimationId);
+
+          const elapsed = (Date.now() - startTime) / 1000;
+          timeEl.textContent = formatTime(elapsed);
+
+          // Complete both progress bars.
+          progressBar.style.width = '100%';
+          progressBar.classList.add('complete');
+          processingProgress.style.width = '100%';
+          processingProgress.classList.add('complete');
+          percentEl.textContent = '100%';
+
+          if (xhr.status >= 200 && xhr.status < 300) {
+            titleEl.textContent = '✓ Upload Complete!';
+            titleEl.style.color = '#00ff88';
+            noteEl.textContent = 'Image uploaded successfully.';
+            noteEl.style.color = '#00ff88';
+          } else {
+            titleEl.textContent = '✗ Upload Failed';
+            titleEl.style.color = '#ff4444';
+            noteEl.textContent = 'Server returned status ' + xhr.status;
+            noteEl.style.color = '#ff4444';
+          }
+          closeBtn.style.display = 'inline-block';
+        });
+
+        xhr.addEventListener('error', function() {
+          clearInterval(timerInterval);
+          if (processingAnimationId) cancelAnimationFrame(processingAnimationId);
+          titleEl.textContent = '✗ Upload Failed';
+          titleEl.style.color = '#ff4444';
+          noteEl.textContent = 'Network error occurred.';
+          noteEl.style.color = '#ff4444';
+          closeBtn.style.display = 'inline-block';
+        });
+
+        xhr.addEventListener('abort', function() {
+          clearInterval(timerInterval);
+          if (processingAnimationId) cancelAnimationFrame(processingAnimationId);
+          titleEl.textContent = '✗ Upload Cancelled';
+          titleEl.style.color = '#ff4444';
+          noteEl.textContent = 'Upload was cancelled.';
+          noteEl.style.color = '#ff4444';
+          closeBtn.style.display = 'inline-block';
+        });
+
+        // Build form data and send.
+        const formData = new FormData();
+        formData.append('submission.file', file);
+
+        xhr.open('POST', '/upload');
+        xhr.send(formData);
       });
     </script>
   </body>
