@@ -891,7 +891,7 @@
             }
 
             // Now proceed with flash.
-            proceedWithFlash(imagePath, ditherCurrentSaturation, flashTwice, filename);
+            proceedWithFlash(imagePath, flashTwice, filename);
 
           } catch (error) {
             alert('Error uploading dithered image: ' + error.message);
@@ -900,7 +900,7 @@
       }
 
       // Proceed with flash operation (after dithering and upload).
-      function proceedWithFlash(imagePath, saturation, flashTwice, filename) {
+      function proceedWithFlash(imagePath, flashTwice, filename) {
         // Reset modal state.
         animationCancelled = false;
         document.getElementById('modalImage').src = imagePath;
@@ -937,7 +937,6 @@
         // Submit via fetch.
         const formData = new FormData();
         formData.append('submission.image_file_path', imagePath);
-        formData.append('submission.saturation', saturation);
         if (flashTwice) {
           formData.append('submission.flash_twice', 'yes');
         }

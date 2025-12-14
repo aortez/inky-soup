@@ -27,8 +27,6 @@ struct DeleteSubmission {
 struct FlashSubmission {
     image_file_path: String,
 
-    saturation: f32,
-
     flash_twice: bool,
 }
 
@@ -325,62 +323,27 @@ async fn submit_flash_image<'r>(mut form: Form<Contextual<'r, SubmitFlashImage>>
         Some(ref mut submission) => {
             println!("submission: {:#?}", submission);
 
-            // Saturation param.
-            let saturation = &submission.submission.saturation;
-
-            // Get filename for metadata lookup.
+            // Get filename for dithered image lookup.
             let original_path = format!("static/{}", submission.submission.image_file_path.clone());
             let filename = Path::new(&original_path)
                 .file_name()
                 .and_then(|f| f.to_str())
                 .unwrap_or("unknown");
 
-            // Check if pre-dithered version exists.
+            // Require pre-dithered version to exist (uploaded from preview dialog).
             let dithered_path = format!("static/images/dithered/{}", filename);
-            let (image_file, skip_dither) = if Path::new(&dithered_path).exists() {
-                println!("Using pre-dithered image: {}", dithered_path);
-                (dithered_path, true)
-            } else {
-                // Use cached image if available, otherwise create it first.
-                let cache_path = cache_worker::get_cache_path(&original_path);
-
-                // Get the filter preference for this image.
-                let filter_name = metadata::get_filter_for_image(filename);
-                let filter_type = metadata::parse_filter(&filter_name);
-
-                let image = if Path::new(&cache_path).exists() {
-                    println!("Using cached image: {}", cache_path);
-                    cache_path
-                } else {
-                    // Synchronously create cache since we need it for flashing.
-                    println!("Cache not found, creating from original: {}", original_path);
-                    match cache_worker::create_cached_image(Path::new(&original_path), filter_type) {
-                        Ok(()) => {
-                            println!("Cache created, using: {}", cache_path);
-                            cache_path
-                        }
-                        Err(e) => {
-                            println!("Failed to create cache ({}), using original: {}", e, original_path);
-                            original_path
-                        }
-                    }
-                };
-
-                (image, false)
-            };
-
-            // Run image update script to flash image to display.
-            let mut flash_command = Command::new("python3");
-            flash_command.arg("./update-image.py")
-                .arg(&image_file);
-
-            if skip_dither {
-                flash_command.arg("--skip-dither");
-            } else {
-                flash_command.arg(saturation.to_string());
+            if !Path::new(&dithered_path).exists() {
+                println!("Error: Pre-dithered image not found: {}", dithered_path);
+                return Redirect::to(uri!(upload_form));
             }
+            println!("Using pre-dithered image: {}", dithered_path);
 
-            let status = flash_command.status()
+            // Run image update script to flash pre-dithered image to display.
+            let status = Command::new("python3")
+                .arg("./update-image.py")
+                .arg(&dithered_path)
+                .arg("--skip-dither")
+                .status()
                 .expect("failed to execute flash command");
 
             if !status.success() {
@@ -389,10 +352,13 @@ async fn submit_flash_image<'r>(mut form: Form<Contextual<'r, SubmitFlashImage>>
             }
 
             // Maybe do it a second time.
-            let flash_twice = submission.submission.flash_twice;
-            if flash_twice {
+            if submission.submission.flash_twice {
                 println!("flashing a second time...");
-                let status2 = flash_command.status()
+                let status2 = Command::new("python3")
+                    .arg("./update-image.py")
+                    .arg(&dithered_path)
+                    .arg("--skip-dither")
+                    .status()
                     .expect("failed to execute flash command");
                 if !status2.success() {
                     let exit_code = status2.code().unwrap_or(-1);
