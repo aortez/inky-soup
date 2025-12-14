@@ -28,7 +28,7 @@ print(f"Image size: {width}x{height}", flush=True)
 
 if width != 600 or height != 448:
     print("Resizing to 600x448...", flush=True)
-    image = image.resize((600, 448), Image.BICUBIC)
+    image = image.resize((600, 448), Image.Resampling.BICUBIC)
     print(f"Resize complete in {time.time() - load_start:.1f}s", flush=True)
 else:
     print("Image already 600x448, no resize needed.", flush=True)

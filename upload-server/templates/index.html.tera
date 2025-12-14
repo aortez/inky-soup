@@ -207,6 +207,36 @@
         color: #666;
         margin-top: 15px;
       }
+
+      /* Thumbnail placeholder for images being cached. */
+      .thumbnail-placeholder {
+        width: 120px;
+        height: 80px;
+        background: #333;
+        border: 4px solid #555;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 10px 10px 0;
+        position: relative;
+      }
+      .thumbnail-placeholder .spinner {
+        width: 24px;
+        height: 24px;
+        border: 3px solid #555;
+        border-top-color: #00ccff;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      .thumbnail-placeholder .label {
+        position: absolute;
+        bottom: 4px;
+        font-size: 0.65em;
+        color: #888;
+      }
     </style>
   <title>inky-soup - upload</title>
   </head>
@@ -267,27 +297,32 @@
               <div class="thumbnails">
 
                 <div class="row">
-                  {% for s in images %}
-                  {%- set cache_path = s | replace(from="images/", to="images/cache/") -%}
+                  {% for img in images %}
+                  {%- set cache_path = "images/cache/" ~ img.filename -%}
                   <div class="col" style="text-align: center;">
+                    {% if img.cache_ready %}
                     <img
-                      onclick="
-                        document.querySelectorAll('.thumbnails img').forEach(img => img.classList.remove('selected'));
-                        this.classList.add('selected');
-                        document.getElementById('submission.image_file_path').value = this.id;
-                        document.getElementById('preview').src = this.src;
-                      "
-                      id="{{ s }}"
+                      onclick="selectThumbnail(this)"
+                      id="{{ img.path }}"
                       src="{{ cache_path }}"
-                      alt="{{ s }}"
+                      alt="{{ img.path }}"
                     />
+                    {% else %}
+                    <div
+                      class="thumbnail-placeholder"
+                      data-filename="{{ img.filename }}"
+                      data-path="{{ img.path }}"
+                    >
+                      <div class="spinner"></div>
+                      <span class="label">Caching...</span>
+                    </div>
+                    {% endif %}
                     <div style="font-size: 0.75em;">
-                      {%- set filename = s | split(pat="/") | last -%}
-                      {%- if filename | length > 40 -%}
-                        {%- set ext = filename | split(pat=".") | last -%}
-                        {{ filename | replace(from="." ~ ext, to="") | truncate(length=32, end="...") }}.{{ ext }}
+                      {%- if img.filename | length > 40 -%}
+                        {%- set ext = img.filename | split(pat=".") | last -%}
+                        {{ img.filename | replace(from="." ~ ext, to="") | truncate(length=32, end="...") }}.{{ ext }}
                       {%- else -%}
-                        {{ filename }}
+                        {{ img.filename }}
                       {%- endif -%}
                     </div>
                   </div>
@@ -416,6 +451,48 @@
       const FLASH_DURATION_MS = 40000;
       let animationCancelled = false;
       let isFlashing = false;
+
+      // Thumbnail selection helper.
+      function selectThumbnail(el) {
+        document.querySelectorAll('.thumbnails img').forEach(img => img.classList.remove('selected'));
+        el.classList.add('selected');
+        document.getElementById('submission.image_file_path').value = el.id;
+        document.getElementById('preview').src = el.src;
+      }
+
+      // Poll for cache status and replace placeholder when ready.
+      function pollCacheStatus(filename, path, placeholderEl) {
+        fetch('/api/cache-status/' + encodeURIComponent(filename))
+          .then(r => r.json())
+          .then(data => {
+            if (data.ready) {
+              // Create real image element to replace placeholder.
+              const img = document.createElement('img');
+              img.src = data.cache_path;
+              img.id = path;
+              img.alt = path;
+              img.onclick = function() { selectThumbnail(this); };
+              placeholderEl.replaceWith(img);
+            } else {
+              // Poll again in 500ms.
+              setTimeout(() => pollCacheStatus(filename, path, placeholderEl), 500);
+            }
+          })
+          .catch(err => {
+            console.error('Cache status poll failed:', err);
+            // Retry after longer delay on error.
+            setTimeout(() => pollCacheStatus(filename, path, placeholderEl), 2000);
+          });
+      }
+
+      // Start polling for any placeholders on page load.
+      document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.thumbnail-placeholder').forEach(el => {
+          const filename = el.dataset.filename;
+          const path = el.dataset.path;
+          pollCacheStatus(filename, path, el);
+        });
+      });
 
       function animateProgress(elementId, durationMs, onComplete) {
         const el = document.getElementById(elementId);
