@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 glob = "0.3.0"
+image = "0.25"
 rocket = "0.5.1"
 
 [dependencies.rocket_dyn_templates]

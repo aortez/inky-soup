@@ -38,6 +38,78 @@
         color: green;
         background-color: white;
       }
+
+      /* Flash progress modal. */
+      .flash-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+      }
+      .flash-modal.active {
+        display: flex;
+      }
+      .flash-modal-content {
+        background: #1a1a1a;
+        border: 2px solid #00ccff;
+        border-radius: 8px;
+        padding: 30px;
+        text-align: center;
+        max-width: 500px;
+        color: #fff;
+      }
+      .flash-modal-content h2 {
+        margin: 0 0 20px 0;
+        color: #00ccff;
+      }
+      .flash-modal-content img {
+        max-width: 300px;
+        max-height: 200px;
+        border: 2px solid #444;
+        margin-bottom: 15px;
+      }
+      .flash-modal-content .filename {
+        font-size: 0.9em;
+        color: #aaa;
+        margin-bottom: 20px;
+        word-break: break-all;
+      }
+      .progress-container {
+        margin: 15px 0;
+      }
+      .progress-label {
+        font-size: 0.85em;
+        color: #888;
+        margin-bottom: 5px;
+        text-align: left;
+      }
+      .progress-bar {
+        width: 100%;
+        height: 24px;
+        background: #333;
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .progress-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #00ccff, #00ff88);
+        transition: width 0.5s linear;
+      }
+      .progress-fill.complete {
+        background: #00ff88;
+      }
+      .flash-note {
+        font-size: 0.8em;
+        color: #666;
+        margin-top: 15px;
+      }
     </style>
   <title>inky-soup - upload</title>
   </head>
@@ -91,8 +163,7 @@
 
                 <div class="row">
                   {% for s in images %}
-                  <div class="col">
-                    {{ s }}
+                  <div class="col" style="text-align: center;">
                     <img
                       onclick="
                         document.querySelectorAll('.thumbnails img').forEach(img => img.classList.remove('selected'));
@@ -104,7 +175,15 @@
                       src="{{ s }}"
                       alt="{{ s }}"
                     />
-
+                    <div style="font-size: 0.75em;">
+                      {%- set filename = s | split(pat="/") | last -%}
+                      {%- if filename | length > 40 -%}
+                        {%- set ext = filename | split(pat=".") | last -%}
+                        {{ filename | replace(from="." ~ ext, to="") | truncate(length=32, end="...") }}.{{ ext }}
+                      {%- else -%}
+                        {{ filename }}
+                      {%- endif -%}
+                    </div>
                   </div>
                   {% endfor %}
                 </div>
@@ -152,7 +231,165 @@
         </fieldset>
 
       </div>
+      </form>
 
     </div>
+
+    <!-- Flash progress modal. -->
+    <div id="flashModal" class="flash-modal">
+      <div class="flash-modal-content">
+        <h2>Flashing to Display</h2>
+        <img id="modalImage" src="" alt=""/>
+        <div id="modalFilename" class="filename"></div>
+
+        <div id="progress1Container" class="progress-container">
+          <div class="progress-label">Flash 1</div>
+          <div class="progress-bar">
+            <div id="progress1" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <div id="progress2Container" class="progress-container" style="display: none;">
+          <div class="progress-label">Flash 2</div>
+          <div class="progress-bar">
+            <div id="progress2" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <div id="flashNote" class="flash-note">This takes about 40 seconds per flash...</div>
+        <button type="button" id="flashCloseBtn" style="display: none; margin-top: 15px;" onclick="document.getElementById('flashModal').classList.remove('active');">Close</button>
+      </div>
+    </div>
+
+    <script>
+      const FLASH_DURATION_MS = 40000;
+      let animationCancelled = false;
+      let isFlashing = false;
+
+      function animateProgress(elementId, durationMs, onComplete) {
+        const el = document.getElementById(elementId);
+        const startTime = Date.now();
+
+        function update() {
+          if (animationCancelled) return;
+
+          const elapsed = Date.now() - startTime;
+          const progress = Math.min(100, (elapsed / durationMs) * 100);
+          el.style.width = progress + '%';
+
+          if (progress < 100) {
+            requestAnimationFrame(update);
+          } else {
+            el.classList.add('complete');
+            if (onComplete) onComplete();
+          }
+        }
+        requestAnimationFrame(update);
+      }
+
+      function completeAllProgress() {
+        animationCancelled = true;
+        const p1 = document.getElementById('progress1');
+        const p2 = document.getElementById('progress2');
+        p1.style.width = '100%';
+        p1.classList.add('complete');
+        if (document.getElementById('progress2Container').style.display !== 'none') {
+          p2.style.width = '100%';
+          p2.classList.add('complete');
+        }
+      }
+
+      function showFlashResult(success, message) {
+        completeAllProgress();
+        const note = document.getElementById('flashNote');
+        const closeBtn = document.getElementById('flashCloseBtn');
+        const title = document.querySelector('.flash-modal-content h2');
+
+        if (success) {
+          title.textContent = '✓ Flash Complete!';
+          title.style.color = '#00ff88';
+          note.textContent = 'Image sent to display successfully.';
+          note.style.color = '#00ff88';
+        } else {
+          title.textContent = '✗ Flash Failed';
+          title.style.color = '#ff4444';
+          note.textContent = message || 'An error occurred.';
+          note.style.color = '#ff4444';
+        }
+        closeBtn.style.display = 'inline-block';
+      }
+
+      document.querySelector('form[action="/flash"]').addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const imagePath = document.getElementById('submission.image_file_path').value;
+        if (!imagePath) {
+          alert('Please select an image first.');
+          return;
+        }
+
+        const flashTwice = document.querySelector('input[name="submission.flash_twice"]').checked;
+        const saturation = document.querySelector('select[name="submission.saturation"]').value;
+        const filename = imagePath.split('/').pop();
+
+        // Reset modal state.
+        animationCancelled = false;
+        document.getElementById('modalImage').src = imagePath;
+        document.getElementById('modalFilename').textContent = filename;
+        document.getElementById('progress1').style.width = '0%';
+        document.getElementById('progress1').classList.remove('complete');
+        document.getElementById('progress2').style.width = '0%';
+        document.getElementById('progress2').classList.remove('complete');
+        document.getElementById('flashNote').textContent = 'This takes about 40 seconds per flash...';
+        document.getElementById('flashNote').style.color = '#666';
+        document.getElementById('flashCloseBtn').style.display = 'none';
+        document.querySelector('.flash-modal-content h2').textContent = 'Flashing to Display';
+        document.querySelector('.flash-modal-content h2').style.color = '#00ccff';
+
+        // Show/hide second progress bar.
+        document.getElementById('progress2Container').style.display = flashTwice ? 'block' : 'none';
+
+        // Update label if only one flash.
+        document.querySelector('#progress1Container .progress-label').textContent =
+          flashTwice ? 'Flash 1' : 'Flashing...';
+
+        // Show modal.
+        document.getElementById('flashModal').classList.add('active');
+
+        // Start progress animation.
+        if (flashTwice) {
+          animateProgress('progress1', FLASH_DURATION_MS, function() {
+            animateProgress('progress2', FLASH_DURATION_MS);
+          });
+        } else {
+          animateProgress('progress1', FLASH_DURATION_MS);
+        }
+
+        // Submit via fetch.
+        const formData = new FormData();
+        formData.append('submission.image_file_path', imagePath);
+        formData.append('submission.saturation', saturation);
+        if (flashTwice) {
+          formData.append('submission.flash_twice', 'yes');
+        }
+
+        fetch('/flash', {
+          method: 'POST',
+          body: formData
+        })
+        .then(response => {
+          if (response.ok) {
+            showFlashResult(true);
+          } else {
+            return response.text().then(text => {
+              showFlashResult(false, 'Flash failed with status ' + response.status);
+            });
+          }
+        })
+        .catch(error => {
+          showFlashResult(false, 'Network error: ' + error.message);
+        });
+      });
+    </script>
   </body>
 </html>

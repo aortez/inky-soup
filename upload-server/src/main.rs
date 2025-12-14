@@ -1,6 +1,7 @@
 #[macro_use] extern crate rocket;
 
 use glob::glob;
+use image::imageops::FilterType;
 
 use rocket_dyn_templates::Template;
 use rocket::form::{Form, Contextual};
@@ -9,7 +10,12 @@ use rocket::http::Status;
 use rocket::serde::Serialize;
 
 use std::fs;
+use std::path::Path;
 use std::process::Command;
+
+// Inky Impression display resolution.
+const DISPLAY_WIDTH: u32 = 600;
+const DISPLAY_HEIGHT: u32 = 448;
 
 #[derive(Debug, FromForm)]
 struct DeleteSubmission {
@@ -56,11 +62,49 @@ struct TemplateContext {
     errors: Vec<String>
 }
 
+/// Creates a cached 600x448 version of an image for the e-ink display.
+/// Returns Ok(()) on success, or an error message on failure.
+fn create_cached_image(original_path: &str) -> Result<(), String> {
+    let path = Path::new(original_path);
+    let filename = path.file_name()
+        .ok_or("Invalid filename")?
+        .to_str()
+        .ok_or("Invalid filename encoding")?;
+
+    let cache_path = format!("static/images/cache/{}", filename);
+
+    println!("Creating cached image: {} -> {}", original_path, cache_path);
+
+    let img = image::open(original_path)
+        .map_err(|e| format!("Failed to open image: {}", e))?;
+
+    let resized = img.resize_exact(DISPLAY_WIDTH, DISPLAY_HEIGHT, FilterType::Lanczos3);
+
+    resized.save(&cache_path)
+        .map_err(|e| format!("Failed to save cached image: {}", e))?;
+
+    println!("Cached image created: {}", cache_path);
+    Ok(())
+}
+
+/// Gets the cache path for a given original image path.
+fn get_cache_path(original_path: &str) -> String {
+    let path = Path::new(original_path);
+    let filename = path.file_name()
+        .map(|f| f.to_str().unwrap_or("unknown"))
+        .unwrap_or("unknown");
+    format!("static/images/cache/{}", filename)
+}
+
 fn get_gallery_image_paths() -> Vec<String> {
     let mut images: Vec<String> = Vec::new();
     for entry in glob("static/images/*").expect("Failed to read glob pattern") {
         match entry {
             Ok(path) => {
+                // Skip the cache directory.
+                if path.is_dir() {
+                    continue;
+                }
                 let file_name = format!("images/{}", path.file_name().unwrap().to_str().unwrap().to_string());
                 println!("found image file {}", file_name);
                 images.push(file_name);
@@ -96,17 +140,26 @@ async fn submit_delete_image<'r>(mut form: Form<Contextual<'r, SubmitDeleteImage
             let image_file = format!("static/{}", submission.submission.image_file_path.clone());
             println!("image_file: {}", image_file);
 
-            // Delete it!
+            // Delete original.
             let remove_result = fs::remove_file(image_file.clone());
             println!("remove_result: {:#?}", remove_result);
 
             match remove_result {
                 Ok(_e) => {
-                    messages.push(format!("succesfully removed image: {}", submission.submission.image_file_path.clone()));
+                    messages.push(format!("Successfully removed image: {}", submission.submission.image_file_path.clone()));
                 },
                 Err(e) => {
                     println!("{:#?}", e);
                     errors.push(format!("A very sad error: {}", e));
+                }
+            }
+
+            // Also delete cached version if it exists.
+            let cache_path = get_cache_path(&image_file);
+            if Path::new(&cache_path).exists() {
+                match fs::remove_file(&cache_path) {
+                    Ok(_) => println!("Removed cached image: {}", cache_path),
+                    Err(e) => println!("Failed to remove cached image: {}", e),
                 }
             }
         }
@@ -134,11 +187,30 @@ async fn submit_flash_image<'r>(mut form: Form<Contextual<'r, SubmitFlashImage>>
             // Saturation param.
             let saturation = &submission.submission.saturation;
 
+            // Use cached image if available, otherwise create it first.
+            let original_path = format!("static/{}", submission.submission.image_file_path.clone());
+            let cache_path = get_cache_path(&original_path);
+            let image_file = if Path::new(&cache_path).exists() {
+                println!("Using cached image: {}", cache_path);
+                cache_path
+            } else {
+                println!("Cache not found, creating from original: {}", original_path);
+                match create_cached_image(&original_path) {
+                    Ok(()) => {
+                        println!("Cache created, using: {}", cache_path);
+                        cache_path
+                    }
+                    Err(e) => {
+                        println!("Failed to create cache ({}), using original: {}", e, original_path);
+                        original_path
+                    }
+                }
+            };
+
             // Run image update script to flash image to display.
             let mut flash_command = Command::new("python3");
-            let image_file = format!("static/{}", submission.submission.image_file_path.clone());
             flash_command.arg("./update-image.py")
-                .arg(image_file)
+                .arg(&image_file)
                 .arg(saturation.to_string());
 
             let status = flash_command.status()
@@ -203,10 +275,19 @@ async fn submit_new_image<'r>(mut form: Form<Contextual<'r, SubmitNewImage<'r>>>
             let gallery_result = file.copy_to(image_file_path.clone()).await;
             println!("image_file_path: {}, gallery_result: {:#?}", image_file_path, gallery_result);
 
+            // Create cached 600x448 version for faster flashing.
+            let mut messages = vec![format!("Upload successful! Uploaded: {:#?}", file.raw_name().unwrap().dangerous_unsafe_unsanitized_raw())];
+            let mut errors = vec![];
+
+            match create_cached_image(&image_file_path) {
+                Ok(()) => messages.push("Cached version created for fast flashing.".to_string()),
+                Err(e) => errors.push(format!("Warning: Failed to create cache: {}", e)),
+            }
+
             Template::render("index", &TemplateContext {
                 images: get_gallery_image_paths(),
-                values: vec![format!("Upload successful! Uploaded: {:#?}", file.raw_name().unwrap().dangerous_unsafe_unsanitized_raw())],
-                errors: vec![],
+                values: messages,
+                errors,
             })
         }
         None => {
@@ -227,7 +308,10 @@ async fn submit_new_image<'r>(mut form: Form<Contextual<'r, SubmitNewImage<'r>>>
 #[launch]
 fn rocket() -> _ {
     let create_result = fs::create_dir_all("static/images/");
-    println!("created images directory: {:#?}", create_result);
+    println!("Created images directory: {:#?}", create_result);
+
+    let cache_result = fs::create_dir_all("static/images/cache/");
+    println!("Created cache directory: {:#?}", cache_result);
 
     rocket::build()
         .mount("/", routes![submit_delete_image, submit_flash_image, submit_new_image, upload_form])
