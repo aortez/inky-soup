@@ -346,7 +346,6 @@
       #uploadBtn:disabled,
       #flashBtn:disabled,
       #editFilterBtn:disabled,
-      #applyFilterBtn:disabled,
       #filterSelect:disabled {
         opacity: 0.5;
         cursor: not-allowed;
@@ -470,14 +469,13 @@
 
           <div style="margin-bottom: 15px;">
             <label for="filterSelect" style="font-weight: bold;">Resampling Filter:</label>
-            <select id="filterSelect" onchange="updatePreview()" style="margin-left: 10px;" disabled>
+            <select id="filterSelect" style="margin-left: 10px;" disabled>
               <option value="CatmullRom">CatmullRom (Balanced)</option>
               <option value="Lanczos3">Lanczos3 (Sharp)</option>
               <option value="Gaussian">Gaussian (Smooth)</option>
               <option value="Triangle">Triangle (Fast)</option>
             </select>
             <button type="button" id="editFilterBtn" onclick="openFilterEditor()" style="margin-left: 10px;" class="button" disabled>Edit Filter...</button>
-            <button type="button" id="applyFilterBtn" onclick="applyFilter()" style="margin-left: 10px;" class="button primary" disabled>Apply Filter</button>
             <span id="filterStatus" style="margin-left: 10px; font-size: 0.85em; color: #666;"></span>
           </div>
 
@@ -1174,7 +1172,6 @@
         document.getElementById('flashBtn').disabled = false;
         document.getElementById('filterSelect').disabled = false;
         document.getElementById('editFilterBtn').disabled = false;
-        document.getElementById('applyFilterBtn').disabled = false;
       }
 
       // Placeholder selection helper (for uncached images - allows deletion).
@@ -1196,68 +1193,6 @@
         document.getElementById('flashBtn').disabled = true;
         document.getElementById('filterSelect').disabled = true;
         document.getElementById('editFilterBtn').disabled = true;
-        document.getElementById('applyFilterBtn').disabled = true;
-      }
-
-      // Update preview image when filter changes (uses slow preview endpoint).
-      function updatePreview() {
-        if (!currentFilename) return;
-
-        const filter = document.getElementById('filterSelect').value;
-
-        // If filter matches the saved/cached version, just show the cached image.
-        if (filter === currentSavedFilter) {
-          document.getElementById('preview').src = 'images/cache/' + currentFilename + '.png';
-          return;
-        }
-
-        // Otherwise, fetch a preview with the new filter.
-        const previewImg = document.getElementById('preview');
-        const previewUrl = '/api/preview/' + encodeURIComponent(currentFilename) + '?filter=' + filter;
-
-        // Add timestamp to prevent browser caching.
-        previewImg.src = previewUrl + '&t=' + Date.now();
-      }
-
-      // Apply the selected filter and regenerate cache.
-      function applyFilter() {
-        if (!currentFilename) {
-          alert('Please select an image first.');
-          return;
-        }
-
-        const filter = document.getElementById('filterSelect').value;
-        const statusEl = document.getElementById('filterStatus');
-        statusEl.textContent = 'Applying...';
-        statusEl.style.color = '#666';
-
-        fetch('/api/apply-filter', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: 'filename=' + encodeURIComponent(currentFilename) + '&filter=' + encodeURIComponent(filter)
-        })
-        .then(r => r.json())
-        .then(data => {
-          if (data.success) {
-            statusEl.textContent = '✓ ' + data.message;
-            statusEl.style.color = '#6B8E4E';
-
-            // Update the thumbnail's data-filter attribute.
-            const thumb = document.querySelector('img[data-filename="' + currentFilename + '"]');
-            if (thumb) {
-              thumb.dataset.filter = filter;
-              // Refresh the thumbnail image (caches are always .png).
-              thumb.src = 'images/cache/' + currentFilename + '.png?t=' + Date.now();
-            }
-          } else {
-            statusEl.textContent = '✗ ' + data.message;
-            statusEl.style.color = '#cc0000';
-          }
-        })
-        .catch(err => {
-          statusEl.textContent = '✗ Error: ' + err.message;
-          statusEl.style.color = '#cc0000';
-        });
       }
 
       // Poll for cache status and replace placeholder when ready.

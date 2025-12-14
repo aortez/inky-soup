@@ -1,16 +1,19 @@
 # Inky Soup
 
-# Introduction
+## Intro
 Inky Soup is automation for displaying images on the Pimoroni Inky Impression e-ink screen.
-It provides users with a web page that they can use to flash images
-to their Inky Impression.  
+It provides users with a web app that they can use to flash images to their Inky Impression.
+
+![Example of Web Page](./inky-soup-uploader.png "Example of Web Page")
 
 I suggest using a Pi Zero W, as it has low compute requirements and when combined with the e-ink display, it has very low power utilization (~1 watt peak).
 
-## Web Page
-![Example of Web Page](./inky-soup-uploader.png "Example of Web Page")
+The web app mostly keeps computation client side and maintains caches to avoid recompuating things.
+
+It provides a nice gallery for viewing/managing/processing and of course flashing your images.
 
 ## Example Display Build
+
 ![Example of Inky Impression Display](./inky-soup-display.jpg "Example of Display")
 
 ![A Goose](./upload-server/static/favicon.ico "A Goose")
@@ -92,18 +95,14 @@ This copies files directly to a mounted SD card via a remote machine (useful for
 
 # TODO
 
-## Basic
-* add validator for image types
-* logging
-
 ## Image Gallery
-* Hard code some limit to how many pictures can be uploaded?
-* Some kind of confirmation dialog for the delete button?
+- [ ] Confirmation dialog for the delete button.
+- [ ] Arbitrary hard limit on number of uploaded images.
 
 ## Image Rotation
-* [ ] Add a way to show a random image at a fixed interval.
-* [ ] Add a way to rotate images in sequential order.
-* [ ] Add a way to configure the change interval.
+- [ ] Show a random image at a fixed interval.
+- [ ] Allow user to assign values to each image's likely hood of being in the rotation.  The default value is zero.
+- [ ] Configure the change interval.
 
 ## Advanced
-* preview image before flashing? allow user to crop interactively?
+- [ ] Interactive cropping sometime before flashing... when?

@@ -1,17 +1,19 @@
 #[macro_use] extern crate rocket;
 
 mod cache_worker;
+mod cleanup;
 mod metadata;
 
 use glob::glob;
 
 use rocket_dyn_templates::Template;
+use rocket::fairing::{Fairing, Info, Kind};
 use rocket::form::{Form, Contextual};
 use rocket::fs::{FileServer, TempFile};
-use rocket::http::{ContentType, Status};
 use rocket::response::Redirect;
 use rocket::serde::json::Json;
 use rocket::serde::Serialize;
+use rocket::Rocket;
 
 use std::fs;
 use std::path::Path;
@@ -126,27 +128,6 @@ fn cache_status(filename: &str) -> Json<CacheStatus> {
     })
 }
 
-/// API endpoint to preview an image with a specific filter (without saving).
-#[get("/api/preview/<filename>?<filter>")]
-fn preview_image(filename: &str, filter: Option<&str>) -> Result<(ContentType, Vec<u8>), Status> {
-    let filter_name = filter.unwrap_or(metadata::default_filter_name());
-    let original_path = format!("static/images/{}", filename);
-
-    if !Path::new(&original_path).exists() {
-        return Err(Status::NotFound);
-    }
-
-    let filter_type = metadata::parse_filter(filter_name);
-
-    match cache_worker::resize_image_to_bytes(Path::new(&original_path), filter_type) {
-        Ok(bytes) => Ok((ContentType::PNG, bytes)),
-        Err(e) => {
-            println!("Preview failed: {}", e);
-            Err(Status::InternalServerError)
-        }
-    }
-}
-
 /// Response for upload-dithered endpoint.
 #[derive(Serialize)]
 #[serde(crate = "rocket::serde")]
@@ -187,8 +168,8 @@ async fn upload_dithered(mut form: Form<DitheredUpload<'_>>) -> Json<UploadDithe
     let filename = form.filename.clone();
     let saturation = form.saturation;
 
-    // Save dithered image to dithered directory.
-    let dithered_path = format!("static/images/dithered/{}", filename);
+    // Save dithered image to dithered directory (always as PNG).
+    let dithered_path = format!("static/images/dithered/{}.png", filename);
 
     match form.file.copy_to(&dithered_path).await {
         Ok(()) => {
@@ -200,7 +181,7 @@ async fn upload_dithered(mut form: Form<DitheredUpload<'_>>) -> Json<UploadDithe
             Json(UploadDitheredResponse {
                 success: true,
                 message: format!("Dithered image uploaded successfully"),
-                path: Some(format!("images/dithered/{}", filename)),
+                path: Some(format!("images/dithered/{}.png", filename)),
             })
         }
         Err(e) => {
@@ -233,7 +214,7 @@ async fn upload_cache(mut form: Form<CacheUpload<'_>>) -> Json<UploadCacheRespon
                 metadata::clear_dithered_cache(&filename);
 
                 // Remove dithered file if it exists.
-                let dithered_path = format!("static/images/dithered/{}", filename);
+                let dithered_path = format!("static/images/dithered/{}.png", filename);
                 if Path::new(&dithered_path).exists() {
                     let _ = fs::remove_file(&dithered_path);
                     println!("Removed dithered cache due to filter change: {}", dithered_path);
@@ -331,7 +312,7 @@ async fn submit_flash_image<'r>(mut form: Form<Contextual<'r, SubmitFlashImage>>
                 .unwrap_or("unknown");
 
             // Require pre-dithered version to exist (uploaded from preview dialog).
-            let dithered_path = format!("static/images/dithered/{}", filename);
+            let dithered_path = format!("static/images/dithered/{}.png", filename);
             if !Path::new(&dithered_path).exists() {
                 println!("Error: Pre-dithered image not found: {}", dithered_path);
                 return Redirect::to(uri!(upload_form));
@@ -407,6 +388,24 @@ async fn submit_new_image<'r>(
     Redirect::to(uri!(upload_form))
 }
 
+/// Fairing to spawn background cleanup task.
+struct CleanupFairing;
+
+#[rocket::async_trait]
+impl Fairing for CleanupFairing {
+    fn info(&self) -> Info {
+        Info {
+            name: "Cleanup Worker",
+            kind: Kind::Liftoff,
+        }
+    }
+
+    async fn on_liftoff(&self, _rocket: &Rocket<rocket::Orbit>) {
+        println!("Starting background cleanup worker (runs every 5 minutes)...");
+        cleanup::spawn_cleanup_task();
+    }
+}
+
 #[launch]
 fn rocket() -> _ {
     let create_result = fs::create_dir_all("static/images/");
@@ -421,7 +420,6 @@ fn rocket() -> _ {
     rocket::build()
         .mount("/", routes![
             cache_status,
-            preview_image,
             submit_delete_image,
             submit_flash_image,
             submit_new_image,
@@ -431,4 +429,5 @@ fn rocket() -> _ {
         ])
         .mount("/", FileServer::from("static"))
         .attach(Template::fairing())
+        .attach(CleanupFairing)
 }

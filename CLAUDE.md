@@ -4,25 +4,84 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Inky Soup is a web-based image display system for Pimoroni Inky Impression e-ink screens, designed to run on Raspberry Pi Zero W. The project has two core components working in tandem:
+Inky Soup is a web-based image display system for Pimoroni Inky Impression e-ink screens, designed to run on Raspberry Pi Zero W. The project has three layers:
 
-1. **Rust web server** (`upload-server/`) - Rocket-based web application for image upload, gallery management, and display control.
-2. **Python display script** (`update-image.py`) - Hardware interface script that flashes images to the e-ink display.
+1. **Rust web server** (`upload-server/`) — Rocket-based web application for file storage, gallery management, and hardware control.
+2. **Client-side JavaScript** — Web Workers for image processing (resizing, dithering) in the browser.
+3. **Python display script** (`update-image.py`) — Hardware interface that flashes pre-processed images to the e-ink display.
 
 ## Architecture
 
-### Component Interaction Flow
-- User uploads image via web form → Rocket server saves to `static/images/` → Gallery updates.
-- User selects image and clicks "Flash" → Server invokes `update-image.py` with image path and saturation → Python script drives e-ink hardware.
-- Images are resized to 600x448 by the Python script if needed (native Inky Impression resolution).
+### Processing Pipeline
+
+All image processing happens **client-side** to keep the Pi Zero lightweight:
+
+```
+Browser                              Server                    Hardware
+───────                              ──────                    ────────
+Upload image ──────────────────────► Save original
+                                     (static/images/)
+       │
+       ├─► Filter Worker ──────────► Save cache thumbnail
+       │   (resize 600x448)          (static/images/cache/*.png)
+       │
+       ▼
+Select image, click Flash
+       │
+       ├─► Dither Worker
+       │   (Floyd-Steinberg,
+       │    7-color palette)
+       │
+       ▼
+Adjust saturation slider
+       │
+       ▼
+Click "Flash to Display" ──────────► Save dithered image ────► Python script
+                                     (static/images/dithered/) (update-image.py)
+                                                                     │
+                                                                     ▼
+                                                               E-ink display
+```
+
+### Rust Server Modules (`upload-server/src/`)
+
+| Module | Purpose |
+|--------|---------|
+| `main.rs` | Routes, forms, gallery logic, fairing setup |
+| `metadata.rs` | Per-image settings (filter, saturation) stored in JSON |
+| `cache_worker.rs` | Utility for cache path computation |
+| `cleanup.rs` | Background task that removes orphaned files every 5 minutes |
+
+### JavaScript Modules (`upload-server/static/js/`)
+
+| File | Purpose |
+|------|---------|
+| `dither.js` | Floyd-Steinberg dithering for 7-color e-ink palette |
+| `filters.js` | Image resampling kernels (Lanczos3, CatmullRom, Bilinear, Nearest) |
+| `filter-worker.js` | Web Worker for non-blocking resize operations |
+| `dither-worker.js` | Web Worker for non-blocking dither operations |
+
+### Data Storage
+
+```
+static/images/
+├── *.jpg, *.png, ...      # Original uploaded images
+├── cache/
+│   └── {filename}.png     # Resized thumbnails (600x448)
+├── dithered/
+│   └── {filename}.png     # Pre-dithered images ready for flashing
+└── metadata.json          # Per-image settings (filter preference, saturation)
+```
 
 ### Key Design Decisions
-- Cross-compilation from x86_64 to ARM (Pi Zero) using `cross` with Docker for proper ARMv6 support.
-- The Pi Zero (original) uses ARMv6, which requires special handling - standard Debian toolchains generate ARMv7 instructions that cause illegal instruction errors.
-- Server creates `static/images/` directory at startup if missing.
-- File uploads limited to 10 MiB (configured in `Rocket.toml`).
-- "Flash twice" option exists to overcome e-ink ghosting effects.
-- Templates use Tera template engine with shared macros in `macros.html.tera`.
+
+- **Client-side processing** — All resizing and dithering runs in the browser via Web Workers, keeping the Pi Zero's CPU free.
+- **Pre-dithered flashing** — The server requires a pre-dithered PNG before flashing; Python script just sends bytes to hardware.
+- **Background cleanup** — A Rocket fairing spawns a task that removes orphaned cache/dithered files every 5 minutes.
+- **Cross-compilation** — Uses `cross` with Docker for ARMv6 support (Pi Zero's architecture).
+- **File naming** — Cache and dithered files are always PNG, named `{original}.png` (e.g., `photo.jpg.png`).
+- **Templates** — Tera template engine; main UI in `index.html.tera` with shared macros in `macros.html.tera`.
+- **"Flash twice" option** — Overcomes e-ink ghosting by flashing the image twice.
 
 ## Build and Development
 
@@ -81,6 +140,18 @@ For initial setup or headless deployment via a mounted SD card:
 SDCARD_ROOT=/media/user/rootfs ./deploy-sdcard.sh
 ```
 
+## API Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/` | Main gallery page |
+| `POST` | `/upload` | Upload original image |
+| `POST` | `/flash` | Flash pre-dithered image to display |
+| `POST` | `/delete` | Delete image and associated cache/dithered files |
+| `GET` | `/api/cache-status/<filename>` | Check if cache thumbnail exists |
+| `POST` | `/api/upload-cache` | Upload client-generated cache thumbnail |
+| `POST` | `/api/upload-dithered` | Upload client-generated dithered image |
+
 ## Known Issues
 
 ### Test File Mismatch
@@ -102,8 +173,17 @@ To tail logs on the remote Pi:
 DEPLOY_USER=oldman INKY_SOUP_IP=inky-soup.local ./tail_remote_logs.sh
 ```
 
-## Python Dependencies
+## Python Script
 
-The `update-image.py` script requires:
-- `pillow` (PIL) for image processing.
-- `inky` library (Pimoroni's e-ink driver for `inky_uc8159` model).
+The `update-image.py` script receives pre-dithered PNG images from the server and flashes them to the display.
+
+**Dependencies:**
+- `pillow` (PIL) — Image loading.
+- `inky` library — Pimoroni's e-ink driver for `inky_uc8159` model.
+
+**Usage:**
+```bash
+python3 update-image.py <image-path> [saturation] [--skip-dither]
+```
+
+The `--skip-dither` flag is always used now since dithering happens client-side.

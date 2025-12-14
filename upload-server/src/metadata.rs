@@ -1,4 +1,3 @@
-use image::imageops::FilterType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -96,26 +95,6 @@ pub fn remove_image_metadata(filename: &str) {
     if cache.remove(filename).is_some() {
         save_metadata_to_file(&cache);
     }
-}
-
-/// Converts a filter name string to FilterType.
-pub fn parse_filter(filter_name: &str) -> FilterType {
-    match filter_name {
-        "Lanczos3" => FilterType::Lanczos3,
-        "CatmullRom" => FilterType::CatmullRom,
-        "Gaussian" => FilterType::Gaussian,
-        "Triangle" => FilterType::Triangle,
-        "Nearest" => FilterType::Nearest,
-        _ => {
-            println!("Unknown filter '{}', using default CatmullRom", filter_name);
-            FilterType::CatmullRom
-        }
-    }
-}
-
-/// Returns the default filter name.
-pub fn default_filter_name() -> &'static str {
-    DEFAULT_FILTER
 }
 
 /// Sets the dithered saturation value for an image.
