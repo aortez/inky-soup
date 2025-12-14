@@ -1,13 +1,40 @@
 #!/bin/bash
 #
-# Sets up cross-compilation toolchain for Raspberry Pi Zero (ARM).
+# Sets up cross-compilation toolchain for Raspberry Pi Zero (ARMv6).
+# Uses 'cross' (https://github.com/cross-rs/cross) which provides Docker-based
+# cross-compilation with the correct stdlib for ARMv6.
+#
 # This script is idempotent - safe to run multiple times.
 
 set -e
 
-echo "Setting up ARM cross-compilation environment..."
+echo "Setting up ARM cross-compilation environment for Pi Zero..."
 
-# Check if ARM target is already installed.
+# Check if Docker is installed and running.
+if ! command -v docker &> /dev/null; then
+    echo "ERROR: Docker is required but not installed."
+    echo "Please install Docker first: https://docs.docker.com/engine/install/"
+    exit 1
+fi
+
+if ! docker info &> /dev/null; then
+    echo "ERROR: Docker is installed but not running or you don't have permission."
+    echo "Try: sudo systemctl start docker"
+    echo "Or add yourself to the docker group: sudo usermod -aG docker \$USER"
+    exit 1
+fi
+echo "✓ Docker is available"
+
+# Check if cross is installed.
+if command -v cross &> /dev/null || [ -x "$HOME/.cargo/bin/cross" ]; then
+    echo "✓ cross is already installed"
+else
+    echo "Installing cross..."
+    cargo install cross
+    echo "✓ cross installed"
+fi
+
+# Check if ARM target is installed (cross needs this too).
 if rustup target list --installed | grep -q arm-unknown-linux-gnueabihf; then
     echo "✓ ARM target already installed"
 else
@@ -16,36 +43,10 @@ else
     echo "✓ ARM target installed"
 fi
 
-# Check if ARM GCC linker is installed.
-if command -v arm-linux-gnueabihf-gcc &> /dev/null; then
-    echo "✓ ARM GCC linker already installed"
-else
-    echo "Installing ARM GCC linker..."
-    echo "This requires sudo and will install: gcc-arm-linux-gnueabihf"
-    sudo apt-get update
-    sudo apt-get install -y gcc-arm-linux-gnueabihf
-    echo "✓ ARM GCC linker installed"
-fi
-
-# Create or update cargo config.
-CARGO_CONFIG_DIR="$HOME/.cargo"
-CARGO_CONFIG_FILE="$CARGO_CONFIG_DIR/config.toml"
-
-mkdir -p "$CARGO_CONFIG_DIR"
-
-# Check if config already has the ARM linker setting.
-if [ -f "$CARGO_CONFIG_FILE" ] && grep -q "\[target.arm-unknown-linux-gnueabihf\]" "$CARGO_CONFIG_FILE"; then
-    echo "✓ Cargo config already has ARM linker setting"
-else
-    echo "Configuring cargo linker for ARM..."
-    cat >> "$CARGO_CONFIG_FILE" << 'EOF'
-
-[target.arm-unknown-linux-gnueabihf]
-linker = "arm-linux-gnueabihf-gcc"
-EOF
-    echo "✓ Cargo config updated"
-fi
-
 echo ""
 echo "Cross-compilation setup complete!"
-echo "You can now run: ./deploy.sh"
+echo ""
+echo "To build for Pi Zero, use:"
+echo "  cross build --release --target=arm-unknown-linux-gnueabihf"
+echo ""
+echo "Or run: ./deploy.sh"

@@ -134,24 +134,43 @@ async fn submit_flash_image<'r>(mut form: Form<Contextual<'r, SubmitFlashImage>>
             // Saturation param.
             let saturation = &submission.submission.saturation;
 
-            // Run image update script to flash image to display!
+            // Run image update script to flash image to display.
             let mut flash_command = Command::new("python3");
             let image_file = format!("static/{}", submission.submission.image_file_path.clone());
             flash_command.arg("./update-image.py")
                 .arg(image_file)
                 .arg(saturation.to_string());
-            flash_command.status()
-                .expect("process failed to execute");
+
+            let status = flash_command.status()
+                .expect("failed to execute flash command");
+
+            if !status.success() {
+                let exit_code = status.code().unwrap_or(-1);
+                println!("flash command failed with exit code: {}", exit_code);
+                return (Status::InternalServerError, Template::render("index", &TemplateContext {
+                    images: get_gallery_image_paths(),
+                    values: vec![],
+                    errors: vec![format!("Flash failed with exit code: {}", exit_code)],
+                }));
+            }
 
             // Maybe do it a second time.
             let flash_twice = submission.submission.flash_twice;
             if flash_twice {
                 println!("flashing a second time...");
-                flash_command.status()
-                    .expect("process failed to execute");
+                let status2 = flash_command.status()
+                    .expect("failed to execute flash command");
+                if !status2.success() {
+                    let exit_code = status2.code().unwrap_or(-1);
+                    println!("second flash command failed with exit code: {}", exit_code);
+                    return (Status::InternalServerError, Template::render("index", &TemplateContext {
+                        images: get_gallery_image_paths(),
+                        values: vec![],
+                        errors: vec![format!("Second flash failed with exit code: {}", exit_code)],
+                    }));
+                }
             }
 
-            // TODO: check success of flashing, as it isn't always a success.
             Template::render("success", &form.context)
         }
         None => Template::render("index", &form.context),
