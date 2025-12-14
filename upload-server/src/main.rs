@@ -173,7 +173,16 @@ async fn submit_flash_image<'r>(mut form: Form<Contextual<'r, SubmitFlashImage>>
 
             Template::render("success", &form.context)
         }
-        None => Template::render("index", &form.context),
+        None => {
+            let errors: Vec<String> = form.context.errors()
+                .map(|e| e.to_string())
+                .collect();
+            Template::render("index", &TemplateContext {
+                images: get_gallery_image_paths(),
+                values: vec![],
+                errors,
+            })
+        }
     };
 
     (form.context.status(), template)
@@ -200,7 +209,16 @@ async fn submit_new_image<'r>(mut form: Form<Contextual<'r, SubmitNewImage<'r>>>
                 errors: vec![],
             })
         }
-        None => Template::render("index", &form.context),
+        None => {
+            let errors: Vec<String> = form.context.errors()
+                .map(|e| e.to_string())
+                .collect();
+            Template::render("index", &TemplateContext {
+                images: get_gallery_image_paths(),
+                values: vec![],
+                errors,
+            })
+        }
     };
 
     (form.context.status(), template)

@@ -23,11 +23,42 @@ The project consists of two components:
 for all the web stuff.
 1. A python script for flashing the images to the screen.
 
-## First-Time Setup
+## Prerequisites
+
+**On your development machine:**
+- Rust (via rustup)
+- Docker (required for cross-compilation)
+
+**On your Pi Zero:**
+- Raspberry Pi OS (tested with Trixie/Bookworm)
+- Python 3 with `pillow` and `inky` libraries
+- SPI and I2C enabled
+
+## Pi Zero Setup
+
+Enable SPI and I2C in `/boot/firmware/config.txt`:
+
+```
+dtparam=i2c_arm=on
+dtparam=spi=on
+dtoverlay=spi0-0cs
+```
+
+Install Python dependencies on the Pi:
+
+```bash
+sudo apt-get install -y python3-pil python3-numpy python3-spidev python3-smbus2
+pip3 install --break-system-packages inky
+```
+
+## First-Time Setup (Development Machine)
 
 Set up cross-compilation tools (only needed once):
 
     ./setup-crosscompile.sh
+
+This installs `cross`, a Docker-based cross-compilation tool that properly supports
+the Pi Zero's ARMv6 architecture.
 
 ## Deploy to Your Pi
 
@@ -35,21 +66,29 @@ Use the deploy script to build and deploy to your Pi:
 
     INKY_SOUP_IP=<your Pi's IP or hostname> ./deploy.sh
 
-This builds an optimized release binary and deploys it to your Pi.
+For non-default usernames (default is `pi`):
 
-Then, run the image server by hand:
+    DEPLOY_USER=oldman INKY_SOUP_IP=inky-soup.local ./deploy.sh
 
-    cd inky-soup
-    ./upload-server
+This builds an optimized release binary, deploys it to your Pi, and automatically restarts the service.
 
-Or, run it as a service:
+To enable the service on first deployment (so it starts on boot):
 
-    cd inky-soup
-    cp inky-soup.service /etc/systemd/system/
-    sudo systemctl start inky-soup.service
+    ssh <your-pi> "sudo systemctl enable inky-soup.service"
 
-Now, visit your PI in a web browser (port 8000) over your local network and start uploading
-images!
+Now, visit your Pi in a web browser (port 8000) over your local network and start uploading images!
+
+To tail logs on the remote Pi:
+
+    DEPLOY_USER=oldman INKY_SOUP_IP=inky-soup.local ./tail_remote_logs.sh
+
+## SD Card Deployment
+
+For initial setup or when the Pi isn't on the network, use the SD card deploy script:
+
+    SDCARD_ROOT=/media/user/rootfs ./deploy-sdcard.sh
+
+This copies files directly to a mounted SD card via a remote machine (useful for headless setup).
 
 # TODO
 

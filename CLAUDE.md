@@ -17,7 +17,8 @@ Inky Soup is a web-based image display system for Pimoroni Inky Impression e-ink
 - Images are resized to 600x448 by the Python script if needed (native Inky Impression resolution).
 
 ### Key Design Decisions
-- Cross-compilation from x86_64 to ARM (Pi Zero) using `arm-unknown-linux-gnueabihf` target.
+- Cross-compilation from x86_64 to ARM (Pi Zero) using `cross` with Docker for proper ARMv6 support.
+- The Pi Zero (original) uses ARMv6, which requires special handling - standard Debian toolchains generate ARMv7 instructions that cause illegal instruction errors.
 - Server creates `static/images/` directory at startup if missing.
 - File uploads limited to 10 MiB (configured in `Rocket.toml`).
 - "Flash twice" option exists to overcome e-ink ghosting effects.
@@ -41,46 +42,65 @@ First-time setup (automated):
 ```
 
 This script (idempotent, safe to run multiple times):
+- Checks for Docker (required for `cross`).
+- Installs `cross` via cargo (Docker-based cross-compilation).
 - Installs ARM target via rustup.
-- Installs ARM GCC linker.
-- Configures cargo with ARM linker settings.
 
 Manual build for Pi:
 ```bash
 cd upload-server
-cargo build --release --target=arm-unknown-linux-gnueabihf
+cross build --release --target=arm-unknown-linux-gnueabihf
 # Binary: target/arm-unknown-linux-gnueabihf/release/upload-server
 ```
+
+**Why `cross` instead of `cargo`?** The Pi Zero uses ARMv6, but the standard Debian `arm-linux-gnueabihf-gcc` toolchain generates ARMv7 instructions by default. This causes "illegal instruction" (SIGILL) errors on the Pi Zero. The `cross` tool uses Docker containers with properly configured toolchains.
 
 ### Deployment
 ```bash
 INKY_SOUP_IP=<pi-hostname-or-ip> ./deploy.sh
 ```
 
+For non-default usernames:
+```bash
+DEPLOY_USER=oldman INKY_SOUP_IP=inky-soup.local ./deploy.sh
+```
+
 The deploy script:
-- Validates prerequisites (ARM toolchain, INKY_SOUP_IP variable).
-- Builds optimized release binary for ARM target.
+- Validates prerequisites (Docker, `cross`, INKY_SOUP_IP variable).
+- Builds optimized release binary using `cross` for ARM target.
 - Stages binary, templates, static files, and Python script in `/tmp/inky-soup`.
+- Stops the running service (if any) to unlock the binary.
 - SCPs everything to Pi.
-- Provides post-deployment instructions.
+- Installs and restarts the systemd service automatically.
 
 To build debug binary instead: `BUILD_TYPE=debug INKY_SOUP_IP=<ip> ./deploy.sh`
+
+### SD Card Deployment
+For initial setup or headless deployment via a mounted SD card:
+```bash
+SDCARD_ROOT=/media/user/rootfs ./deploy-sdcard.sh
+```
 
 ## Known Issues
 
 ### Test File Mismatch
 `src/tests.rs` contains boilerplate Rocket form validation tests that don't match this application's forms (`FormInput`, `FormOption` don't exist in the actual code). These tests aren't active but should be replaced with real integration tests for upload/flash/delete endpoints.
 
-### Dependency Warning
-The `ubyte v0.10.1` dependency (from Rocket) will be rejected by future Rust versions. This is an upstream issue that will resolve when Rocket updates.
-
 ## Server Configuration
 
 Rocket configuration in `upload-server/Rocket.toml`:
 - Listens on `::` (all interfaces, IPv4 and IPv6).
 - Port 8000 in both debug and release modes.
-- File upload limit: 10 MiB.
+- File upload limit: 10 MiB (`file` limit).
+- Form data limit: 11 MiB (`data-form` limit, must exceed file limit for multipart uploads).
 - Template directory: `templates/`.
+
+## Debugging
+
+To tail logs on the remote Pi:
+```bash
+DEPLOY_USER=oldman INKY_SOUP_IP=inky-soup.local ./tail_remote_logs.sh
+```
 
 ## Python Dependencies
 

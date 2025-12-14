@@ -50,8 +50,8 @@ echo "Preparing deployment directory..."
 rm -rf $DEPLOY_TEMP_DIR
 mkdir -p $DEPLOY_TEMP_DIR
 
-# Stage service script.
-cp inky-soup.service $DEPLOY_TEMP_DIR
+# Stage service script with user substitution.
+sed "s/{{DEPLOY_USER}}/$DEPLOY_USER/g" inky-soup.service > $DEPLOY_TEMP_DIR/inky-soup.service
 
 # Build upload server using cross (proper ARMv6 support).
 echo "Building upload server ($BUILD_TYPE mode) for ARM..."
@@ -76,17 +76,19 @@ cp ./update-image.py $DEPLOY_TEMP_DIR
 
 # Deploy to your pi.
 echo "Deploying to $DEPLOY_USER@$INKY_SOUP_IP..."
+
+# Stop the service if running (binary can't be overwritten while in use).
+ssh "$DEPLOY_USER@$INKY_SOUP_IP" "sudo systemctl stop inky-soup.service 2>/dev/null || true"
+
 if scp -pr $DEPLOY_TEMP_DIR "$DEPLOY_USER@$INKY_SOUP_IP:~"; then
     echo "✓ Deployment successful!"
+
+    # Install and restart the service.
+    echo "Installing and starting service..."
+    ssh "$DEPLOY_USER@$INKY_SOUP_IP" "sudo cp ~/inky-soup/inky-soup.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl restart inky-soup.service"
+    echo "✓ Service restarted"
     echo ""
-    echo "On your Pi, run:"
-    echo "  cd ~/inky-soup"
-    echo "  ./upload-server"
-    echo ""
-    echo "Or to install as a service:"
-    echo "  sudo cp ~/inky-soup/inky-soup.service /etc/systemd/system/"
-    echo "  sudo systemctl daemon-reload"
-    echo "  sudo systemctl restart inky-soup.service"
+    echo "Server running at http://$INKY_SOUP_IP:8000/"
 else
     echo "ERROR: Deployment failed. Check network connection and SSH access."
     exit 1
