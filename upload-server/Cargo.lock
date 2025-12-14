@@ -2506,8 +2506,11 @@ version = "0.1.0"
 dependencies = [
  "glob",
  "image",
+ "lazy_static",
  "rocket",
  "rocket_dyn_templates",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 

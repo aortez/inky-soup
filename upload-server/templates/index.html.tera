@@ -237,6 +237,100 @@
         font-size: 0.65em;
         color: #888;
       }
+
+      /* Filter editor modal. */
+      .filter-editor-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.9);
+        z-index: 2000;
+        justify-content: center;
+        align-items: center;
+      }
+      .filter-editor-modal.active {
+        display: flex;
+      }
+      .filter-editor-content {
+        background: #1a1a1a;
+        border: 2px solid #00ccff;
+        border-radius: 8px;
+        padding: 30px;
+        max-width: 800px;
+        max-height: 90vh;
+        overflow-y: auto;
+        color: #fff;
+      }
+      .filter-editor-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+      .filter-editor-header h2 {
+        margin: 0;
+        color: #00ccff;
+      }
+      .filter-editor-header button {
+        background: none;
+        border: none;
+        color: #fff;
+        font-size: 2em;
+        cursor: pointer;
+        padding: 0;
+        line-height: 1;
+      }
+      .filter-editor-body {
+        text-align: center;
+      }
+      #filterCanvas {
+        border: 2px solid #444;
+        margin-bottom: 20px;
+        max-width: 100%;
+        height: auto;
+      }
+      .filter-controls {
+        margin: 20px 0;
+      }
+      .filter-buttons {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin: 15px 0;
+      }
+      .filter-buttons button {
+        padding: 10px 20px;
+        font-size: 1em;
+        border: 2px solid #555;
+        background: #222;
+        color: #fff;
+        cursor: pointer;
+        border-radius: 4px;
+        transition: all 0.2s;
+      }
+      .filter-buttons button:hover {
+        border-color: #00ccff;
+      }
+      .filter-buttons button.active {
+        background: #00ccff;
+        color: #000;
+        border-color: #00ccff;
+      }
+      .processing-indicator {
+        font-size: 0.9em;
+        color: #00ccff;
+        min-height: 1.5em;
+      }
+      .filter-editor-footer {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        margin-top: 20px;
+      }
     </style>
   <title>inky-soup - upload</title>
   </head>
@@ -298,7 +392,7 @@
 
                 <div class="row">
                   {% for img in images %}
-                  {%- set cache_path = "images/cache/" ~ img.filename -%}
+                  {%- set cache_path = "images/cache/" ~ img.filename ~ ".png" -%}
                   <div class="col" style="text-align: center;">
                     {% if img.cache_ready %}
                     <img
@@ -306,12 +400,15 @@
                       id="{{ img.path }}"
                       src="{{ cache_path }}"
                       alt="{{ img.path }}"
+                      data-filter="{{ img.filter }}"
+                      data-filename="{{ img.filename }}"
                     />
                     {% else %}
                     <div
                       class="thumbnail-placeholder"
                       data-filename="{{ img.filename }}"
                       data-path="{{ img.path }}"
+                      data-filter="{{ img.filter }}"
                     >
                       <div class="spinner"></div>
                       <span class="label">Caching...</span>
@@ -364,6 +461,19 @@
               )
           }}
           <br>
+
+          <div style="margin-bottom: 15px;">
+            <label for="filterSelect" style="font-weight: bold;">Resampling Filter:</label>
+            <select id="filterSelect" onchange="updatePreview()" style="margin-left: 10px;">
+              <option value="CatmullRom">CatmullRom (Balanced)</option>
+              <option value="Lanczos3">Lanczos3 (Sharp)</option>
+              <option value="Gaussian">Gaussian (Smooth)</option>
+              <option value="Triangle">Triangle (Fast)</option>
+            </select>
+            <button type="button" onclick="openFilterEditor()" style="margin-left: 10px;" class="button">Edit Filter...</button>
+            <button type="button" onclick="applyFilter()" style="margin-left: 10px;" class="button primary">Apply Filter</button>
+            <span id="filterStatus" style="margin-left: 10px; font-size: 0.85em; color: #666;"></span>
+          </div>
 
           Preview:
           <div class="preview" align="center">
@@ -447,17 +557,304 @@
       </div>
     </div>
 
+    <!-- Filter editor modal. -->
+    <div id="filterEditorModal" class="filter-editor-modal">
+      <div class="filter-editor-content">
+        <div class="filter-editor-header">
+          <div>
+            <h2>Filter Editor</h2>
+            <span id="filterEditorFilename" style="color: #aaa; font-size: 0.9em;"></span>
+          </div>
+          <button onclick="closeFilterEditor()" title="Close">&times;</button>
+        </div>
+
+        <div class="filter-editor-body">
+          <canvas id="filterCanvas" width="600" height="448"></canvas>
+
+          <div class="filter-controls">
+            <label style="font-weight: bold;">Filter:</label>
+            <div class="filter-buttons">
+              <button data-filter="bicubic" class="active">CatmullRom</button>
+              <button data-filter="lanczos">Lanczos3</button>
+              <button data-filter="bilinear">Bilinear</button>
+              <button data-filter="nearest">Nearest</button>
+            </div>
+            <div id="filterProcessing" class="processing-indicator"></div>
+          </div>
+        </div>
+
+        <div class="filter-editor-footer">
+          <button onclick="closeFilterEditor()">Cancel</button>
+          <button onclick="applyFilterFromEditor()" class="button primary">Apply & Save</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/js/filters.js"></script>
     <script>
       const FLASH_DURATION_MS = 40000;
       let animationCancelled = false;
       let isFlashing = false;
+
+      // Filter editor state.
+      let filterWorker = null;
+      let originalImageData = null;
+      let editorCurrentFilter = 'bicubic';
+
+      // Initialize filter worker.
+      function initFilterWorker() {
+        if (filterWorker) return;
+
+        filterWorker = new Worker('/js/filter-worker.js');
+        filterWorker.onmessage = function(e) {
+          const processingEl = document.getElementById('filterProcessing');
+
+          if (e.data.success) {
+            const canvas = document.getElementById('filterCanvas');
+            const ctx = canvas.getContext('2d');
+            ctx.putImageData(e.data.imageData, 0, 0);
+            processingEl.textContent = '';
+          } else {
+            processingEl.textContent = 'Error: ' + e.data.error;
+            processingEl.style.color = '#ff4444';
+          }
+        };
+      }
+
+      // Open filter editor for the currently selected image.
+      function openFilterEditor() {
+        if (!currentFilename) {
+          alert('Please select an image first.');
+          return;
+        }
+
+        initFilterWorker();
+
+        const modal = document.getElementById('filterEditorModal');
+        const filenameEl = document.getElementById('filterEditorFilename');
+        const processingEl = document.getElementById('filterProcessing');
+
+        filenameEl.textContent = currentFilename;
+        processingEl.textContent = 'Loading original image...';
+        processingEl.style.color = '#00ccff';
+
+        // Set initial filter to saved preference.
+        editorCurrentFilter = mapServerFilterToClient(currentSavedFilter);
+        document.querySelectorAll('.filter-buttons button').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.filter === editorCurrentFilter);
+        });
+
+        modal.classList.add('active');
+
+        // Load the original image (not the cached thumbnail).
+        const img = new Image();
+        img.onload = function() {
+          // Draw full image to temporary canvas to get ImageData.
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = img.width;
+          tempCanvas.height = img.height;
+          const tempCtx = tempCanvas.getContext('2d');
+          tempCtx.drawImage(img, 0, 0);
+          originalImageData = tempCtx.getImageData(0, 0, img.width, img.height);
+
+          processingEl.textContent = 'Resizing...';
+
+          // Resize with current filter and display.
+          applyFilterToCanvas(editorCurrentFilter);
+        };
+        img.onerror = function() {
+          processingEl.textContent = 'Failed to load image.';
+          processingEl.style.color = '#ff4444';
+        };
+        img.src = 'images/' + currentFilename;
+      }
+
+      // Close filter editor.
+      function closeFilterEditor() {
+        document.getElementById('filterEditorModal').classList.remove('active');
+        originalImageData = null;
+      }
+
+      // Apply a filter to the canvas using the worker.
+      function applyFilterToCanvas(filter) {
+        if (!originalImageData) return;
+
+        const processingEl = document.getElementById('filterProcessing');
+        processingEl.textContent = 'Processing...';
+        processingEl.style.color = '#00ccff';
+
+        filterWorker.postMessage({
+          imageData: originalImageData,
+          width: 600,
+          height: 448,
+          filter: filter
+        });
+      }
+
+      // Handle filter button clicks.
+      document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.filter-buttons button').forEach(btn => {
+          btn.addEventListener('click', function() {
+            // Update active state.
+            document.querySelectorAll('.filter-buttons button').forEach(b => {
+              b.classList.remove('active');
+            });
+            this.classList.add('active');
+
+            // Apply the filter.
+            editorCurrentFilter = this.dataset.filter;
+            applyFilterToCanvas(editorCurrentFilter);
+          });
+        });
+      });
+
+      // Map client-side filter names to server-side names.
+      function mapClientFilterToServer(clientFilter) {
+        const map = {
+          'nearest': 'Triangle',
+          'bilinear': 'Triangle',
+          'bicubic': 'CatmullRom',
+          'lanczos': 'Lanczos3'
+        };
+        return map[clientFilter] || 'CatmullRom';
+      }
+
+      function mapServerFilterToClient(serverFilter) {
+        const map = {
+          'Triangle': 'bilinear',
+          'CatmullRom': 'bicubic',
+          'Lanczos3': 'lanczos',
+          'Gaussian': 'bicubic'
+        };
+        return map[serverFilter] || 'bicubic';
+      }
+
+      // Apply filter from editor and save to server.
+      function applyFilterFromEditor() {
+        if (!currentFilename) return;
+
+        const serverFilter = mapClientFilterToServer(editorCurrentFilter);
+        const processingEl = document.getElementById('filterProcessing');
+        processingEl.textContent = 'Saving...';
+
+        fetch('/api/apply-filter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'filename=' + encodeURIComponent(currentFilename) + '&filter=' + encodeURIComponent(serverFilter)
+        })
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) {
+            // Update saved filter.
+            currentSavedFilter = serverFilter;
+
+            // Update the thumbnail.
+            const thumb = document.querySelector('img[data-filename="' + currentFilename + '"]');
+            if (thumb) {
+              thumb.dataset.filter = serverFilter;
+              thumb.src = 'images/cache/' + currentFilename + '.png?t=' + Date.now();
+            }
+
+            // Update main filter dropdown.
+            document.getElementById('filterSelect').value = serverFilter;
+
+            // Close modal.
+            closeFilterEditor();
+
+            // Show success message.
+            const statusEl = document.getElementById('filterStatus');
+            statusEl.textContent = '✓ Filter saved';
+            statusEl.style.color = '#00aa00';
+          } else {
+            processingEl.textContent = 'Error: ' + data.message;
+            processingEl.style.color = '#ff4444';
+          }
+        })
+        .catch(err => {
+          processingEl.textContent = 'Error: ' + err.message;
+          processingEl.style.color = '#ff4444';
+        });
+      }
+
+      // Currently selected image filename and its saved filter.
+      let currentFilename = null;
+      let currentSavedFilter = null;
 
       // Thumbnail selection helper.
       function selectThumbnail(el) {
         document.querySelectorAll('.thumbnails img').forEach(img => img.classList.remove('selected'));
         el.classList.add('selected');
         document.getElementById('submission.image_file_path').value = el.id;
+
+        // Update current filename and filter dropdown.
+        currentFilename = el.dataset.filename;
+        currentSavedFilter = el.dataset.filter || 'CatmullRom';
+        document.getElementById('filterSelect').value = currentSavedFilter;
+        document.getElementById('filterStatus').textContent = '';
+
+        // Show the cached thumbnail immediately (fast).
         document.getElementById('preview').src = el.src;
+      }
+
+      // Update preview image when filter changes (uses slow preview endpoint).
+      function updatePreview() {
+        if (!currentFilename) return;
+
+        const filter = document.getElementById('filterSelect').value;
+
+        // If filter matches the saved/cached version, just show the cached image.
+        if (filter === currentSavedFilter) {
+          document.getElementById('preview').src = 'images/cache/' + currentFilename + '.png';
+          return;
+        }
+
+        // Otherwise, fetch a preview with the new filter.
+        const previewImg = document.getElementById('preview');
+        const previewUrl = '/api/preview/' + encodeURIComponent(currentFilename) + '?filter=' + filter;
+
+        // Add timestamp to prevent browser caching.
+        previewImg.src = previewUrl + '&t=' + Date.now();
+      }
+
+      // Apply the selected filter and regenerate cache.
+      function applyFilter() {
+        if (!currentFilename) {
+          alert('Please select an image first.');
+          return;
+        }
+
+        const filter = document.getElementById('filterSelect').value;
+        const statusEl = document.getElementById('filterStatus');
+        statusEl.textContent = 'Applying...';
+        statusEl.style.color = '#666';
+
+        fetch('/api/apply-filter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'filename=' + encodeURIComponent(currentFilename) + '&filter=' + encodeURIComponent(filter)
+        })
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) {
+            statusEl.textContent = '✓ ' + data.message;
+            statusEl.style.color = '#00aa00';
+
+            // Update the thumbnail's data-filter attribute.
+            const thumb = document.querySelector('img[data-filename="' + currentFilename + '"]');
+            if (thumb) {
+              thumb.dataset.filter = filter;
+              // Refresh the thumbnail image (caches are always .png).
+              thumb.src = 'images/cache/' + currentFilename + '.png?t=' + Date.now();
+            }
+          } else {
+            statusEl.textContent = '✗ ' + data.message;
+            statusEl.style.color = '#cc0000';
+          }
+        })
+        .catch(err => {
+          statusEl.textContent = '✗ Error: ' + err.message;
+          statusEl.style.color = '#cc0000';
+        });
       }
 
       // Poll for cache status and replace placeholder when ready.
@@ -471,6 +868,8 @@
               img.src = data.cache_path;
               img.id = path;
               img.alt = path;
+              img.dataset.filename = filename;
+              img.dataset.filter = placeholderEl.dataset.filter || 'CatmullRom';
               img.onclick = function() { selectThumbnail(this); };
               placeholderEl.replaceWith(img);
             } else {

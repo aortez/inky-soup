@@ -1,13 +1,14 @@
 #[macro_use] extern crate rocket;
 
 mod cache_worker;
+mod metadata;
 
 use glob::glob;
 
 use rocket_dyn_templates::Template;
 use rocket::form::{Form, Contextual};
 use rocket::fs::{FileServer, TempFile};
-use rocket::http::Status;
+use rocket::http::{ContentType, Status};
 use rocket::serde::json::Json;
 use rocket::serde::Serialize;
 use rocket::State;
@@ -62,6 +63,7 @@ struct GalleryImage {
     path: String,
     filename: String,
     cache_ready: bool,
+    filter: String,
 }
 
 #[derive(Serialize)]
@@ -85,8 +87,8 @@ fn get_gallery_images() -> Vec<GalleryImage> {
     for entry in glob("static/images/*").expect("Failed to read glob pattern") {
         match entry {
             Ok(path) => {
-                // Skip the cache directory.
-                if path.is_dir() {
+                // Skip the cache directory and metadata file.
+                if path.is_dir() || path.extension().map(|e| e == "json").unwrap_or(false) {
                     continue;
                 }
 
@@ -96,15 +98,17 @@ fn get_gallery_images() -> Vec<GalleryImage> {
                     .to_string();
 
                 let image_path = format!("images/{}", filename);
-                let cache_path = format!("static/images/cache/{}", filename);
+                let cache_path = format!("static/images/cache/{}.png", filename);
                 let cache_ready = Path::new(&cache_path).exists();
+                let filter = metadata::get_filter_for_image(&filename);
 
-                println!("found image file {} (cache_ready: {})", image_path, cache_ready);
+                println!("found image file {} (cache_ready: {}, filter: {})", image_path, cache_ready, filter);
 
                 images.push(GalleryImage {
                     path: image_path,
                     filename,
                     cache_ready,
+                    filter,
                 });
             },
             Err(e) => println!("{:?}", e),
@@ -116,13 +120,79 @@ fn get_gallery_images() -> Vec<GalleryImage> {
 /// API endpoint to check if a cache file exists.
 #[get("/api/cache-status/<filename>")]
 fn cache_status(filename: &str) -> Json<CacheStatus> {
-    let cache_path = format!("static/images/cache/{}", filename);
+    let cache_path = format!("static/images/cache/{}.png", filename);
     let ready = Path::new(&cache_path).exists();
 
     Json(CacheStatus {
         ready,
-        cache_path: format!("images/cache/{}", filename),
+        cache_path: format!("images/cache/{}.png", filename),
     })
+}
+
+/// API endpoint to preview an image with a specific filter (without saving).
+#[get("/api/preview/<filename>?<filter>")]
+fn preview_image(filename: &str, filter: Option<&str>) -> Result<(ContentType, Vec<u8>), Status> {
+    let filter_name = filter.unwrap_or(metadata::default_filter_name());
+    let original_path = format!("static/images/{}", filename);
+
+    if !Path::new(&original_path).exists() {
+        return Err(Status::NotFound);
+    }
+
+    let filter_type = metadata::parse_filter(filter_name);
+
+    match cache_worker::resize_image_to_bytes(Path::new(&original_path), filter_type) {
+        Ok(bytes) => Ok((ContentType::PNG, bytes)),
+        Err(e) => {
+            println!("Preview failed: {}", e);
+            Err(Status::InternalServerError)
+        }
+    }
+}
+
+/// Response for apply filter endpoint.
+#[derive(Serialize)]
+#[serde(crate = "rocket::serde")]
+struct ApplyFilterResponse {
+    success: bool,
+    message: String,
+}
+
+/// API endpoint to apply a filter to an image and regenerate its cache.
+#[post("/api/apply-filter", data = "<form>")]
+fn apply_filter(form: Form<ApplyFilterForm>) -> Json<ApplyFilterResponse> {
+    let filename = &form.filename;
+    let filter_name = &form.filter;
+
+    let original_path = format!("static/images/{}", filename);
+    if !Path::new(&original_path).exists() {
+        return Json(ApplyFilterResponse {
+            success: false,
+            message: format!("Image not found: {}", filename),
+        });
+    }
+
+    // Save filter preference.
+    metadata::set_filter_for_image(filename, filter_name);
+
+    // Regenerate cache with new filter.
+    let filter_type = metadata::parse_filter(filter_name);
+    match cache_worker::create_cached_image(Path::new(&original_path), filter_type) {
+        Ok(()) => Json(ApplyFilterResponse {
+            success: true,
+            message: format!("Cache regenerated with {} filter", filter_name),
+        }),
+        Err(e) => Json(ApplyFilterResponse {
+            success: false,
+            message: format!("Failed to create cache: {}", e),
+        }),
+    }
+}
+
+#[derive(FromForm)]
+struct ApplyFilterForm {
+    filename: String,
+    filter: String,
 }
 
 #[get("/")]
@@ -171,6 +241,13 @@ async fn submit_delete_image<'r>(mut form: Form<Contextual<'r, SubmitDeleteImage
                     Err(e) => println!("Failed to remove cached image: {}", e),
                 }
             }
+
+            // Clean up metadata.
+            let filename = Path::new(&image_file)
+                .file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or("");
+            metadata::remove_image_metadata(filename);
         }
         None => {
             errors.push("it is broke".to_string());
@@ -199,13 +276,22 @@ async fn submit_flash_image<'r>(mut form: Form<Contextual<'r, SubmitFlashImage>>
             // Use cached image if available, otherwise create it first.
             let original_path = format!("static/{}", submission.submission.image_file_path.clone());
             let cache_path = cache_worker::get_cache_path(&original_path);
+
+            // Get the filter preference for this image.
+            let filename = Path::new(&original_path)
+                .file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or("unknown");
+            let filter_name = metadata::get_filter_for_image(filename);
+            let filter_type = metadata::parse_filter(&filter_name);
+
             let image_file = if Path::new(&cache_path).exists() {
                 println!("Using cached image: {}", cache_path);
                 cache_path
             } else {
                 // Synchronously create cache since we need it for flashing.
                 println!("Cache not found, creating from original: {}", original_path);
-                match cache_worker::create_cached_image(Path::new(&original_path)) {
+                match cache_worker::create_cached_image(Path::new(&original_path), filter_type) {
                     Ok(()) => {
                         println!("Cache created, using: {}", cache_path);
                         cache_path
@@ -293,7 +379,8 @@ async fn submit_new_image<'r>(
             let errors = vec![];
 
             // Send to background worker - don't block on cache creation.
-            if let Err(e) = cache_sender.send(CacheRequest::CreateCache(PathBuf::from(&image_file_path))).await {
+            let default_filter = metadata::default_filter_name().to_string();
+            if let Err(e) = cache_sender.send(CacheRequest::CreateCache(PathBuf::from(&image_file_path), default_filter)).await {
                 println!("Failed to queue cache creation: {}", e);
             } else {
                 println!("Queued background cache creation for: {}", image_file_path);
@@ -331,7 +418,9 @@ fn rocket() -> _ {
     rocket::build()
         .attach(CacheWorkerFairing)
         .mount("/", routes![
+            apply_filter,
             cache_status,
+            preview_image,
             submit_delete_image,
             submit_flash_image,
             submit_new_image,
