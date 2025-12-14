@@ -331,6 +331,16 @@
         justify-content: flex-end;
         margin-top: 20px;
       }
+
+      /* Disabled button styling. */
+      #uploadBtn:disabled,
+      #flashBtn:disabled,
+      #editFilterBtn:disabled,
+      #applyFilterBtn:disabled,
+      #filterSelect:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
     </style>
   <title>inky-soup - upload</title>
   </head>
@@ -378,7 +388,7 @@
           </div>
 
           <br />
-          <input type="submit" id="uploadBtn" value="Upload Image" />
+          <input type="submit" id="uploadBtn" value="Upload Image" disabled />
         </form>
       </fieldset>
       <br />
@@ -445,7 +455,7 @@
                 }}
               </div>
             </fieldset>
-            <input type="submit" value="Flash Image" class="is-full-width" />
+            <input type="submit" id="flashBtn" value="Flash Image" class="is-full-width" disabled />
 
             <br>
 
@@ -464,14 +474,14 @@
 
           <div style="margin-bottom: 15px;">
             <label for="filterSelect" style="font-weight: bold;">Resampling Filter:</label>
-            <select id="filterSelect" onchange="updatePreview()" style="margin-left: 10px;">
+            <select id="filterSelect" onchange="updatePreview()" style="margin-left: 10px;" disabled>
               <option value="CatmullRom">CatmullRom (Balanced)</option>
               <option value="Lanczos3">Lanczos3 (Sharp)</option>
               <option value="Gaussian">Gaussian (Smooth)</option>
               <option value="Triangle">Triangle (Fast)</option>
             </select>
-            <button type="button" onclick="openFilterEditor()" style="margin-left: 10px;" class="button">Edit Filter...</button>
-            <button type="button" onclick="applyFilter()" style="margin-left: 10px;" class="button primary">Apply Filter</button>
+            <button type="button" id="editFilterBtn" onclick="openFilterEditor()" style="margin-left: 10px;" class="button" disabled>Edit Filter...</button>
+            <button type="button" id="applyFilterBtn" onclick="applyFilter()" style="margin-left: 10px;" class="button primary" disabled>Apply Filter</button>
             <span id="filterStatus" style="margin-left: 10px; font-size: 0.85em; color: #666;"></span>
           </div>
 
@@ -794,6 +804,12 @@
 
         // Show the cached thumbnail immediately (fast).
         document.getElementById('preview').src = el.src;
+
+        // Enable all image-dependent controls.
+        document.getElementById('flashBtn').disabled = false;
+        document.getElementById('filterSelect').disabled = false;
+        document.getElementById('editFilterBtn').disabled = false;
+        document.getElementById('applyFilterBtn').disabled = false;
       }
 
       // Update preview image when filter changes (uses slow preview endpoint).
@@ -1050,6 +1066,7 @@
       // Show preview when file is selected.
       fileInput.addEventListener('change', function(e) {
         const file = e.target.files[0];
+        const uploadBtn = document.getElementById('uploadBtn');
         if (file) {
           // Check if it's an image.
           if (file.type.startsWith('image/')) {
@@ -1061,8 +1078,10 @@
           uploadFileName.textContent = file.name;
           uploadFileSize.textContent = formatBytes(file.size);
           uploadPreview.classList.add('active');
+          uploadBtn.disabled = false;
         } else {
           uploadPreview.classList.remove('active');
+          uploadBtn.disabled = true;
         }
       });
 
