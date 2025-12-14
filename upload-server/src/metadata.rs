@@ -12,12 +12,18 @@ const DEFAULT_FILTER: &str = "CatmullRom";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageMetadata {
     pub filter: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_dithered_saturation: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_dithered_cache: Option<bool>,
 }
 
 impl Default for ImageMetadata {
     fn default() -> Self {
         Self {
             filter: DEFAULT_FILTER.to_string(),
+            last_dithered_saturation: None,
+            has_dithered_cache: None,
         }
     }
 }
@@ -79,12 +85,8 @@ pub fn get_filter_for_image(filename: &str) -> String {
 /// Sets the filter preference for an image.
 pub fn set_filter_for_image(filename: &str, filter: &str) {
     let mut cache = METADATA_CACHE.lock().unwrap();
-    cache.insert(
-        filename.to_string(),
-        ImageMetadata {
-            filter: filter.to_string(),
-        },
-    );
+    let entry = cache.entry(filename.to_string()).or_insert_with(Default::default);
+    entry.filter = filter.to_string();
     save_metadata_to_file(&cache);
 }
 
@@ -114,4 +116,23 @@ pub fn parse_filter(filter_name: &str) -> FilterType {
 /// Returns the default filter name.
 pub fn default_filter_name() -> &'static str {
     DEFAULT_FILTER
+}
+
+/// Sets the dithered saturation value for an image.
+pub fn set_dithered_saturation(filename: &str, saturation: f32) {
+    let mut cache = METADATA_CACHE.lock().unwrap();
+    let entry = cache.entry(filename.to_string()).or_insert_with(Default::default);
+    entry.last_dithered_saturation = Some(saturation);
+    entry.has_dithered_cache = Some(true);
+    save_metadata_to_file(&cache);
+}
+
+/// Clears the dithered cache flag for an image (called when filter changes).
+pub fn clear_dithered_cache(filename: &str) {
+    let mut cache = METADATA_CACHE.lock().unwrap();
+    if let Some(entry) = cache.get_mut(filename) {
+        entry.has_dithered_cache = Some(false);
+        entry.last_dithered_saturation = None;
+        save_metadata_to_file(&cache);
+    }
 }

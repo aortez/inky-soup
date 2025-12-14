@@ -439,22 +439,6 @@
               </div>
             </fieldset>
 
-            <fieldset>
-              <legend>Flash Parameters</legend>
-              <div>
-                {{ m::checkbox(name="submission.flash_twice", label="Flash twice (to overcome ghosting).") }}
-              </div>
-              <div>
-                {{
-                    m::select(
-                        label="Saturation",
-                        name="submission.saturation",
-                        options=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
-                        selected_value=0.5
-                    )
-                }}
-              </div>
-            </fieldset>
             <input type="submit" id="flashBtn" value="Flash Image" class="is-full-width" disabled />
 
             <br>
@@ -600,7 +584,43 @@
       </div>
     </div>
 
+    <!-- Dither preview modal. -->
+    <div id="ditherPreviewModal" class="filter-editor-modal">
+      <div class="filter-editor-content">
+        <div class="filter-editor-header">
+          <div>
+            <h2>Preview E-Ink Rendering</h2>
+            <span id="ditherPreviewFilename" style="color: #aaa; font-size: 0.9em;"></span>
+          </div>
+          <button onclick="closeDitherPreview()" title="Close">&times;</button>
+        </div>
+
+        <div class="filter-editor-body">
+          <canvas id="ditherCanvas" width="600" height="448"></canvas>
+
+          <div class="filter-controls">
+            <label style="font-weight: bold;">Saturation: <span id="saturationValue">0.5</span></label>
+            <input type="range" id="saturationSlider" min="0.1" max="1.0" step="0.1" value="0.5"
+                   style="width: 100%; margin: 10px 0;">
+
+            <label style="display: block; margin-top: 15px;">
+              <input type="checkbox" id="flashTwiceCheckbox" style="margin-right: 5px;">
+              Flash twice (to overcome ghosting)
+            </label>
+
+            <div id="ditherProcessing" class="processing-indicator"></div>
+          </div>
+        </div>
+
+        <div class="filter-editor-footer">
+          <button onclick="closeDitherPreview()">Cancel</button>
+          <button onclick="confirmFlash()" class="button primary">Flash to Display</button>
+        </div>
+      </div>
+    </div>
+
     <script src="/js/filters.js"></script>
+    <script src="/js/dither.js"></script>
     <script>
       const FLASH_DURATION_MS = 40000;
       let animationCancelled = false;
@@ -610,6 +630,225 @@
       let filterWorker = null;
       let originalImageData = null;
       let editorCurrentFilter = 'bicubic';
+
+      // Dither preview state.
+      let ditherWorker = null;
+      let ditherImageData = null;
+      let ditherCurrentSaturation = 0.5;
+      let ditherPendingFlash = null;
+
+      // Initialize dither worker.
+      function initDitherWorker() {
+        if (ditherWorker) return;
+
+        ditherWorker = new Worker('/js/dither-worker.js');
+        ditherWorker.onmessage = function(e) {
+          const processingEl = document.getElementById('ditherProcessing');
+
+          if (e.data.success) {
+            const canvas = document.getElementById('ditherCanvas');
+            const ctx = canvas.getContext('2d');
+            ctx.putImageData(e.data.imageData, 0, 0);
+            processingEl.textContent = '';
+          } else {
+            processingEl.textContent = 'Error: ' + e.data.error;
+            processingEl.style.color = '#ff4444';
+          }
+        };
+      }
+
+      // Show dither preview modal with the cached image.
+      async function showDitherPreview(imagePath, filename) {
+        initDitherWorker();
+
+        // Store flash parameters for later.
+        ditherPendingFlash = {
+          imagePath: imagePath,
+          filename: filename
+        };
+
+        // Load the cached image.
+        const cachePath = imagePath.replace('images/', 'images/cache/') + '.png';
+
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = function() {
+          const canvas = document.getElementById('ditherCanvas');
+          const ctx = canvas.getContext('2d');
+
+          // Ensure canvas is 600x448.
+          canvas.width = 600;
+          canvas.height = 448;
+
+          // Draw image to canvas.
+          ctx.drawImage(img, 0, 0, 600, 448);
+
+          // Get image data.
+          ditherImageData = ctx.getImageData(0, 0, 600, 448);
+
+          // Reset saturation slider to default.
+          const slider = document.getElementById('saturationSlider');
+          slider.value = 0.5;
+          document.getElementById('saturationValue').textContent = '0.5';
+          ditherCurrentSaturation = 0.5;
+
+          // Reset flash twice checkbox.
+          document.getElementById('flashTwiceCheckbox').checked = false;
+
+          // Perform initial dither.
+          document.getElementById('ditherProcessing').textContent = 'Processing...';
+          ditherWorker.postMessage({
+            imageData: ditherImageData,
+            saturation: ditherCurrentSaturation
+          });
+
+          // Show modal.
+          document.getElementById('ditherPreviewFilename').textContent = filename;
+          document.getElementById('ditherPreviewModal').classList.add('active');
+        };
+
+        img.onerror = function() {
+          alert('Failed to load image: ' + cachePath);
+        };
+
+        img.src = '/' + cachePath;
+      }
+
+      // Close dither preview modal.
+      function closeDitherPreview() {
+        document.getElementById('ditherPreviewModal').classList.remove('active');
+        ditherPendingFlash = null;
+      }
+
+      // Handle saturation slider change.
+      document.addEventListener('DOMContentLoaded', function() {
+        const slider = document.getElementById('saturationSlider');
+        slider.addEventListener('input', function(e) {
+          const saturation = parseFloat(e.target.value);
+          document.getElementById('saturationValue').textContent = saturation;
+          ditherCurrentSaturation = saturation;
+
+          if (ditherImageData) {
+            document.getElementById('ditherProcessing').textContent = 'Processing...';
+            ditherWorker.postMessage({
+              imageData: ditherImageData,
+              saturation: saturation
+            });
+          }
+        });
+      });
+
+      // Confirm flash - dither, upload, and flash.
+      async function confirmFlash() {
+        if (!ditherPendingFlash) {
+          alert('No flash operation pending');
+          return;
+        }
+
+        const { imagePath, filename } = ditherPendingFlash;
+
+        // Get flash twice setting from modal checkbox.
+        const flashTwice = document.getElementById('flashTwiceCheckbox').checked;
+
+        // Close dither preview modal.
+        closeDitherPreview();
+
+        // Get the dithered canvas.
+        const canvas = document.getElementById('ditherCanvas');
+
+        // Convert canvas to blob.
+        canvas.toBlob(async function(blob) {
+          if (!blob) {
+            alert('Failed to generate dithered image');
+            return;
+          }
+
+          // Upload dithered image to server.
+          const formData = new FormData();
+          formData.append('filename', filename);
+          formData.append('saturation', ditherCurrentSaturation);
+          formData.append('file', blob, filename);
+
+          try {
+            const uploadResponse = await fetch('/api/upload-dithered', {
+              method: 'POST',
+              body: formData
+            });
+
+            if (!uploadResponse.ok) {
+              alert('Failed to upload dithered image');
+              return;
+            }
+
+            // Now proceed with flash.
+            proceedWithFlash(imagePath, ditherCurrentSaturation, flashTwice, filename);
+
+          } catch (error) {
+            alert('Error uploading dithered image: ' + error.message);
+          }
+        }, 'image/png');
+      }
+
+      // Proceed with flash operation (after dithering and upload).
+      function proceedWithFlash(imagePath, saturation, flashTwice, filename) {
+        // Reset modal state.
+        animationCancelled = false;
+        document.getElementById('modalImage').src = imagePath;
+        document.getElementById('modalFilename').textContent = filename;
+        document.getElementById('progress1').style.width = '0%';
+        document.getElementById('progress1').classList.remove('complete');
+        document.getElementById('progress2').style.width = '0%';
+        document.getElementById('progress2').classList.remove('complete');
+        document.getElementById('flashNote').textContent = 'This takes about 40 seconds per flash...';
+        document.getElementById('flashNote').style.color = '#666';
+        document.getElementById('flashCloseBtn').style.display = 'none';
+        document.querySelector('.flash-modal-content h2').textContent = 'Flashing to Display';
+        document.querySelector('.flash-modal-content h2').style.color = '#00ccff';
+
+        // Show/hide second progress bar.
+        document.getElementById('progress2Container').style.display = flashTwice ? 'block' : 'none';
+
+        // Update label if only one flash.
+        document.querySelector('#progress1Container .progress-label').textContent =
+          flashTwice ? 'Flash 1' : 'Flashing...';
+
+        // Show modal.
+        document.getElementById('flashModal').classList.add('active');
+
+        // Start progress animation.
+        if (flashTwice) {
+          animateProgress('progress1', FLASH_DURATION_MS, function() {
+            animateProgress('progress2', FLASH_DURATION_MS);
+          });
+        } else {
+          animateProgress('progress1', FLASH_DURATION_MS);
+        }
+
+        // Submit via fetch.
+        const formData = new FormData();
+        formData.append('submission.image_file_path', imagePath);
+        formData.append('submission.saturation', saturation);
+        if (flashTwice) {
+          formData.append('submission.flash_twice', 'yes');
+        }
+
+        fetch('/flash', {
+          method: 'POST',
+          body: formData
+        })
+        .then(response => {
+          if (response.ok) {
+            showFlashResult(true);
+          } else {
+            return response.text().then(text => {
+              showFlashResult(false, 'Flash failed with status ' + response.status);
+            });
+          }
+        })
+        .catch(error => {
+          showFlashResult(false, 'Network error: ' + error.message);
+        });
+      }
 
       // Initialize filter worker.
       function initFilterWorker() {
@@ -976,67 +1215,10 @@
           return;
         }
 
-        const flashTwice = document.querySelector('input[name="submission.flash_twice"]').checked;
-        const saturation = document.querySelector('select[name="submission.saturation"]').value;
         const filename = imagePath.split('/').pop();
 
-        // Reset modal state.
-        animationCancelled = false;
-        document.getElementById('modalImage').src = imagePath;
-        document.getElementById('modalFilename').textContent = filename;
-        document.getElementById('progress1').style.width = '0%';
-        document.getElementById('progress1').classList.remove('complete');
-        document.getElementById('progress2').style.width = '0%';
-        document.getElementById('progress2').classList.remove('complete');
-        document.getElementById('flashNote').textContent = 'This takes about 40 seconds per flash...';
-        document.getElementById('flashNote').style.color = '#666';
-        document.getElementById('flashCloseBtn').style.display = 'none';
-        document.querySelector('.flash-modal-content h2').textContent = 'Flashing to Display';
-        document.querySelector('.flash-modal-content h2').style.color = '#00ccff';
-
-        // Show/hide second progress bar.
-        document.getElementById('progress2Container').style.display = flashTwice ? 'block' : 'none';
-
-        // Update label if only one flash.
-        document.querySelector('#progress1Container .progress-label').textContent =
-          flashTwice ? 'Flash 1' : 'Flashing...';
-
-        // Show modal.
-        document.getElementById('flashModal').classList.add('active');
-
-        // Start progress animation.
-        if (flashTwice) {
-          animateProgress('progress1', FLASH_DURATION_MS, function() {
-            animateProgress('progress2', FLASH_DURATION_MS);
-          });
-        } else {
-          animateProgress('progress1', FLASH_DURATION_MS);
-        }
-
-        // Submit via fetch.
-        const formData = new FormData();
-        formData.append('submission.image_file_path', imagePath);
-        formData.append('submission.saturation', saturation);
-        if (flashTwice) {
-          formData.append('submission.flash_twice', 'yes');
-        }
-
-        fetch('/flash', {
-          method: 'POST',
-          body: formData
-        })
-        .then(response => {
-          if (response.ok) {
-            showFlashResult(true);
-          } else {
-            return response.text().then(text => {
-              showFlashResult(false, 'Flash failed with status ' + response.status);
-            });
-          }
-        })
-        .catch(error => {
-          showFlashResult(false, 'Network error: ' + error.message);
-        });
+        // Show dither preview modal (saturation and flash_twice are set in the modal).
+        showDitherPreview(imagePath, filename);
       });
 
       // Upload functionality with real progress tracking.
