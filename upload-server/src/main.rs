@@ -12,13 +12,11 @@ use rocket::http::{ContentType, Status};
 use rocket::response::Redirect;
 use rocket::serde::json::Json;
 use rocket::serde::Serialize;
-use rocket::State;
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
-use cache_worker::{CacheSender, CacheRequest, CacheWorkerFairing};
 
 #[derive(Debug, FromForm)]
 struct DeleteSubmission {
@@ -151,59 +149,6 @@ fn preview_image(filename: &str, filter: Option<&str>) -> Result<(ContentType, V
     }
 }
 
-/// Response for apply filter endpoint.
-#[derive(Serialize)]
-#[serde(crate = "rocket::serde")]
-struct ApplyFilterResponse {
-    success: bool,
-    message: String,
-}
-
-/// API endpoint to apply a filter to an image and regenerate its cache.
-#[post("/api/apply-filter", data = "<form>")]
-fn apply_filter(form: Form<ApplyFilterForm>) -> Json<ApplyFilterResponse> {
-    let filename = &form.filename;
-    let filter_name = &form.filter;
-
-    let original_path = format!("static/images/{}", filename);
-    if !Path::new(&original_path).exists() {
-        return Json(ApplyFilterResponse {
-            success: false,
-            message: format!("Image not found: {}", filename),
-        });
-    }
-
-    // Save filter preference.
-    metadata::set_filter_for_image(filename, filter_name);
-
-    // Invalidate dithered cache when resampling filter changes.
-    metadata::clear_dithered_cache(filename);
-    let dithered_path = format!("static/images/dithered/{}", filename);
-    if Path::new(&dithered_path).exists() {
-        let _ = fs::remove_file(&dithered_path);
-        println!("Removed dithered cache due to filter change: {}", dithered_path);
-    }
-
-    // Regenerate cache with new filter.
-    let filter_type = metadata::parse_filter(filter_name);
-    match cache_worker::create_cached_image(Path::new(&original_path), filter_type) {
-        Ok(()) => Json(ApplyFilterResponse {
-            success: true,
-            message: format!("Cache regenerated with {} filter", filter_name),
-        }),
-        Err(e) => Json(ApplyFilterResponse {
-            success: false,
-            message: format!("Failed to create cache: {}", e),
-        }),
-    }
-}
-
-#[derive(FromForm)]
-struct ApplyFilterForm {
-    filename: String,
-    filter: String,
-}
-
 /// Response for upload-dithered endpoint.
 #[derive(Serialize)]
 #[serde(crate = "rocket::serde")]
@@ -219,6 +164,23 @@ struct DitheredUpload<'v> {
     filename: String,
     saturation: f32,
     file: TempFile<'v>,
+}
+
+/// Form data for cache image upload.
+#[derive(Debug, FromForm)]
+struct CacheUpload<'v> {
+    filename: String,
+    filter: Option<String>,
+    file: TempFile<'v>,
+}
+
+/// Response for upload-cache endpoint.
+#[derive(Serialize)]
+#[serde(crate = "rocket::serde")]
+struct UploadCacheResponse {
+    success: bool,
+    message: String,
+    path: Option<String>,
 }
 
 /// API endpoint to upload a pre-dithered image.
@@ -248,6 +210,49 @@ async fn upload_dithered(mut form: Form<DitheredUpload<'_>>) -> Json<UploadDithe
             Json(UploadDitheredResponse {
                 success: false,
                 message: format!("Failed to save dithered image: {}", e),
+                path: None,
+            })
+        }
+    }
+}
+
+/// API endpoint to upload a pre-generated cache image.
+#[post("/api/upload-cache", data = "<form>")]
+async fn upload_cache(mut form: Form<CacheUpload<'_>>) -> Json<UploadCacheResponse> {
+    let filename = form.filename.clone();
+    let filter = form.filter.clone();
+
+    // Save cache image to cache directory.
+    let cache_path = format!("static/images/cache/{}.png", filename);
+
+    match form.file.copy_to(&cache_path).await {
+        Ok(()) => {
+            println!("Saved cache image: {}", cache_path);
+
+            // If filter was specified, save preference and clear dithered cache.
+            if let Some(ref filter_name) = filter {
+                metadata::set_filter_for_image(&filename, filter_name);
+                metadata::clear_dithered_cache(&filename);
+
+                // Remove dithered file if it exists.
+                let dithered_path = format!("static/images/dithered/{}", filename);
+                if Path::new(&dithered_path).exists() {
+                    let _ = fs::remove_file(&dithered_path);
+                    println!("Removed dithered cache due to filter change: {}", dithered_path);
+                }
+            }
+
+            Json(UploadCacheResponse {
+                success: true,
+                message: "Cache image uploaded successfully".to_string(),
+                path: Some(format!("images/cache/{}.png", filename)),
+            })
+        }
+        Err(e) => {
+            println!("Failed to save cache image: {}", e);
+            Json(UploadCacheResponse {
+                success: false,
+                message: format!("Failed to save cache image: {}", e),
                 path: None,
             })
         }
@@ -408,7 +413,6 @@ async fn submit_flash_image<'r>(mut form: Form<Contextual<'r, SubmitFlashImage>>
 
 #[post("/upload", data = "<form>")]
 async fn submit_new_image<'r>(
-    cache_sender: &State<CacheSender>,
     mut form: Form<Contextual<'r, SubmitNewImage<'r>>>
 ) -> Redirect {
     match form.value {
@@ -424,13 +428,7 @@ async fn submit_new_image<'r>(
             let gallery_result = file.copy_to(image_file_path.clone()).await;
             println!("image_file_path: {}, gallery_result: {:#?}", image_file_path, gallery_result);
 
-            // Send to background worker - don't block on cache creation.
-            let default_filter = metadata::default_filter_name().to_string();
-            if let Err(e) = cache_sender.send(CacheRequest::CreateCache(PathBuf::from(&image_file_path), default_filter)).await {
-                println!("Failed to queue cache creation: {}", e);
-            } else {
-                println!("Queued background cache creation for: {}", image_file_path);
-            }
+            // Cache is now generated client-side and uploaded separately via /api/upload-cache.
         }
         None => {
             let errors: Vec<String> = form.context.errors()
@@ -455,14 +453,13 @@ fn rocket() -> _ {
     println!("Created dithered directory: {:#?}", dithered_result);
 
     rocket::build()
-        .attach(CacheWorkerFairing)
         .mount("/", routes![
-            apply_filter,
             cache_status,
             preview_image,
             submit_delete_image,
             submit_flash_image,
             submit_new_image,
+            upload_cache,
             upload_dithered,
             upload_form
         ])

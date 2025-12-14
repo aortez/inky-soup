@@ -7,6 +7,9 @@
     <meta name="viewport" content="width=device-width">
     <link rel="stylesheet" href="/chota.min.css">
     <style>
+      body {
+        background-color: #A0826D;
+      }
       .container {
         max-width: 1400px;
         margin: 0 auto;
@@ -19,11 +22,11 @@
         margin: 0 10px 10px 0;
       }
       .thumbnails img:hover {
-        border: 4px solid #00ccff;
+        border: 4px solid #B8956A;
         cursor:pointer;
       }
       .thumbnails img.selected {
-        border: 4px solid #00ccff;
+        border: 4px solid #B8956A;
       }
       .preview img {
         border: 4px solid #444;
@@ -56,17 +59,17 @@
         display: flex;
       }
       .flash-modal-content {
-        background: #1a1a1a;
-        border: 2px solid #00ccff;
+        background: #4A3728;
+        border: 2px solid #B8956A;
         border-radius: 8px;
         padding: 30px;
         text-align: center;
         max-width: 500px;
-        color: #fff;
+        color: #C9DBBD;
       }
       .flash-modal-content h2 {
         margin: 0 0 20px 0;
-        color: #00ccff;
+        color: #B8956A;
       }
       .flash-modal-content img {
         max-width: 300px;
@@ -99,11 +102,11 @@
       .progress-fill {
         height: 100%;
         width: 0%;
-        background: linear-gradient(90deg, #00ccff, #00ff88);
+        background: linear-gradient(90deg, #B8956A, #6B8E4E);
         transition: width 0.5s linear;
       }
       .progress-fill.complete {
-        background: #00ff88;
+        background: #6B8E4E;
       }
       .flash-note {
         font-size: 0.8em;
@@ -158,18 +161,18 @@
         display: flex;
       }
       .upload-modal-content {
-        background: #1a1a1a;
-        border: 2px solid #00ccff;
+        background: #4A3728;
+        border: 2px solid #B8956A;
         border-radius: 8px;
         padding: 30px;
         text-align: center;
         max-width: 500px;
         min-width: 350px;
-        color: #fff;
+        color: #C9DBBD;
       }
       .upload-modal-content h2 {
         margin: 0 0 20px 0;
-        color: #00ccff;
+        color: #B8956A;
       }
       .upload-modal-content img {
         max-width: 300px;
@@ -196,7 +199,7 @@
       .upload-stats .stat-value {
         font-size: 1.2em;
         font-weight: bold;
-        color: #00ccff;
+        color: #B8956A;
       }
       .upload-stats .stat-label {
         font-size: 0.8em;
@@ -219,12 +222,19 @@
         justify-content: center;
         margin: 0 10px 10px 0;
         position: relative;
+        cursor: pointer;
+      }
+      .thumbnail-placeholder:hover {
+        border-color: #B8956A;
+      }
+      .thumbnail-placeholder.selected {
+        border-color: #B8956A;
       }
       .thumbnail-placeholder .spinner {
         width: 24px;
         height: 24px;
         border: 3px solid #555;
-        border-top-color: #00ccff;
+        border-top-color: #B8956A;
         border-radius: 50%;
         animation: spin 1s linear infinite;
       }
@@ -255,14 +265,14 @@
         display: flex;
       }
       .filter-editor-content {
-        background: #1a1a1a;
-        border: 2px solid #00ccff;
+        background: #4A3728;
+        border: 2px solid #B8956A;
         border-radius: 8px;
         padding: 30px;
         max-width: 800px;
         max-height: 90vh;
         overflow-y: auto;
-        color: #fff;
+        color: #C9DBBD;
       }
       .filter-editor-header {
         display: flex;
@@ -272,12 +282,12 @@
       }
       .filter-editor-header h2 {
         margin: 0;
-        color: #00ccff;
+        color: #B8956A;
       }
       .filter-editor-header button {
         background: none;
         border: none;
-        color: #fff;
+        color: #C9DBBD;
         font-size: 2em;
         cursor: pointer;
         padding: 0;
@@ -305,24 +315,24 @@
       .filter-buttons button {
         padding: 10px 20px;
         font-size: 1em;
-        border: 2px solid #555;
-        background: #222;
-        color: #fff;
+        border: 2px solid #6B5344;
+        background: #3A2A1F;
+        color: #C9DBBD;
         cursor: pointer;
         border-radius: 4px;
         transition: all 0.2s;
       }
       .filter-buttons button:hover {
-        border-color: #00ccff;
+        border-color: #B8956A;
       }
       .filter-buttons button.active {
-        background: #00ccff;
-        color: #000;
-        border-color: #00ccff;
+        background: #B8956A;
+        color: #2A1A0F;
+        border-color: #B8956A;
       }
       .processing-indicator {
         font-size: 0.9em;
-        color: #00ccff;
+        color: #B8956A;
         min-height: 1.5em;
       }
       .filter-editor-footer {
@@ -416,6 +426,8 @@
                     {% else %}
                     <div
                       class="thumbnail-placeholder"
+                      id="{{ img.path }}"
+                      onclick="selectPlaceholder(this)"
                       data-filename="{{ img.filename }}"
                       data-path="{{ img.path }}"
                       data-filter="{{ img.filter }}"
@@ -637,6 +649,104 @@
       let ditherCurrentSaturation = 0.5;
       let ditherPendingFlash = null;
 
+      // Upload cache generation state.
+      let uploadCacheWorker = null;
+      let uploadImageData = null;
+      let uploadCacheBlob = null;
+      let uploadCacheReady = false;
+      let uploadXhrComplete = false;
+      let uploadFilename = null;
+
+      // Initialize upload cache worker (reuses filter worker).
+      function initUploadCacheWorker() {
+        if (uploadCacheWorker) return;
+
+        uploadCacheWorker = new Worker('/js/filter-worker.js');
+        uploadCacheWorker.onmessage = function(e) {
+          if (e.data.success) {
+            // Convert ImageData to PNG blob.
+            const canvas = document.createElement('canvas');
+            canvas.width = 600;
+            canvas.height = 448;
+            const ctx = canvas.getContext('2d');
+            ctx.putImageData(e.data.imageData, 0, 0);
+
+            canvas.toBlob(function(blob) {
+              uploadCacheBlob = blob;
+              uploadCacheReady = true;
+              console.log('Cache thumbnail generated, size:', blob.size);
+              checkUploadComplete();
+            }, 'image/png');
+          } else {
+            console.error('Cache generation failed:', e.data.error);
+            // Mark as ready anyway so upload can complete (server repair will catch it).
+            uploadCacheReady = true;
+            uploadCacheBlob = null;
+            checkUploadComplete();
+          }
+        };
+      }
+
+      // Check if both upload and cache generation are complete.
+      function checkUploadComplete() {
+        if (!uploadCacheReady || !uploadXhrComplete) return;
+
+        if (uploadCacheBlob && uploadFilename) {
+          // Upload the cache image.
+          const formData = new FormData();
+          formData.append('filename', uploadFilename);
+          formData.append('file', uploadCacheBlob, uploadFilename + '.png');
+
+          const noteEl = document.getElementById('uploadNote');
+          noteEl.textContent = 'Saving thumbnail...';
+
+          fetch('/api/upload-cache', {
+            method: 'POST',
+            body: formData
+          })
+          .then(r => r.json())
+          .then(data => {
+            if (data.success) {
+              console.log('Cache uploaded successfully:', data.path);
+            } else {
+              console.error('Cache upload failed:', data.message);
+            }
+            finishUpload(true);
+          })
+          .catch(err => {
+            console.error('Cache upload error:', err);
+            finishUpload(true); // Still finish, server repair will handle missing cache.
+          });
+        } else {
+          // No cache blob (generation failed), just finish.
+          finishUpload(true);
+        }
+      }
+
+      // Finish upload and show completion UI.
+      function finishUpload(success) {
+        const titleEl = document.getElementById('uploadModalTitle');
+        const noteEl = document.getElementById('uploadNote');
+        const closeBtn = document.getElementById('uploadCloseBtn');
+        const processingProgress = document.getElementById('processingProgress');
+
+        processingProgress.style.width = '100%';
+        processingProgress.classList.add('complete');
+
+        if (success) {
+          titleEl.textContent = '✓ Upload Complete!';
+          titleEl.style.color = '#6B8E4E';
+          noteEl.textContent = 'Image uploaded successfully.';
+          noteEl.style.color = '#6B8E4E';
+        } else {
+          titleEl.textContent = '✗ Upload Failed';
+          titleEl.style.color = '#ff4444';
+          noteEl.textContent = 'Upload failed.';
+          noteEl.style.color = '#ff4444';
+        }
+        closeBtn.style.display = 'inline-block';
+      }
+
       // Initialize dither worker.
       function initDitherWorker() {
         if (ditherWorker) return;
@@ -803,7 +913,7 @@
         document.getElementById('flashNote').style.color = '#666';
         document.getElementById('flashCloseBtn').style.display = 'none';
         document.querySelector('.flash-modal-content h2').textContent = 'Flashing to Display';
-        document.querySelector('.flash-modal-content h2').style.color = '#00ccff';
+        document.querySelector('.flash-modal-content h2').style.color = '#B8956A';
 
         // Show/hide second progress bar.
         document.getElementById('progress2Container').style.display = flashTwice ? 'block' : 'none';
@@ -885,7 +995,7 @@
 
         filenameEl.textContent = currentFilename;
         processingEl.textContent = 'Loading original image...';
-        processingEl.style.color = '#00ccff';
+        processingEl.style.color = '#B8956A';
 
         // Set initial filter to saved preference.
         editorCurrentFilter = mapServerFilterToClient(currentSavedFilter);
@@ -930,7 +1040,7 @@
 
         const processingEl = document.getElementById('filterProcessing');
         processingEl.textContent = 'Processing...';
-        processingEl.style.color = '#00ccff';
+        processingEl.style.color = '#B8956A';
 
         filterWorker.postMessage({
           imageData: originalImageData,
@@ -986,43 +1096,59 @@
         const processingEl = document.getElementById('filterProcessing');
         processingEl.textContent = 'Saving...';
 
-        fetch('/api/apply-filter', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: 'filename=' + encodeURIComponent(currentFilename) + '&filter=' + encodeURIComponent(serverFilter)
-        })
-        .then(r => r.json())
-        .then(data => {
-          if (data.success) {
-            // Update saved filter.
-            currentSavedFilter = serverFilter;
+        // Get the canvas with the already-computed filtered image.
+        const canvas = document.getElementById('filterCanvas');
 
-            // Update the thumbnail.
-            const thumb = document.querySelector('img[data-filename="' + currentFilename + '"]');
-            if (thumb) {
-              thumb.dataset.filter = serverFilter;
-              thumb.src = 'images/cache/' + currentFilename + '.png?t=' + Date.now();
-            }
-
-            // Update main filter dropdown.
-            document.getElementById('filterSelect').value = serverFilter;
-
-            // Close modal.
-            closeFilterEditor();
-
-            // Show success message.
-            const statusEl = document.getElementById('filterStatus');
-            statusEl.textContent = '✓ Filter saved';
-            statusEl.style.color = '#00aa00';
-          } else {
-            processingEl.textContent = 'Error: ' + data.message;
+        // Convert canvas to blob and upload directly.
+        canvas.toBlob(function(blob) {
+          if (!blob) {
+            processingEl.textContent = 'Error: Failed to generate image';
             processingEl.style.color = '#ff4444';
+            return;
           }
-        })
-        .catch(err => {
-          processingEl.textContent = 'Error: ' + err.message;
-          processingEl.style.color = '#ff4444';
-        });
+
+          const formData = new FormData();
+          formData.append('filename', currentFilename);
+          formData.append('filter', serverFilter);
+          formData.append('file', blob, currentFilename + '.png');
+
+          fetch('/api/upload-cache', {
+            method: 'POST',
+            body: formData
+          })
+          .then(r => r.json())
+          .then(data => {
+            if (data.success) {
+              // Update saved filter.
+              currentSavedFilter = serverFilter;
+
+              // Update the thumbnail.
+              const thumb = document.querySelector('img[data-filename="' + currentFilename + '"]');
+              if (thumb) {
+                thumb.dataset.filter = serverFilter;
+                thumb.src = 'images/cache/' + currentFilename + '.png?t=' + Date.now();
+              }
+
+              // Update main filter dropdown.
+              document.getElementById('filterSelect').value = serverFilter;
+
+              // Close modal.
+              closeFilterEditor();
+
+              // Show success message.
+              const statusEl = document.getElementById('filterStatus');
+              statusEl.textContent = '✓ Filter saved';
+              statusEl.style.color = '#6B8E4E';
+            } else {
+              processingEl.textContent = 'Error: ' + data.message;
+              processingEl.style.color = '#ff4444';
+            }
+          })
+          .catch(err => {
+            processingEl.textContent = 'Error: ' + err.message;
+            processingEl.style.color = '#ff4444';
+          });
+        }, 'image/png');
       }
 
       // Currently selected image filename and its saved filter.
@@ -1032,6 +1158,7 @@
       // Thumbnail selection helper.
       function selectThumbnail(el) {
         document.querySelectorAll('.thumbnails img').forEach(img => img.classList.remove('selected'));
+        document.querySelectorAll('.thumbnail-placeholder').forEach(p => p.classList.remove('selected'));
         el.classList.add('selected');
         document.getElementById('submission.image_file_path').value = el.id;
 
@@ -1049,6 +1176,28 @@
         document.getElementById('filterSelect').disabled = false;
         document.getElementById('editFilterBtn').disabled = false;
         document.getElementById('applyFilterBtn').disabled = false;
+      }
+
+      // Placeholder selection helper (for uncached images - allows deletion).
+      function selectPlaceholder(el) {
+        document.querySelectorAll('.thumbnails img').forEach(img => img.classList.remove('selected'));
+        document.querySelectorAll('.thumbnail-placeholder').forEach(p => p.classList.remove('selected'));
+        el.classList.add('selected');
+        document.getElementById('submission.image_file_path').value = el.id;
+
+        // Update current filename.
+        currentFilename = el.dataset.filename;
+        currentSavedFilter = null;
+        document.getElementById('filterStatus').textContent = '(no cache available)';
+
+        // Clear preview since there's no cache.
+        document.getElementById('preview').src = '';
+
+        // Keep flash/filter buttons disabled (no cache to work with).
+        document.getElementById('flashBtn').disabled = true;
+        document.getElementById('filterSelect').disabled = true;
+        document.getElementById('editFilterBtn').disabled = true;
+        document.getElementById('applyFilterBtn').disabled = true;
       }
 
       // Update preview image when filter changes (uses slow preview endpoint).
@@ -1092,7 +1241,7 @@
         .then(data => {
           if (data.success) {
             statusEl.textContent = '✓ ' + data.message;
-            statusEl.style.color = '#00aa00';
+            statusEl.style.color = '#6B8E4E';
 
             // Update the thumbnail's data-filter attribute.
             const thumb = document.querySelector('img[data-filename="' + currentFilename + '"]');
@@ -1189,9 +1338,9 @@
 
         if (success) {
           title.textContent = '✓ Flash Complete!';
-          title.style.color = '#00ff88';
+          title.style.color = '#6B8E4E';
           note.textContent = 'Image sent to display successfully.';
-          note.style.color = '#00ff88';
+          note.style.color = '#6B8E4E';
         } else {
           title.textContent = '✗ Flash Failed';
           title.style.color = '#ff4444';
@@ -1245,25 +1394,53 @@
         return mins + ':' + secs.toString().padStart(2, '0');
       }
 
-      // Show preview when file is selected.
+      // Show preview when file is selected and prepare ImageData for cache generation.
       fileInput.addEventListener('change', function(e) {
         const file = e.target.files[0];
         const uploadBtn = document.getElementById('uploadBtn');
         if (file) {
-          // Check if it's an image.
-          if (file.type.startsWith('image/')) {
-            uploadPreviewImg.src = URL.createObjectURL(file);
+          // Reset state.
+          uploadImageData = null;
+          uploadBtn.disabled = true;
+
+          // Try to load as image (validates browser can actually render it).
+          const objectUrl = URL.createObjectURL(file);
+          const img = new Image();
+
+          img.onload = function() {
+            // Successfully loaded - prepare ImageData for cache generation.
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = img.width;
+            tempCanvas.height = img.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(img, 0, 0);
+            uploadImageData = tempCtx.getImageData(0, 0, img.width, img.height);
+            console.log('Prepared ImageData for cache generation:', img.width, 'x', img.height);
+
+            uploadPreviewImg.src = objectUrl;
             uploadPreviewImg.style.display = 'block';
-          } else {
+            uploadFileName.textContent = file.name;
+            uploadFileSize.textContent = formatBytes(file.size);
+            uploadPreview.classList.add('active');
+            uploadBtn.disabled = false;
+          };
+
+          img.onerror = function() {
+            // Failed to load - not a valid web image format.
+            URL.revokeObjectURL(objectUrl);
             uploadPreviewImg.style.display = 'none';
-          }
-          uploadFileName.textContent = file.name;
-          uploadFileSize.textContent = formatBytes(file.size);
-          uploadPreview.classList.add('active');
-          uploadBtn.disabled = false;
+            uploadFileName.textContent = file.name + ' (unsupported format)';
+            uploadFileSize.textContent = 'Only JPEG, PNG, GIF, WebP supported';
+            uploadPreview.classList.add('active');
+            uploadBtn.disabled = true;
+            console.error('Cannot load image:', file.name, file.type);
+          };
+
+          img.src = objectUrl;
         } else {
           uploadPreview.classList.remove('active');
           uploadBtn.disabled = true;
+          uploadImageData = null;
         }
       });
 
@@ -1274,6 +1451,12 @@
         const file = fileInput.files[0];
         if (!file) {
           alert('Please select a file first.');
+          return;
+        }
+
+        // Require valid image data (prevents uploading unsupported formats).
+        if (!uploadImageData) {
+          alert('Please select a valid image file (JPEG, PNG, GIF, or WebP).');
           return;
         }
 
@@ -1316,10 +1499,31 @@
         noteEl.style.color = '#666';
         closeBtn.style.display = 'none';
         titleEl.textContent = 'Uploading Image';
-        titleEl.style.color = '#00ccff';
+        titleEl.style.color = '#B8956A';
 
         modal.classList.add('active');
         let processingAnimationId = null;
+
+        // Reset upload cache state.
+        uploadCacheReady = false;
+        uploadXhrComplete = false;
+        uploadCacheBlob = null;
+        uploadFilename = file.name;
+
+        // Start cache generation in parallel (if we have ImageData).
+        if (uploadImageData) {
+          initUploadCacheWorker();
+          console.log('Starting parallel cache generation for:', file.name);
+          uploadCacheWorker.postMessage({
+            imageData: uploadImageData,
+            width: 600,
+            height: 448,
+            filter: 'bicubic'
+          });
+        } else {
+          // No ImageData (non-image file?), mark cache as ready to skip.
+          uploadCacheReady = true;
+        }
 
         // Create XMLHttpRequest for progress tracking.
         const xhr = new XMLHttpRequest();
@@ -1377,25 +1581,26 @@
           const elapsed = (Date.now() - startTime) / 1000;
           timeEl.textContent = formatTime(elapsed);
 
-          // Complete both progress bars.
+          // Complete upload progress bar.
           progressBar.style.width = '100%';
           progressBar.classList.add('complete');
-          processingProgress.style.width = '100%';
-          processingProgress.classList.add('complete');
           percentEl.textContent = '100%';
 
           if (xhr.status >= 200 && xhr.status < 300) {
-            titleEl.textContent = '✓ Upload Complete!';
-            titleEl.style.color = '#00ff88';
-            noteEl.textContent = 'Image uploaded successfully.';
-            noteEl.style.color = '#00ff88';
+            // Original upload succeeded, now wait for cache generation and upload.
+            noteEl.textContent = 'Generating thumbnail...';
+            uploadXhrComplete = true;
+            checkUploadComplete();
           } else {
+            // Upload failed, show error immediately.
+            processingProgress.style.width = '100%';
+            processingProgress.classList.add('complete');
             titleEl.textContent = '✗ Upload Failed';
             titleEl.style.color = '#ff4444';
             noteEl.textContent = 'Server returned status ' + xhr.status;
             noteEl.style.color = '#ff4444';
+            closeBtn.style.display = 'inline-block';
           }
-          closeBtn.style.display = 'inline-block';
         });
 
         xhr.addEventListener('error', function() {
