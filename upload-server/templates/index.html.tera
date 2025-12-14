@@ -320,6 +320,11 @@
       }
 
       document.querySelector('form[action="/flash"]').addEventListener('submit', function(e) {
+        // Check if delete button was clicked - if so, let form submit normally.
+        if (e.submitter && e.submitter.formAction && e.submitter.formAction.endsWith('/delete')) {
+          return;
+        }
+
         e.preventDefault();
 
         const imagePath = document.getElementById('submission.image_file_path').value;
