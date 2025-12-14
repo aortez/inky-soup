@@ -22,6 +22,9 @@
         border: 4px solid #00ccff;
         cursor:pointer;
       }
+      .thumbnails img.selected {
+        border: 4px solid #00ccff;
+      }
       .preview img {
         border: 4px solid #444;
         padding: 1px;
@@ -91,13 +94,15 @@
                   <div class="col">
                     {{ s }}
                     <img
-                      onclick=
-                        "getElementById('submission.image_file_path').value = this.id;
-                        getElementById('preview').src = this.src;
-                        this.focus();"
+                      onclick="
+                        document.querySelectorAll('.thumbnails img').forEach(img => img.classList.remove('selected'));
+                        this.classList.add('selected');
+                        document.getElementById('submission.image_file_path').value = this.id;
+                        document.getElementById('preview').src = this.src;
+                      "
                       id="{{ s }}"
                       src="{{ s }}"
-                      align="center"
+                      alt="{{ s }}"
                     />
 
                   </div>
