@@ -61,7 +61,7 @@ struct SubmitNewImage<'v> {
 struct GalleryImage {
     path: String,
     filename: String,
-    cache_ready: bool,
+    thumb_ready: bool,
     filter: String,
 }
 
@@ -73,12 +73,12 @@ struct TemplateContext {
     errors: Vec<String>
 }
 
-/// Response for cache status API endpoint.
+/// Response for thumb status API endpoint.
 #[derive(Serialize)]
 #[serde(crate = "rocket::serde")]
-struct CacheStatus {
+struct ThumbStatus {
     ready: bool,
-    cache_path: String,
+    thumb_path: String,
 }
 
 fn get_gallery_images() -> Vec<GalleryImage> {
@@ -97,16 +97,16 @@ fn get_gallery_images() -> Vec<GalleryImage> {
                     .to_string();
 
                 let image_path = format!("images/{}", filename);
-                let cache_path = format!("static/images/cache/{}.png", filename);
-                let cache_ready = Path::new(&cache_path).exists();
+                let thumb_path = format!("static/images/thumbs/{}.png", filename);
+                let thumb_ready = Path::new(&thumb_path).exists();
                 let filter = metadata::get_filter_for_image(&filename);
 
-                println!("found image file {} (cache_ready: {}, filter: {})", image_path, cache_ready, filter);
+                println!("found image file {} (thumb_ready: {}, filter: {})", image_path, thumb_ready, filter);
 
                 images.push(GalleryImage {
                     path: image_path,
                     filename,
-                    cache_ready,
+                    thumb_ready,
                     filter,
                 });
             },
@@ -116,15 +116,15 @@ fn get_gallery_images() -> Vec<GalleryImage> {
     images
 }
 
-/// API endpoint to check if a cache file exists.
-#[get("/api/cache-status/<filename>")]
-fn cache_status(filename: &str) -> Json<CacheStatus> {
-    let cache_path = format!("static/images/cache/{}.png", filename);
-    let ready = Path::new(&cache_path).exists();
+/// API endpoint to check if a gallery thumbnail exists.
+#[get("/api/thumb-status/<filename>")]
+fn thumb_status(filename: &str) -> Json<ThumbStatus> {
+    let thumb_path = format!("static/images/thumbs/{}.png", filename);
+    let ready = Path::new(&thumb_path).exists();
 
-    Json(CacheStatus {
+    Json(ThumbStatus {
         ready,
-        cache_path: format!("images/cache/{}.png", filename),
+        thumb_path: format!("images/thumbs/{}.png", filename),
     })
 }
 
@@ -157,6 +157,22 @@ struct CacheUpload<'v> {
 #[derive(Serialize)]
 #[serde(crate = "rocket::serde")]
 struct UploadCacheResponse {
+    success: bool,
+    message: String,
+    path: Option<String>,
+}
+
+/// Form data for gallery thumbnail upload.
+#[derive(Debug, FromForm)]
+struct ThumbUpload<'v> {
+    filename: String,
+    file: TempFile<'v>,
+}
+
+/// Response for upload-thumb endpoint.
+#[derive(Serialize)]
+#[serde(crate = "rocket::serde")]
+struct UploadThumbResponse {
     success: bool,
     message: String,
     path: Option<String>,
@@ -238,6 +254,34 @@ async fn upload_cache(mut form: Form<CacheUpload<'_>>) -> Json<UploadCacheRespon
     }
 }
 
+/// API endpoint to upload a gallery thumbnail.
+#[post("/api/upload-thumb", data = "<form>")]
+async fn upload_thumb(mut form: Form<ThumbUpload<'_>>) -> Json<UploadThumbResponse> {
+    let filename = form.filename.clone();
+
+    // Save thumbnail to thumbs directory.
+    let thumb_path = format!("static/images/thumbs/{}.png", filename);
+
+    match form.file.copy_to(&thumb_path).await {
+        Ok(()) => {
+            println!("Saved gallery thumbnail: {}", thumb_path);
+            Json(UploadThumbResponse {
+                success: true,
+                message: "Thumbnail uploaded successfully".to_string(),
+                path: Some(format!("images/thumbs/{}.png", filename)),
+            })
+        }
+        Err(e) => {
+            println!("Failed to save thumbnail: {}", e);
+            Json(UploadThumbResponse {
+                success: false,
+                message: format!("Failed to save thumbnail: {}", e),
+                path: None,
+            })
+        }
+    }
+}
+
 #[get("/")]
 fn upload_form() -> Template {
     println!("populating list of images in gallery...");
@@ -282,11 +326,20 @@ async fn submit_delete_image<'r>(mut form: Form<Contextual<'r, SubmitDeleteImage
                 }
             }
 
-            // Clean up metadata.
+            // Also delete gallery thumbnail if it exists.
             let filename = Path::new(&image_file)
                 .file_name()
                 .and_then(|f| f.to_str())
                 .unwrap_or("");
+            let thumb_path = format!("static/images/thumbs/{}.png", filename);
+            if Path::new(&thumb_path).exists() {
+                match fs::remove_file(&thumb_path) {
+                    Ok(_) => println!("Removed thumbnail: {}", thumb_path),
+                    Err(e) => println!("Failed to remove thumbnail: {}", e),
+                }
+            }
+
+            // Clean up metadata.
             metadata::remove_image_metadata(filename);
         }
         None => {
@@ -417,15 +470,19 @@ fn rocket() -> _ {
     let dithered_result = fs::create_dir_all("static/images/dithered/");
     println!("Created dithered directory: {:#?}", dithered_result);
 
+    let thumbs_result = fs::create_dir_all("static/images/thumbs/");
+    println!("Created thumbs directory: {:#?}", thumbs_result);
+
     rocket::build()
         .mount("/", routes![
-            cache_status,
             submit_delete_image,
             submit_flash_image,
             submit_new_image,
+            thumb_status,
             upload_cache,
             upload_dithered,
-            upload_form
+            upload_form,
+            upload_thumb
         ])
         .mount("/", FileServer::from("static"))
         .attach(Template::fairing())

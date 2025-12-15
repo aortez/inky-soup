@@ -16,7 +16,7 @@
         padding: 20px 10px;
       }
       .thumbnails img {
-        height: 80px;
+        height: 100px;
         border: 4px solid #555;
         padding: 1px;
         margin: 0 10px 10px 0;
@@ -213,8 +213,8 @@
 
       /* Thumbnail placeholder for images being cached. */
       .thumbnail-placeholder {
-        width: 120px;
-        height: 80px;
+        width: 134px;
+        height: 100px;
         background: #333;
         border: 4px solid #555;
         display: inline-flex;
@@ -411,14 +411,15 @@
 
                 <div class="row">
                   {% for img in images %}
-                  {%- set cache_path = "images/cache/" ~ img.filename ~ ".png" -%}
+                  {%- set thumb_path = "images/thumbs/" ~ img.filename ~ ".png" -%}
                   <div class="col" style="text-align: center;">
-                    {% if img.cache_ready %}
+                    {% if img.thumb_ready %}
                     <img
                       onclick="selectThumbnail(this)"
                       id="{{ img.path }}"
-                      src="{{ cache_path }}"
+                      src="{{ thumb_path }}"
                       alt="{{ img.path }}"
+                      loading="lazy"
                       data-filter="{{ img.filter }}"
                       data-filename="{{ img.filename }}"
                     />
@@ -633,6 +634,13 @@
     <script src="/js/dither.js"></script>
     <script>
       const FLASH_DURATION_MS = 40000;
+
+      // Image dimensions.
+      const CACHE_WIDTH = 600;   // For preview/dithering (matches e-ink display).
+      const CACHE_HEIGHT = 448;
+      const THUMB_WIDTH = 150;   // For gallery thumbnails.
+      const THUMB_HEIGHT = 112;
+
       let animationCancelled = false;
       let isFlashing = false;
 
@@ -649,9 +657,12 @@
 
       // Upload cache generation state.
       let uploadCacheWorker = null;
+      let uploadThumbWorker = null;
       let uploadImageData = null;
       let uploadCacheBlob = null;
+      let uploadThumbBlob = null;
       let uploadCacheReady = false;
+      let uploadThumbReady = false;
       let uploadXhrComplete = false;
       let uploadFilename = null;
 
@@ -664,8 +675,8 @@
           if (e.data.success) {
             // Convert ImageData to PNG blob.
             const canvas = document.createElement('canvas');
-            canvas.width = 600;
-            canvas.height = 448;
+            canvas.width = CACHE_WIDTH;
+            canvas.height = CACHE_HEIGHT;
             const ctx = canvas.getContext('2d');
             ctx.putImageData(e.data.imageData, 0, 0);
 
@@ -685,40 +696,83 @@
         };
       }
 
-      // Check if both upload and cache generation are complete.
+      // Initialize upload thumb worker (generates small gallery thumbnail).
+      function initUploadThumbWorker() {
+        if (uploadThumbWorker) return;
+
+        uploadThumbWorker = new Worker('/js/filter-worker.js');
+        uploadThumbWorker.onmessage = function(e) {
+          if (e.data.success) {
+            // Convert ImageData to PNG blob.
+            const canvas = document.createElement('canvas');
+            canvas.width = THUMB_WIDTH;
+            canvas.height = THUMB_HEIGHT;
+            const ctx = canvas.getContext('2d');
+            ctx.putImageData(e.data.imageData, 0, 0);
+
+            canvas.toBlob(function(blob) {
+              uploadThumbBlob = blob;
+              uploadThumbReady = true;
+              console.log('Gallery thumbnail generated, size:', blob.size);
+              checkUploadComplete();
+            }, 'image/png');
+          } else {
+            console.error('Thumb generation failed:', e.data.error);
+            uploadThumbReady = true;
+            uploadThumbBlob = null;
+            checkUploadComplete();
+          }
+        };
+      }
+
+      // Check if upload, cache, and thumb generation are complete.
       function checkUploadComplete() {
-        if (!uploadCacheReady || !uploadXhrComplete) return;
+        if (!uploadCacheReady || !uploadThumbReady || !uploadXhrComplete) return;
+
+        const noteEl = document.getElementById('uploadNote');
+        noteEl.textContent = 'Saving thumbnails...';
+
+        // Upload both cache and thumb in parallel.
+        const uploads = [];
 
         if (uploadCacheBlob && uploadFilename) {
-          // Upload the cache image.
-          const formData = new FormData();
-          formData.append('filename', uploadFilename);
-          formData.append('file', uploadCacheBlob, uploadFilename + '.png');
-
-          const noteEl = document.getElementById('uploadNote');
-          noteEl.textContent = 'Saving thumbnail...';
-
-          fetch('/api/upload-cache', {
-            method: 'POST',
-            body: formData
-          })
-          .then(r => r.json())
-          .then(data => {
-            if (data.success) {
-              console.log('Cache uploaded successfully:', data.path);
-            } else {
-              console.error('Cache upload failed:', data.message);
-            }
-            finishUpload(true);
-          })
-          .catch(err => {
-            console.error('Cache upload error:', err);
-            finishUpload(true); // Still finish, server repair will handle missing cache.
-          });
-        } else {
-          // No cache blob (generation failed), just finish.
-          finishUpload(true);
+          const cacheForm = new FormData();
+          cacheForm.append('filename', uploadFilename);
+          cacheForm.append('file', uploadCacheBlob, uploadFilename + '.png');
+          uploads.push(
+            fetch('/api/upload-cache', { method: 'POST', body: cacheForm })
+              .then(r => r.json())
+              .then(data => {
+                if (data.success) {
+                  console.log('Cache uploaded:', data.path);
+                } else {
+                  console.error('Cache upload failed:', data.message);
+                }
+              })
+              .catch(err => console.error('Cache upload error:', err))
+          );
         }
+
+        if (uploadThumbBlob && uploadFilename) {
+          const thumbForm = new FormData();
+          thumbForm.append('filename', uploadFilename);
+          thumbForm.append('file', uploadThumbBlob, uploadFilename + '.png');
+          uploads.push(
+            fetch('/api/upload-thumb', { method: 'POST', body: thumbForm })
+              .then(r => r.json())
+              .then(data => {
+                if (data.success) {
+                  console.log('Thumb uploaded:', data.path);
+                } else {
+                  console.error('Thumb upload failed:', data.message);
+                }
+              })
+              .catch(err => console.error('Thumb upload error:', err))
+          );
+        }
+
+        // Wait for all uploads to complete.
+        Promise.all(uploads).then(() => finishUpload(true));
       }
 
       // Finish upload and show completion UI.
@@ -785,14 +839,14 @@
           const ctx = canvas.getContext('2d');
 
           // Ensure canvas is 600x448.
-          canvas.width = 600;
-          canvas.height = 448;
+          canvas.width = CACHE_WIDTH;
+          canvas.height = CACHE_HEIGHT;
 
           // Draw image to canvas.
-          ctx.drawImage(img, 0, 0, 600, 448);
+          ctx.drawImage(img, 0, 0, CACHE_WIDTH, CACHE_HEIGHT);
 
           // Get image data.
-          ditherImageData = ctx.getImageData(0, 0, 600, 448);
+          ditherImageData = ctx.getImageData(0, 0, CACHE_WIDTH, CACHE_HEIGHT);
 
           // Reset saturation slider to default.
           const slider = document.getElementById('saturationSlider');
@@ -1041,8 +1095,8 @@
 
         filterWorker.postMessage({
           imageData: originalImageData,
-          width: 600,
-          height: 448,
+          width: CACHE_WIDTH,
+          height: CACHE_HEIGHT,
           filter: filter
         });
       }
@@ -1072,58 +1126,71 @@
         const processingEl = document.getElementById('filterProcessing');
         processingEl.textContent = 'Saving...';
 
-        // Get the canvas with the already-computed filtered image.
+        // Get the canvas with the already-computed filtered image (600x448).
         const canvas = document.getElementById('filterCanvas');
 
-        // Convert canvas to blob and upload directly.
-        canvas.toBlob(function(blob) {
-          if (!blob) {
+        // Generate both cache blob and thumb blob.
+        canvas.toBlob(function(cacheBlob) {
+          if (!cacheBlob) {
             processingEl.textContent = 'Error: Failed to generate image';
             processingEl.style.color = '#ff4444';
             return;
           }
 
-          const formData = new FormData();
-          formData.append('filename', currentFilename);
-          formData.append('filter', filterToSave);
-          formData.append('file', blob, currentFilename + '.png');
+          // Create smaller thumb from the same canvas.
+          const thumbCanvas = document.createElement('canvas');
+          thumbCanvas.width = THUMB_WIDTH;
+          thumbCanvas.height = THUMB_HEIGHT;
+          const thumbCtx = thumbCanvas.getContext('2d');
+          thumbCtx.drawImage(canvas, 0, 0, THUMB_WIDTH, THUMB_HEIGHT);
 
-          fetch('/api/upload-cache', {
-            method: 'POST',
-            body: formData
-          })
-          .then(r => r.json())
-          .then(data => {
-            if (data.success) {
-              // Update saved filter.
-              currentSavedFilter = filterToSave;
+          thumbCanvas.toBlob(function(thumbBlob) {
+            // Upload both in parallel.
+            const cacheForm = new FormData();
+            cacheForm.append('filename', currentFilename);
+            cacheForm.append('filter', filterToSave);
+            cacheForm.append('file', cacheBlob, currentFilename + '.png');
 
-              // Update the thumbnail.
-              const thumb = document.querySelector('img[data-filename="' + currentFilename + '"]');
-              if (thumb) {
-                thumb.dataset.filter = filterToSave;
-                thumb.src = 'images/cache/' + currentFilename + '.png?t=' + Date.now();
+            const thumbForm = new FormData();
+            thumbForm.append('filename', currentFilename);
+            thumbForm.append('file', thumbBlob, currentFilename + '.png');
+
+            Promise.all([
+              fetch('/api/upload-cache', { method: 'POST', body: cacheForm }).then(r => r.json()),
+              fetch('/api/upload-thumb', { method: 'POST', body: thumbForm }).then(r => r.json())
+            ])
+            .then(([cacheData, thumbData]) => {
+              if (cacheData.success && thumbData.success) {
+                // Update saved filter.
+                currentSavedFilter = filterToSave;
+
+                // Update the thumbnail.
+                const thumb = document.querySelector('img[data-filename="' + currentFilename + '"]');
+                if (thumb) {
+                  thumb.dataset.filter = filterToSave;
+                  thumb.src = 'images/thumbs/' + currentFilename + '.png?t=' + Date.now();
+                }
+
+                // Update main filter dropdown.
+                document.getElementById('filterSelect').value = filterToSave;
+
+                // Close modal.
+                closeFilterEditor();
+
+                // Show success message.
+                const statusEl = document.getElementById('filterStatus');
+                statusEl.textContent = '✓ Filter saved';
+                statusEl.style.color = '#6B8E4E';
+              } else {
+                processingEl.textContent = 'Error: Upload failed';
+                processingEl.style.color = '#ff4444';
               }
-
-              // Update main filter dropdown.
-              document.getElementById('filterSelect').value = filterToSave;
-
-              // Close modal.
-              closeFilterEditor();
-
-              // Show success message.
-              const statusEl = document.getElementById('filterStatus');
-              statusEl.textContent = '✓ Filter saved';
-              statusEl.style.color = '#6B8E4E';
-            } else {
-              processingEl.textContent = 'Error: ' + data.message;
+            })
+            .catch(err => {
+              processingEl.textContent = 'Error: ' + err.message;
               processingEl.style.color = '#ff4444';
-            }
-          })
-          .catch(err => {
-            processingEl.textContent = 'Error: ' + err.message;
-            processingEl.style.color = '#ff4444';
-          });
+            });
+          }, 'image/png');
         }, 'image/png');
       }
 
@@ -1174,31 +1241,81 @@
         document.getElementById('editFilterBtn').disabled = true;
       }
 
-      // Poll for cache status and replace placeholder when ready.
-      function pollCacheStatus(filename, path, placeholderEl) {
-        fetch('/api/cache-status/' + encodeURIComponent(filename))
+      // Poll for thumb status and replace placeholder when ready.
+      // If thumb doesn't exist but cache does, generate thumb from cache.
+      function pollThumbStatus(filename, path, placeholderEl) {
+        fetch('/api/thumb-status/' + encodeURIComponent(filename))
           .then(r => r.json())
           .then(data => {
             if (data.ready) {
-              // Create real image element to replace placeholder.
-              const img = document.createElement('img');
-              img.src = data.cache_path;
-              img.id = path;
-              img.alt = path;
-              img.dataset.filename = filename;
-              img.dataset.filter = placeholderEl.dataset.filter || 'bicubic';
-              img.onclick = function() { selectThumbnail(this); };
-              placeholderEl.replaceWith(img);
+              // Thumb exists - show it.
+              replacePlaceholderWithThumb(filename, path, placeholderEl, data.thumb_path);
             } else {
-              // Poll again in 500ms.
-              setTimeout(() => pollCacheStatus(filename, path, placeholderEl), 500);
+              // No thumb - try to generate from cache.
+              generateThumbFromCache(filename, path, placeholderEl);
             }
           })
           .catch(err => {
-            console.error('Cache status poll failed:', err);
-            // Retry after longer delay on error.
-            setTimeout(() => pollCacheStatus(filename, path, placeholderEl), 2000);
+            console.error('Thumb status poll failed:', err);
+            setTimeout(() => pollThumbStatus(filename, path, placeholderEl), 2000);
           });
+      }
+
+      // Generate thumb from cache image.
+      function generateThumbFromCache(filename, path, placeholderEl) {
+        const cachePath = 'images/cache/' + filename + '.png';
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+
+        img.onload = function() {
+          // Resize to thumb dimensions.
+          const canvas = document.createElement('canvas');
+          canvas.width = THUMB_WIDTH;
+          canvas.height = THUMB_HEIGHT;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, THUMB_WIDTH, THUMB_HEIGHT);
+
+          // Upload thumb.
+          canvas.toBlob(function(blob) {
+            const formData = new FormData();
+            formData.append('filename', filename);
+            formData.append('file', blob, filename + '.png');
+
+            fetch('/api/upload-thumb', { method: 'POST', body: formData })
+              .then(r => r.json())
+              .then(data => {
+                if (data.success) {
+                  replacePlaceholderWithThumb(filename, path, placeholderEl, data.path);
+                } else {
+                  console.error('Thumb upload failed:', data.message);
+                  setTimeout(() => pollThumbStatus(filename, path, placeholderEl), 5000);
+                }
+              })
+              .catch(err => {
+                console.error('Thumb upload error:', err);
+                setTimeout(() => pollThumbStatus(filename, path, placeholderEl), 5000);
+              });
+          }, 'image/png');
+        };
+
+        img.onerror = function() {
+          // Cache doesn't exist either - keep polling (upload may be in progress).
+          setTimeout(() => pollThumbStatus(filename, path, placeholderEl), 1000);
+        };
+
+        img.src = cachePath;
+      }
+
+      // Replace placeholder with actual thumbnail image.
+      function replacePlaceholderWithThumb(filename, path, placeholderEl, thumbPath) {
+        const img = document.createElement('img');
+        img.src = thumbPath;
+        img.id = path;
+        img.alt = path;
+        img.dataset.filename = filename;
+        img.dataset.filter = placeholderEl.dataset.filter || 'bicubic';
+        img.onclick = function() { selectThumbnail(this); };
+        placeholderEl.replaceWith(img);
       }
 
       // Start polling for any placeholders on page load.
@@ -1206,7 +1323,7 @@
         document.querySelectorAll('.thumbnail-placeholder').forEach(el => {
           const filename = el.dataset.filename;
           const path = el.dataset.path;
-          pollCacheStatus(filename, path, el);
+          pollThumbStatus(filename, path, el);
         });
       });
 
@@ -1417,25 +1534,39 @@
         modal.classList.add('active');
         let processingAnimationId = null;
 
-        // Reset upload cache state.
+        // Reset upload state.
         uploadCacheReady = false;
+        uploadThumbReady = false;
         uploadXhrComplete = false;
         uploadCacheBlob = null;
+        uploadThumbBlob = null;
         uploadFilename = file.name;
 
-        // Start cache generation in parallel (if we have ImageData).
+        // Start cache and thumb generation in parallel (if we have ImageData).
         if (uploadImageData) {
           initUploadCacheWorker();
-          console.log('Starting parallel cache generation for:', file.name);
+          initUploadThumbWorker();
+          console.log('Starting parallel cache/thumb generation for:', file.name);
+
+          // Generate 600x448 cache for preview/dithering.
           uploadCacheWorker.postMessage({
             imageData: uploadImageData,
-            width: 600,
-            height: 448,
+            width: CACHE_WIDTH,
+            height: CACHE_HEIGHT,
+            filter: 'bicubic'
+          });
+
+          // Generate gallery thumb.
+          uploadThumbWorker.postMessage({
+            imageData: uploadImageData,
+            width: THUMB_WIDTH,
+            height: THUMB_HEIGHT,
             filter: 'bicubic'
           });
         } else {
-          // No ImageData (non-image file?), mark cache as ready to skip.
+          // No ImageData (non-image file?), mark as ready to skip.
           uploadCacheReady = true;
+          uploadThumbReady = true;
         }
 
         // Create XMLHttpRequest for progress tracking.

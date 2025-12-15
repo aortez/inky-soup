@@ -33,10 +33,13 @@ fn run_cleanup() {
     // Clean up dithered directory.
     let dithered_removed = cleanup_derived_directory("static/images/dithered", &originals);
 
-    if cache_removed > 0 || dithered_removed > 0 {
+    // Clean up thumbs directory.
+    let thumbs_removed = cleanup_derived_directory("static/images/thumbs", &originals);
+
+    if cache_removed > 0 || dithered_removed > 0 || thumbs_removed > 0 {
         println!(
-            "Cleanup complete: removed {} cache files, {} dithered files",
-            cache_removed, dithered_removed
+            "Cleanup complete: removed {} cache, {} dithered, {} thumbs",
+            cache_removed, dithered_removed, thumbs_removed
         );
     } else {
         println!("Cleanup complete: no orphaned files found");
