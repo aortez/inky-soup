@@ -13,8 +13,6 @@ pub struct ImageMetadata {
     pub filter: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_dithered_saturation: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub has_dithered_cache: Option<bool>,
 }
 
 impl Default for ImageMetadata {
@@ -22,7 +20,6 @@ impl Default for ImageMetadata {
         Self {
             filter: DEFAULT_FILTER.to_string(),
             last_dithered_saturation: None,
-            has_dithered_cache: None,
         }
     }
 }
@@ -102,15 +99,13 @@ pub fn set_dithered_saturation(filename: &str, saturation: f32) {
     let mut cache = METADATA_CACHE.lock().unwrap();
     let entry = cache.entry(filename.to_string()).or_insert_with(Default::default);
     entry.last_dithered_saturation = Some(saturation);
-    entry.has_dithered_cache = Some(true);
     save_metadata_to_file(&cache);
 }
 
-/// Clears the dithered cache flag for an image (called when filter changes).
-pub fn clear_dithered_cache(filename: &str) {
+/// Clears the dithered saturation for an image (called when filter changes).
+pub fn clear_dithered_saturation(filename: &str) {
     let mut cache = METADATA_CACHE.lock().unwrap();
     if let Some(entry) = cache.get_mut(filename) {
-        entry.has_dithered_cache = Some(false);
         entry.last_dithered_saturation = None;
         save_metadata_to_file(&cache);
     }

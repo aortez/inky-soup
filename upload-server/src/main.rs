@@ -211,7 +211,7 @@ async fn upload_cache(mut form: Form<CacheUpload<'_>>) -> Json<UploadCacheRespon
             // If filter was specified, save preference and clear dithered cache.
             if let Some(ref filter_name) = filter {
                 metadata::set_filter_for_image(&filename, filter_name);
-                metadata::clear_dithered_cache(&filename);
+                metadata::clear_dithered_saturation(&filename);
 
                 // Remove dithered file if it exists.
                 let dithered_path = format!("static/images/dithered/{}.png", filename);
