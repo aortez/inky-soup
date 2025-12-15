@@ -8,7 +8,7 @@ It provides users with a web app that they can use to flash images to their Inky
 
 I suggest using a Pi Zero W, as it has low compute requirements and when combined with the e-ink display, it has very low power utilization (~1 watt peak).
 
-The web app mostly keeps computation client side and maintains caches to avoid recompuating things.
+The web app mostly keeps computation client side and maintains caches to avoid recomputing things.
 
 It provides a nice gallery for viewing/managing/processing and of course flashing your images.
 
@@ -105,4 +105,5 @@ This copies files directly to a mounted SD card via a remote machine (useful for
 - [ ] Configure the change interval.
 
 ## Advanced
+- [ ] Remember last image parameters and re-use - allows users to tune already showing image! (consider user stories here)
 - [ ] Interactive cropping sometime before flashing... when?

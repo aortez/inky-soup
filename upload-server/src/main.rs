@@ -5,11 +5,13 @@ mod cleanup;
 mod metadata;
 
 use glob::glob;
+use log::{debug, error, info, warn};
 
 use rocket_dyn_templates::Template;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::form::{Form, Contextual};
 use rocket::fs::{FileServer, TempFile};
+use rocket::http::Status;
 use rocket::response::Redirect;
 use rocket::serde::json::Json;
 use rocket::serde::Serialize;
@@ -17,7 +19,7 @@ use rocket::Rocket;
 
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+use tokio::process::Command;
 
 
 #[derive(Debug, FromForm)]
@@ -81,6 +83,28 @@ struct ThumbStatus {
     thumb_path: String,
 }
 
+/// Sanitizes a filename to prevent path traversal attacks.
+/// Strips any directory components and rejects empty or dangerous filenames.
+fn sanitize_filename(filename: &str) -> Option<String> {
+    // Extract just the filename part, stripping any path components.
+    let name = filename
+        .rsplit(|c| c == '/' || c == '\\')
+        .next()
+        .unwrap_or("");
+
+    // Reject empty filenames or those that are just dots.
+    if name.is_empty() || name == "." || name == ".." {
+        return None;
+    }
+
+    // Reject filenames that start with a dot (hidden files).
+    if name.starts_with('.') {
+        return None;
+    }
+
+    Some(name.to_string())
+}
+
 fn get_gallery_images() -> Vec<GalleryImage> {
     let mut images: Vec<GalleryImage> = Vec::new();
     for entry in glob("static/images/*").expect("Failed to read glob pattern") {
@@ -101,8 +125,6 @@ fn get_gallery_images() -> Vec<GalleryImage> {
                 let thumb_ready = Path::new(&thumb_path).exists();
                 let filter = metadata::get_filter_for_image(&filename);
 
-                println!("found image file {} (thumb_ready: {}, filter: {})", image_path, thumb_ready, filter);
-
                 images.push(GalleryImage {
                     path: image_path,
                     filename,
@@ -110,9 +132,10 @@ fn get_gallery_images() -> Vec<GalleryImage> {
                     filter,
                 });
             },
-            Err(e) => println!("{:?}", e),
+            Err(e) => warn!("Error reading gallery entry: {:?}", e),
         }
     }
+    debug!("Found {} images in gallery", images.len());
     images
 }
 
@@ -181,27 +204,38 @@ struct UploadThumbResponse {
 /// API endpoint to upload a pre-dithered image.
 #[post("/api/upload-dithered", data = "<form>")]
 async fn upload_dithered(mut form: Form<DitheredUpload<'_>>) -> Json<UploadDitheredResponse> {
-    let filename = form.filename.clone();
+    // Sanitize filename to prevent path traversal.
+    let filename = match sanitize_filename(&form.filename) {
+        Some(name) => name,
+        None => {
+            warn!("Rejected invalid dithered upload filename: {}", form.filename);
+            return Json(UploadDitheredResponse {
+                success: false,
+                message: "Invalid filename".to_string(),
+                path: None,
+            });
+        }
+    };
     let saturation = form.saturation;
+    debug!("Saving dithered image: {} (saturation: {})", filename, saturation);
 
     // Save dithered image to dithered directory (always as PNG).
     let dithered_path = format!("static/images/dithered/{}.png", filename);
 
     match form.file.copy_to(&dithered_path).await {
         Ok(()) => {
-            println!("Saved dithered image: {}", dithered_path);
-
             // Store saturation metadata.
             metadata::set_dithered_saturation(&filename, saturation);
+            debug!("Saved dithered image: {}", filename);
 
             Json(UploadDitheredResponse {
                 success: true,
-                message: format!("Dithered image uploaded successfully"),
+                message: "Dithered image uploaded successfully".to_string(),
                 path: Some(format!("images/dithered/{}.png", filename)),
             })
         }
         Err(e) => {
-            println!("Failed to save dithered image: {}", e);
+            error!("Failed to save dithered image {}: {}", filename, e);
             Json(UploadDitheredResponse {
                 success: false,
                 message: format!("Failed to save dithered image: {}", e),
@@ -214,16 +248,26 @@ async fn upload_dithered(mut form: Form<DitheredUpload<'_>>) -> Json<UploadDithe
 /// API endpoint to upload a pre-generated cache image.
 #[post("/api/upload-cache", data = "<form>")]
 async fn upload_cache(mut form: Form<CacheUpload<'_>>) -> Json<UploadCacheResponse> {
-    let filename = form.filename.clone();
+    // Sanitize filename to prevent path traversal.
+    let filename = match sanitize_filename(&form.filename) {
+        Some(name) => name,
+        None => {
+            warn!("Rejected invalid cache upload filename: {}", form.filename);
+            return Json(UploadCacheResponse {
+                success: false,
+                message: "Invalid filename".to_string(),
+                path: None,
+            });
+        }
+    };
     let filter = form.filter.clone();
+    debug!("Saving cache image: {} (filter: {:?})", filename, filter);
 
     // Save cache image to cache directory.
     let cache_path = format!("static/images/cache/{}.png", filename);
 
     match form.file.copy_to(&cache_path).await {
         Ok(()) => {
-            println!("Saved cache image: {}", cache_path);
-
             // If filter was specified, save preference and clear dithered cache.
             if let Some(ref filter_name) = filter {
                 metadata::set_filter_for_image(&filename, filter_name);
@@ -233,9 +277,10 @@ async fn upload_cache(mut form: Form<CacheUpload<'_>>) -> Json<UploadCacheRespon
                 let dithered_path = format!("static/images/dithered/{}.png", filename);
                 if Path::new(&dithered_path).exists() {
                     let _ = fs::remove_file(&dithered_path);
-                    println!("Removed dithered cache due to filter change: {}", dithered_path);
+                    debug!("Removed dithered cache due to filter change: {}", filename);
                 }
             }
+            debug!("Saved cache image: {}", filename);
 
             Json(UploadCacheResponse {
                 success: true,
@@ -244,7 +289,7 @@ async fn upload_cache(mut form: Form<CacheUpload<'_>>) -> Json<UploadCacheRespon
             })
         }
         Err(e) => {
-            println!("Failed to save cache image: {}", e);
+            error!("Failed to save cache image {}: {}", filename, e);
             Json(UploadCacheResponse {
                 success: false,
                 message: format!("Failed to save cache image: {}", e),
@@ -257,14 +302,26 @@ async fn upload_cache(mut form: Form<CacheUpload<'_>>) -> Json<UploadCacheRespon
 /// API endpoint to upload a gallery thumbnail.
 #[post("/api/upload-thumb", data = "<form>")]
 async fn upload_thumb(mut form: Form<ThumbUpload<'_>>) -> Json<UploadThumbResponse> {
-    let filename = form.filename.clone();
+    // Sanitize filename to prevent path traversal.
+    let filename = match sanitize_filename(&form.filename) {
+        Some(name) => name,
+        None => {
+            warn!("Rejected invalid thumbnail upload filename: {}", form.filename);
+            return Json(UploadThumbResponse {
+                success: false,
+                message: "Invalid filename".to_string(),
+                path: None,
+            });
+        }
+    };
+    debug!("Saving gallery thumbnail: {}", filename);
 
     // Save thumbnail to thumbs directory.
     let thumb_path = format!("static/images/thumbs/{}.png", filename);
 
     match form.file.copy_to(&thumb_path).await {
         Ok(()) => {
-            println!("Saved gallery thumbnail: {}", thumb_path);
+            debug!("Saved gallery thumbnail: {}", filename);
             Json(UploadThumbResponse {
                 success: true,
                 message: "Thumbnail uploaded successfully".to_string(),
@@ -272,7 +329,7 @@ async fn upload_thumb(mut form: Form<ThumbUpload<'_>>) -> Json<UploadThumbRespon
             })
         }
         Err(e) => {
-            println!("Failed to save thumbnail: {}", e);
+            error!("Failed to save thumbnail {}: {}", filename, e);
             Json(UploadThumbResponse {
                 success: false,
                 message: format!("Failed to save thumbnail: {}", e),
@@ -284,7 +341,7 @@ async fn upload_thumb(mut form: Form<ThumbUpload<'_>>) -> Json<UploadThumbRespon
 
 #[get("/")]
 fn upload_form() -> Template {
-    println!("populating list of images in gallery...");
+    debug!("Rendering gallery page");
 
     Template::render("index", &TemplateContext {
         images: get_gallery_images(),
@@ -294,121 +351,140 @@ fn upload_form() -> Template {
 }
 
 #[post("/delete", data = "<form>")]
-async fn submit_delete_image<'r>(mut form: Form<Contextual<'r, SubmitDeleteImage>>) -> Redirect {
-
-    match form.value {
-        Some(ref mut submission) => {
-            println!("submission: {:#?}", submission);
-
-            let image_file = format!("static/{}", submission.submission.image_file_path.clone());
-            println!("image_file: {}", image_file);
-
-            // Delete original.
-            let remove_result = fs::remove_file(image_file.clone());
-            println!("remove_result: {:#?}", remove_result);
-
-            match remove_result {
-                Ok(_e) => {
-                    println!("Successfully removed image: {}", submission.submission.image_file_path.clone());
-                },
-                Err(e) => {
-                    println!("{:#?}", e);
-                    println!("A very sad error: {}", e);
-                }
-            }
-
-            // Also delete cached version if it exists.
-            let cache_path = cache_worker::get_cache_path(&image_file);
-            if Path::new(&cache_path).exists() {
-                match fs::remove_file(&cache_path) {
-                    Ok(_) => println!("Removed cached image: {}", cache_path),
-                    Err(e) => println!("Failed to remove cached image: {}", e),
-                }
-            }
-
-            // Also delete gallery thumbnail if it exists.
-            let filename = Path::new(&image_file)
-                .file_name()
-                .and_then(|f| f.to_str())
-                .unwrap_or("");
-            let thumb_path = format!("static/images/thumbs/{}.png", filename);
-            if Path::new(&thumb_path).exists() {
-                match fs::remove_file(&thumb_path) {
-                    Ok(_) => println!("Removed thumbnail: {}", thumb_path),
-                    Err(e) => println!("Failed to remove thumbnail: {}", e),
-                }
-            }
-
-            // Clean up metadata.
-            metadata::remove_image_metadata(filename);
-        }
+async fn submit_delete_image<'r>(mut form: Form<Contextual<'r, SubmitDeleteImage>>) -> Result<Redirect, (Status, String)> {
+    let submission = match form.value {
+        Some(ref mut s) => s,
         None => {
-            println!("Delete form validation failed");
+            warn!("Delete form validation failed");
+            return Err((Status::BadRequest, "Invalid form submission".to_string()));
         }
     };
 
-    Redirect::to(uri!(upload_form))
+    // Extract filename for logging.
+    let image_file = format!("static/{}", submission.submission.image_file_path.clone());
+    let filename = Path::new(&image_file)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("unknown");
+
+    info!("Delete started: {}", filename);
+
+    // Delete original file first - this is the critical operation.
+    if let Err(e) = fs::remove_file(&image_file) {
+        error!("Delete failed for {}: {}", filename, e);
+        return Err((Status::InternalServerError, format!("Failed to delete image: {}", e)));
+    }
+
+    // Also delete cached version if it exists (non-fatal if this fails).
+    let cache_path = cache_worker::get_cache_path(&image_file);
+    if Path::new(&cache_path).exists() {
+        if let Err(e) = fs::remove_file(&cache_path) {
+            warn!("Failed to remove cached image for {}: {}", filename, e);
+        }
+    }
+
+    // Also delete gallery thumbnail if it exists (non-fatal if this fails).
+    let thumb_path = format!("static/images/thumbs/{}.png", filename);
+    if Path::new(&thumb_path).exists() {
+        if let Err(e) = fs::remove_file(&thumb_path) {
+            warn!("Failed to remove thumbnail for {}: {}", filename, e);
+        }
+    }
+
+    // Also delete dithered version if it exists (non-fatal if this fails).
+    let dithered_path = format!("static/images/dithered/{}.png", filename);
+    if Path::new(&dithered_path).exists() {
+        if let Err(e) = fs::remove_file(&dithered_path) {
+            warn!("Failed to remove dithered image for {}: {}", filename, e);
+        }
+    }
+
+    // Clean up metadata.
+    metadata::remove_image_metadata(filename);
+
+    info!("Delete completed: {}", filename);
+    Ok(Redirect::to(uri!(upload_form)))
 }
 
 #[post("/flash", data = "<form>")]
-async fn submit_flash_image<'r>(mut form: Form<Contextual<'r, SubmitFlashImage>>) -> Redirect {
-    println!("form: {:#?}", form);
-    match form.value {
-        Some(ref mut submission) => {
-            println!("submission: {:#?}", submission);
-
-            // Get filename for dithered image lookup.
-            let original_path = format!("static/{}", submission.submission.image_file_path.clone());
-            let filename = Path::new(&original_path)
-                .file_name()
-                .and_then(|f| f.to_str())
-                .unwrap_or("unknown");
-
-            // Require pre-dithered version to exist (uploaded from preview dialog).
-            let dithered_path = format!("static/images/dithered/{}.png", filename);
-            if !Path::new(&dithered_path).exists() {
-                println!("Error: Pre-dithered image not found: {}", dithered_path);
-                return Redirect::to(uri!(upload_form));
-            }
-            println!("Using pre-dithered image: {}", dithered_path);
-
-            // Run image update script to flash pre-dithered image to display.
-            let status = Command::new("python3")
-                .arg("./update-image.py")
-                .arg(&dithered_path)
-                .arg("--skip-dither")
-                .status()
-                .expect("failed to execute flash command");
-
-            if !status.success() {
-                let exit_code = status.code().unwrap_or(-1);
-                println!("flash command failed with exit code: {}", exit_code);
-            }
-
-            // Maybe do it a second time.
-            if submission.submission.flash_twice {
-                println!("flashing a second time...");
-                let status2 = Command::new("python3")
-                    .arg("./update-image.py")
-                    .arg(&dithered_path)
-                    .arg("--skip-dither")
-                    .status()
-                    .expect("failed to execute flash command");
-                if !status2.success() {
-                    let exit_code = status2.code().unwrap_or(-1);
-                    println!("second flash command failed with exit code: {}", exit_code);
-                }
-            }
-        }
+async fn submit_flash_image<'r>(mut form: Form<Contextual<'r, SubmitFlashImage>>) -> Result<Redirect, (Status, String)> {
+    let submission = match form.value {
+        Some(ref mut s) => s,
         None => {
-            let errors: Vec<String> = form.context.errors()
-                .map(|e| e.to_string())
-                .collect();
-            println!("Flash form validation failed: {:?}", errors);
+            warn!("Flash form validation failed");
+            return Err((Status::BadRequest, "Invalid form submission".to_string()));
         }
     };
 
-    Redirect::to(uri!(upload_form))
+    // Get filename for dithered image lookup.
+    let original_path = format!("static/{}", submission.submission.image_file_path.clone());
+    let filename = Path::new(&original_path)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("unknown");
+    let flash_twice = submission.submission.flash_twice;
+
+    info!("Flash started: {} (flash_twice: {})", filename, flash_twice);
+
+    // Require pre-dithered version to exist (uploaded from preview dialog).
+    let dithered_path = format!("static/images/dithered/{}.png", filename);
+    if !Path::new(&dithered_path).exists() {
+        error!("Flash failed for {}: pre-dithered image not found", filename);
+        return Err((Status::NotFound, format!("Pre-dithered image not found: {}", filename)));
+    }
+
+    // Run image update script to flash pre-dithered image to display.
+    debug!("Executing flash script for {}", filename);
+    let output = Command::new("python3")
+        .arg("./update-image.py")
+        .arg(&dithered_path)
+        .arg("--skip-dither")
+        .output()
+        .await;
+
+    match output {
+        Ok(result) => {
+            if !result.status.success() {
+                let exit_code = result.status.code().unwrap_or(-1);
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                error!("Flash failed for {}: exit code {} - {}", filename, exit_code, stderr.trim());
+                return Err((Status::InternalServerError, format!("Flash failed (exit code {})", exit_code)));
+            }
+        }
+        Err(e) => {
+            error!("Flash failed for {}: could not execute script - {}", filename, e);
+            return Err((Status::InternalServerError, format!("Failed to run flash script: {}", e)));
+        }
+    }
+
+    // Maybe do it a second time.
+    if flash_twice {
+        debug!("Executing second flash for {}", filename);
+        let output2 = Command::new("python3")
+            .arg("./update-image.py")
+            .arg(&dithered_path)
+            .arg("--skip-dither")
+            .output()
+            .await;
+
+        match output2 {
+            Ok(result) => {
+                if !result.status.success() {
+                    let exit_code = result.status.code().unwrap_or(-1);
+                    let stderr = String::from_utf8_lossy(&result.stderr);
+                    error!("Second flash failed for {}: exit code {} - {}", filename, exit_code, stderr.trim());
+                    return Err((Status::InternalServerError, format!("Second flash failed (exit code {})", exit_code)));
+                }
+            }
+            Err(e) => {
+                error!("Second flash failed for {}: could not execute script - {}", filename, e);
+                return Err((Status::InternalServerError, format!("Failed to run second flash: {}", e)));
+            }
+        }
+    }
+
+    info!("Flash completed: {}", filename);
+    Ok(Redirect::to(uri!(upload_form)))
 }
 
 #[post("/upload", data = "<form>")]
@@ -417,24 +493,34 @@ async fn submit_new_image<'r>(
 ) -> Redirect {
     match form.value {
         Some(ref mut submission) => {
-            println!("submission: {:#?}", submission);
-
             let file = &mut submission.submission.file;
-            println!("file name: {:#?}", file.raw_name());
+
+            // Use Rocket's sanitized filename to prevent path traversal attacks.
+            // TempFile::name() already returns a sanitized version safe for filesystem use.
+            let filename = file.name()
+                .unwrap_or_else(|| {
+                    warn!("Upload has no filename, using fallback");
+                    "unnamed_upload"
+                })
+                .to_string();
+
+            info!("Upload started: {}", filename);
 
             // Save as new image in gallery.
-            let image_file_path = format!("static/images/{}", file.raw_name().unwrap().dangerous_unsafe_unsanitized_raw());
-            println!("image_file_path: {}", image_file_path);
-            let gallery_result = file.copy_to(image_file_path.clone()).await;
-            println!("image_file_path: {}, gallery_result: {:#?}", image_file_path, gallery_result);
+            let image_file_path = format!("static/images/{}", filename);
+            match file.copy_to(image_file_path.clone()).await {
+                Ok(_) => {
+                    info!("Upload completed: {}", filename);
+                }
+                Err(e) => {
+                    error!("Upload failed for {}: {}", filename, e);
+                }
+            }
 
             // Cache is now generated client-side and uploaded separately via /api/upload-cache.
         }
         None => {
-            let errors: Vec<String> = form.context.errors()
-                .map(|e| e.to_string())
-                .collect();
-            println!("Upload form validation failed: {:?}", errors);
+            warn!("Upload form validation failed");
         }
     };
 
@@ -454,24 +540,19 @@ impl Fairing for CleanupFairing {
     }
 
     async fn on_liftoff(&self, _rocket: &Rocket<rocket::Orbit>) {
-        println!("Starting background cleanup worker (runs every 5 minutes)...");
+        info!("Starting background cleanup worker (runs every 5 minutes)");
         cleanup::spawn_cleanup_task();
     }
 }
 
 #[launch]
 fn rocket() -> _ {
-    let create_result = fs::create_dir_all("static/images/");
-    println!("Created images directory: {:#?}", create_result);
-
-    let cache_result = fs::create_dir_all("static/images/cache/");
-    println!("Created cache directory: {:#?}", cache_result);
-
-    let dithered_result = fs::create_dir_all("static/images/dithered/");
-    println!("Created dithered directory: {:#?}", dithered_result);
-
-    let thumbs_result = fs::create_dir_all("static/images/thumbs/");
-    println!("Created thumbs directory: {:#?}", thumbs_result);
+    // Ensure image directories exist.
+    for dir in &["static/images", "static/images/cache", "static/images/dithered", "static/images/thumbs"] {
+        if let Err(e) = fs::create_dir_all(dir) {
+            error!("Failed to create directory {}: {}", dir, e);
+        }
+    }
 
     rocket::build()
         .mount("/", routes![

@@ -335,6 +335,47 @@
         color: #B8956A;
         min-height: 1.5em;
       }
+
+      /* Before/after comparison layout. */
+      .comparison-container {
+        display: flex;
+        gap: 20px;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+      }
+      .comparison-panel {
+        text-align: center;
+      }
+      .comparison-panel canvas {
+        border: 2px solid #444;
+        max-width: 100%;
+        height: auto;
+      }
+      .comparison-label {
+        font-weight: bold;
+        color: #B8956A;
+        margin-bottom: 8px;
+      }
+      .comparison-dimensions {
+        font-size: 0.85em;
+        color: #888;
+        margin-top: 5px;
+      }
+
+      /* Scrollable native-resolution preview for filter editor. */
+      .native-preview-container {
+        max-width: 600px;
+        max-height: 448px;
+        overflow: auto;
+        border: 2px solid #444;
+        background: #222;
+      }
+      .native-preview-container canvas {
+        border: none;
+        display: block;
+        max-width: none;
+      }
       .filter-editor-footer {
         display: flex;
         gap: 10px;
@@ -574,7 +615,20 @@
         </div>
 
         <div class="filter-editor-body">
-          <canvas id="filterCanvas" width="600" height="448"></canvas>
+          <div class="comparison-container">
+            <div class="comparison-panel">
+              <div class="comparison-label">Before (Original)</div>
+              <div id="filterBeforeContainer" class="native-preview-container">
+                <canvas id="filterCanvasBefore"></canvas>
+              </div>
+              <div id="filterDimensionsBefore" class="comparison-dimensions"></div>
+            </div>
+            <div class="comparison-panel">
+              <div class="comparison-label">After (Resized)</div>
+              <canvas id="filterCanvas" width="600" height="448"></canvas>
+              <div id="filterDimensionsAfter" class="comparison-dimensions">600 × 448</div>
+            </div>
+          </div>
 
           <div class="filter-controls">
             <label style="font-weight: bold;">Filter:</label>
@@ -607,7 +661,18 @@
         </div>
 
         <div class="filter-editor-body">
-          <canvas id="ditherCanvas" width="600" height="448"></canvas>
+          <div class="comparison-container">
+            <div class="comparison-panel">
+              <div class="comparison-label">Before (Resized)</div>
+              <canvas id="ditherCanvasBefore" width="600" height="448"></canvas>
+              <div class="comparison-dimensions">600 × 448</div>
+            </div>
+            <div class="comparison-panel">
+              <div class="comparison-label">After (Dithered)</div>
+              <canvas id="ditherCanvas" width="600" height="448"></canvas>
+              <div class="comparison-dimensions">600 × 448 (7 colors)</div>
+            </div>
+          </div>
 
           <div class="filter-controls">
             <label style="font-weight: bold;">Saturation: <span id="saturationValue">0.5</span></label>
@@ -845,6 +910,13 @@
           // Draw image to canvas.
           ctx.drawImage(img, 0, 0, CACHE_WIDTH, CACHE_HEIGHT);
 
+          // Also draw to the "before" canvas for comparison.
+          const beforeCanvas = document.getElementById('ditherCanvasBefore');
+          const beforeCtx = beforeCanvas.getContext('2d');
+          beforeCanvas.width = CACHE_WIDTH;
+          beforeCanvas.height = CACHE_HEIGHT;
+          beforeCtx.drawImage(img, 0, 0, CACHE_WIDTH, CACHE_HEIGHT);
+
           // Get image data.
           ditherImageData = ctx.getImageData(0, 0, CACHE_WIDTH, CACHE_HEIGHT);
 
@@ -1067,6 +1139,17 @@
           tempCtx.drawImage(img, 0, 0);
           originalImageData = tempCtx.getImageData(0, 0, img.width, img.height);
 
+          // Draw original image at native resolution to "before" canvas.
+          const beforeCanvas = document.getElementById('filterCanvasBefore');
+          beforeCanvas.width = img.width;
+          beforeCanvas.height = img.height;
+          const beforeCtx = beforeCanvas.getContext('2d');
+          beforeCtx.drawImage(img, 0, 0);
+
+          // Update dimensions label with original image size.
+          document.getElementById('filterDimensionsBefore').textContent =
+            img.width + ' × ' + img.height;
+
           processingEl.textContent = 'Resizing...';
 
           // Resize with current filter and display.
@@ -1211,8 +1294,8 @@
         document.getElementById('filterSelect').value = currentSavedFilter;
         document.getElementById('filterStatus').textContent = '';
 
-        // Show the cached thumbnail immediately (fast).
-        document.getElementById('preview').src = el.src;
+        // Show the cached image (full 600x448 resolution for accurate preview).
+        document.getElementById('preview').src = 'images/cache/' + currentFilename + '.png';
 
         // Enable all image-dependent controls.
         document.getElementById('flashBtn').disabled = false;

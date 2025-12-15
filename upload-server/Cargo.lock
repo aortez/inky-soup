@@ -1795,6 +1795,7 @@ version = "0.1.0"
 dependencies = [
  "glob",
  "lazy_static",
+ "log",
  "rocket",
  "rocket_dyn_templates",
  "serde",

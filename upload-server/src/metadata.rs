@@ -1,3 +1,4 @@
+use log::{error, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -43,28 +44,40 @@ fn load_metadata_from_file() -> HashMap<String, ImageMetadata> {
             match serde_json::from_str(&contents) {
                 Ok(metadata) => metadata,
                 Err(e) => {
-                    println!("Failed to parse metadata file: {}", e);
+                    warn!("Failed to parse metadata file, starting fresh: {}", e);
                     HashMap::new()
                 }
             }
         }
         Err(e) => {
-            println!("Failed to read metadata file: {}", e);
+            warn!("Failed to read metadata file, starting fresh: {}", e);
             HashMap::new()
         }
     }
 }
 
-/// Saves metadata to the JSON file.
+/// Saves metadata to the JSON file atomically.
+/// Writes to a temp file first, then renames to avoid corruption on crash.
 fn save_metadata_to_file(metadata: &HashMap<String, ImageMetadata>) {
+    let temp_file = format!("{}.tmp", METADATA_FILE);
+
     match serde_json::to_string_pretty(metadata) {
         Ok(json) => {
-            if let Err(e) = fs::write(METADATA_FILE, json) {
-                println!("Failed to write metadata file: {}", e);
+            // Write to temp file first.
+            if let Err(e) = fs::write(&temp_file, &json) {
+                error!("Failed to write temp metadata file: {}", e);
+                return;
+            }
+
+            // Atomically rename temp file to target file.
+            if let Err(e) = fs::rename(&temp_file, METADATA_FILE) {
+                error!("Failed to rename metadata file: {}", e);
+                // Clean up temp file on failure.
+                let _ = fs::remove_file(&temp_file);
             }
         }
         Err(e) => {
-            println!("Failed to serialize metadata: {}", e);
+            error!("Failed to serialize metadata: {}", e);
         }
     }
 }

@@ -1,4 +1,5 @@
 use glob::glob;
+use log::{debug, info, warn};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -21,11 +22,11 @@ pub fn spawn_cleanup_task() {
 
 /// Runs a single cleanup pass.
 fn run_cleanup() {
-    println!("Running cleanup task...");
+    debug!("Running cleanup task...");
 
     // Build set of valid original image filenames.
     let originals = get_original_filenames();
-    println!("Found {} original images", originals.len());
+    debug!("Found {} original images", originals.len());
 
     // Clean up cache directory.
     let cache_removed = cleanup_derived_directory("static/images/cache", &originals);
@@ -37,12 +38,12 @@ fn run_cleanup() {
     let thumbs_removed = cleanup_derived_directory("static/images/thumbs", &originals);
 
     if cache_removed > 0 || dithered_removed > 0 || thumbs_removed > 0 {
-        println!(
+        info!(
             "Cleanup complete: removed {} cache, {} dithered, {} thumbs",
             cache_removed, dithered_removed, thumbs_removed
         );
     } else {
-        println!("Cleanup complete: no orphaned files found");
+        debug!("Cleanup complete: no orphaned files found");
     }
 }
 
@@ -81,13 +82,13 @@ fn cleanup_derived_directory(dir_path: &str, originals: &HashSet<String>) -> usi
                 continue;
             }
 
-            let should_remove = should_remove_derived_file(&path, originals);
+            let removal_reason = get_removal_reason(&path, originals);
 
-            if should_remove {
+            if let Some(reason) = removal_reason {
                 if let Err(e) = fs::remove_file(&path) {
-                    println!("Failed to remove {}: {}", path.display(), e);
+                    warn!("Failed to remove orphaned file {}: {}", path.display(), e);
                 } else {
-                    println!("Removed orphaned file: {}", path.display());
+                    warn!("Removed orphaned file: {} ({})", path.display(), reason);
                     removed += 1;
                 }
             }
@@ -97,17 +98,17 @@ fn cleanup_derived_directory(dir_path: &str, originals: &HashSet<String>) -> usi
     removed
 }
 
-/// Determines if a derived file should be removed.
-fn should_remove_derived_file(path: &Path, originals: &HashSet<String>) -> bool {
+/// Determines if a derived file should be removed and why.
+/// Returns Some(reason) if the file should be removed, None otherwise.
+fn get_removal_reason(path: &Path, originals: &HashSet<String>) -> Option<String> {
     let filename = match path.file_name().and_then(|f| f.to_str()) {
         Some(f) => f,
-        None => return true, // Invalid filename.
+        None => return Some("invalid filename".to_string()),
     };
 
     // Must be a .png file.
     if !filename.ends_with(".png") {
-        println!("Orphaned (not .png): {}", path.display());
-        return true;
+        return Some("not a .png file".to_string());
     }
 
     // Extract original filename by removing the .png suffix.
@@ -116,9 +117,8 @@ fn should_remove_derived_file(path: &Path, originals: &HashSet<String>) -> bool 
 
     // Check if original exists.
     if !originals.contains(original_name) {
-        println!("Orphaned (no original '{}'): {}", original_name, path.display());
-        return true;
+        return Some(format!("original '{}' no longer exists", original_name));
     }
 
-    false
+    None
 }
