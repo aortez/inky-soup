@@ -131,3 +131,15 @@ dmypy.json
 # Node.js
 node_modules/
 package-lock.json
+
+# Playwright
+playwright-report/
+test-results/
+
+# Test images (created during e2e tests)
+upload-server/static/images/*.png
+upload-server/static/images/*.jpg
+upload-server/static/images/cache/*
+upload-server/static/images/thumbs/*
+upload-server/static/images/dithered/*
+upload-server/static/images/metadata.json
