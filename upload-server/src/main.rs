@@ -495,14 +495,14 @@ async fn submit_new_image<'r>(
         Some(ref mut submission) => {
             let file = &mut submission.submission.file;
 
-            // Use Rocket's sanitized filename to prevent path traversal attacks.
-            // TempFile::name() already returns a sanitized version safe for filesystem use.
-            let filename = file.name()
+            // Get the full original filename including extension.
+            // TempFile::name() strips extensions, so use raw_name() instead.
+            let filename = file.raw_name()
+                .and_then(|n| sanitize_filename(n.dangerous_unsafe_unsanitized_raw().as_str()))
                 .unwrap_or_else(|| {
                     warn!("Upload has no filename, using fallback");
-                    "unnamed_upload"
-                })
-                .to_string();
+                    "unnamed_upload".to_string()
+                });
 
             info!("Upload started: {}", filename);
 
