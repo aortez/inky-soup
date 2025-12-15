@@ -166,6 +166,20 @@ const FilterLib = (function() {
     BILINEAR: 'bilinear',
     LANCZOS: 'lanczos',
     MITCHELL: 'mitchell',
-    NEAREST: 'nearest'
+    NEAREST: 'nearest',
+    // Expose internals for testing.
+    _kernels: {
+      nearest: nearest,
+      bilinear: bilinear,
+      catmullRom: catmullRom,
+      lanczos: lanczos,
+      mitchell: mitchell
+    },
+    _getFilter: getFilter
   };
 })();
+
+// Export for Node.js/CommonJS (testing).
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = FilterLib;
+}

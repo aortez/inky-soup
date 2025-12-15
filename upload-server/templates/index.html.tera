@@ -218,45 +218,80 @@
         color: #fff;
       }
 
-      /* Detail sections. */
-      .detail-section {
-        background: rgba(58, 42, 31, 0.3);
-        border: 2px solid #6B5344;
-        border-radius: 8px;
-        padding: 20px;
-        margin-bottom: 20px;
-      }
-      .detail-section h3 {
-        margin: 0 0 15px 0;
-        color: #B8956A;
-        border-bottom: 1px solid #6B5344;
-        padding-bottom: 10px;
+      /* Pipeline flow layout. */
+      .pipeline {
+        display: flex;
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 0;
       }
 
-      /* Preview section. */
-      .preview-image {
+      .pipeline-stage {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
+
+      .pipeline-stage canvas {
+        border: 3px solid #444;
+        border-radius: 4px;
         max-width: 100%;
         height: auto;
-        border: 4px solid #444;
-        display: block;
-        margin: 0 auto;
       }
 
-      /* Filter controls. */
+      .pipeline-stage-label {
+        color: #888;
+        font-size: 0.85em;
+        margin-top: 8px;
+      }
+
+      .pipeline-connector {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 15px 10px;
+        min-width: 120px;
+      }
+
+      .pipeline-arrow {
+        color: #B8956A;
+        font-size: 2em;
+        margin: 10px 0;
+      }
+
+      .pipeline-control {
+        background: rgba(58, 42, 31, 0.5);
+        border: 2px solid #6B5344;
+        border-radius: 8px;
+        padding: 12px 15px;
+        min-width: 100px;
+      }
+
+      .pipeline-control-label {
+        color: #C9DBBD;
+        font-size: 0.8em;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      /* Filter buttons in pipeline. */
       .filter-buttons {
         display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        margin-bottom: 15px;
+        flex-direction: column;
+        gap: 6px;
       }
       .filter-btn {
-        padding: 10px 20px;
+        padding: 6px 12px;
         border: 2px solid #6B5344;
         background: #3A2A1F;
         color: #C9DBBD;
         border-radius: 4px;
         cursor: pointer;
         transition: all 0.2s;
+        font-size: 0.85em;
       }
       .filter-btn:hover {
         border-color: #B8956A;
@@ -266,130 +301,52 @@
         color: #2A1A0F;
         border-color: #B8956A;
       }
-      .filter-canvas-container {
-        text-align: center;
-        margin: 15px 0;
-      }
-      .filter-canvas-container canvas {
-        border: 2px solid #444;
-        max-width: 100%;
-        height: auto;
-      }
-      .filter-actions {
-        display: flex;
-        align-items: center;
-        gap: 15px;
-        flex-wrap: wrap;
-      }
-      .filter-status {
-        color: #6B8E4E;
-        font-size: 0.9em;
-      }
-      .processing-indicator {
-        color: #B8956A;
-        font-size: 0.9em;
-        min-height: 1.5em;
-      }
 
-      /* Dither preview. */
-      .preview-toggle {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 15px;
-        flex-wrap: wrap;
-      }
-      .toggle-btn {
-        padding: 8px 16px;
-        border: 2px solid #6B5344;
-        background: #3A2A1F;
-        color: #C9DBBD;
-        border-radius: 4px;
-        cursor: pointer;
-        transition: all 0.2s;
-        font-size: 0.9em;
-      }
-      .toggle-btn:hover {
-        border-color: #B8956A;
-      }
-      .toggle-btn.active {
-        background: #B8956A;
-        color: #2A1A0F;
-        border-color: #B8956A;
-      }
-      .dither-canvas-container {
-        text-align: center;
-        margin: 15px 0;
-      }
-      .dither-view {
-        display: none;
-      }
-      .dither-view.active {
-        display: block;
-      }
-      .dither-view canvas {
-        border: 2px solid #444;
-        max-width: 100%;
-        height: auto;
-      }
-      .dither-comparison {
-        display: none;
-        gap: 20px;
-        justify-content: center;
-        flex-wrap: wrap;
-      }
-      .dither-comparison.active {
-        display: flex;
-      }
-      .comparison-panel {
-        text-align: center;
-      }
-      .comparison-panel canvas {
-        border: 2px solid #444;
-        max-width: 100%;
-        height: auto;
-      }
-      .comparison-label {
-        font-weight: bold;
-        color: #B8956A;
-        margin-bottom: 8px;
-      }
-
-      /* Saturation control. */
-      .saturation-control {
-        margin: 20px 0;
-      }
-      .saturation-control label {
-        display: block;
-        font-weight: bold;
-        color: #C9DBBD;
-        margin-bottom: 8px;
-      }
-      .saturation-control input[type="range"] {
+      /* Saturation slider in pipeline. */
+      .saturation-slider {
         width: 100%;
+        margin: 5px 0;
+      }
+      .saturation-value {
+        color: #B8956A;
+        font-weight: bold;
+        font-size: 0.9em;
       }
 
-      /* Flash options. */
+      /* Final connector (just arrow). */
+      .pipeline-connector-final {
+        min-width: auto;
+        padding: 15px 5px;
+      }
+
+      /* Flash section at end of pipeline. */
+      .pipeline-flash {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 15px;
+      }
+
       .flash-options {
-        margin: 15px 0;
+        margin-bottom: 15px;
       }
       .flash-options label {
         color: #C9DBBD;
-        font-size: 0.95em;
+        font-size: 0.9em;
         cursor: pointer;
       }
 
-      /* Flash button. */
       .flash-button {
-        width: 100%;
-        padding: 15px;
-        font-size: 1.2em;
-        margin-top: 20px;
+        padding: 15px 30px;
+        font-size: 1.1em;
         background: #6B8E4E;
         border: 2px solid #8BAF6E;
         color: #fff;
         border-radius: 4px;
         cursor: pointer;
         transition: all 0.2s;
+        white-space: nowrap;
       }
       .flash-button:hover {
         background: #7BA05E;
@@ -397,6 +354,83 @@
       .flash-button:disabled {
         opacity: 0.5;
         cursor: not-allowed;
+      }
+
+      /* Processing indicator. */
+      .processing-indicator {
+        color: #B8956A;
+        font-size: 0.85em;
+        min-height: 1.2em;
+        margin-top: 5px;
+      }
+
+      /* Filter status. */
+      .filter-status {
+        color: #6B8E4E;
+        font-size: 0.8em;
+        margin-top: 8px;
+      }
+
+      /* Apply filter button. */
+      .apply-filter-btn {
+        margin-top: 10px;
+        padding: 6px 12px;
+        font-size: 0.8em;
+        background: #3A2A1F;
+        border: 2px solid #6B5344;
+        color: #C9DBBD;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .apply-filter-btn:hover {
+        border-color: #B8956A;
+        background: rgba(184, 149, 106, 0.2);
+      }
+
+      /* Vertical layout for narrow screens. */
+      @media (max-width: 1200px) {
+        .pipeline {
+          flex-direction: column;
+          align-items: center;
+        }
+
+        .pipeline-connector {
+          flex-direction: row;
+          padding: 10px 15px;
+          min-width: auto;
+          width: 100%;
+          max-width: 600px;
+        }
+
+        .pipeline-arrow {
+          transform: rotate(90deg);
+          margin: 0 15px;
+        }
+
+        .pipeline-control {
+          flex: 1;
+          min-width: auto;
+        }
+
+        .filter-buttons {
+          flex-direction: row;
+          flex-wrap: wrap;
+          justify-content: center;
+        }
+
+        .pipeline-stage canvas {
+          max-width: 600px;
+        }
+
+        .pipeline-flash {
+          width: 100%;
+          max-width: 600px;
+        }
+
+        .flash-button {
+          width: 100%;
+        }
       }
 
       /* Flash status bar (sticky bottom). */
@@ -626,14 +660,20 @@
         .detail-header .delete-button {
           flex: 1;
         }
-        .dither-comparison {
-          flex-direction: column;
-        }
         .status-bar-content {
           flex-wrap: wrap;
         }
         .status-info {
           min-width: 200px;
+        }
+        .pipeline-connector {
+          padding: 8px 10px;
+        }
+        .pipeline-control {
+          padding: 10px;
+        }
+        .filter-btn {
+          padding: 8px 12px;
         }
       }
     </style>
@@ -741,86 +781,62 @@
           <input type="hidden" name="submission.image_file_path" id="deleteImagePath" value="" />
         </form>
 
-        <!-- Preview Section -->
-        <div class="detail-section">
-          <h3>Preview</h3>
-          <img id="detailPreview" class="preview-image" src="" alt="" />
-        </div>
-
-        <!-- Filter Section -->
-        <div class="detail-section">
-          <h3>Resize Filter</h3>
-          <p style="color: #888; font-size: 0.9em; margin-bottom: 15px;">
-            Choose how the image is downscaled to 600×448 for the e-ink display.
-          </p>
-          <div class="filter-buttons">
-            <button class="filter-btn" data-filter="bicubic">Bicubic</button>
-            <button class="filter-btn" data-filter="lanczos">Lanczos</button>
-            <button class="filter-btn" data-filter="mitchell">Mitchell</button>
-            <button class="filter-btn" data-filter="bilinear">Bilinear</button>
-            <button class="filter-btn" data-filter="nearest">Nearest</button>
-          </div>
-          <div class="filter-canvas-container">
+        <!-- Pipeline Flow -->
+        <div class="pipeline">
+          <!-- Stage 1: Filtered/Resized Image -->
+          <div class="pipeline-stage">
             <canvas id="filterCanvas" width="600" height="448"></canvas>
-          </div>
-          <div class="filter-actions">
-            <button id="applyFilterBtn" class="button primary" onclick="applyFilter()">Apply Filter</button>
-            <span id="filterStatus" class="filter-status"></span>
+            <div class="pipeline-stage-label">600 × 448 (resized)</div>
             <span id="filterProcessing" class="processing-indicator"></span>
           </div>
-        </div>
 
-        <!-- Dither/Flash Section -->
-        <div class="detail-section">
-          <h3>E-Ink Preview</h3>
-          <p style="color: #888; font-size: 0.9em; margin-bottom: 15px;">
-            Preview how the image will look on the 7-color e-ink display.
-          </p>
-
-          <div class="preview-toggle">
-            <button class="toggle-btn active" data-view="before" onclick="setDitherView('before')">Before</button>
-            <button class="toggle-btn" data-view="after" onclick="setDitherView('after')">After</button>
-            <button class="toggle-btn" data-view="comparison" onclick="setDitherView('comparison')">Side-by-Side</button>
-          </div>
-
-          <div class="dither-canvas-container">
-            <div id="ditherViewBefore" class="dither-view active">
-              <canvas id="ditherCanvasBefore" width="600" height="448"></canvas>
-              <div style="color: #888; font-size: 0.85em; margin-top: 5px;">600 × 448 (filtered)</div>
-            </div>
-            <div id="ditherViewAfter" class="dither-view">
-              <canvas id="ditherCanvasAfter" width="600" height="448"></canvas>
-              <div style="color: #888; font-size: 0.85em; margin-top: 5px;">600 × 448 (7 colors)</div>
-            </div>
-            <div id="ditherViewComparison" class="dither-comparison">
-              <div class="comparison-panel">
-                <div class="comparison-label">Before (Filtered)</div>
-                <canvas id="ditherCompBefore" width="600" height="448"></canvas>
+          <!-- Connector: Filter + Saturation Controls -->
+          <div class="pipeline-connector">
+            <div class="pipeline-control">
+              <div class="pipeline-control-label">Resize Filter</div>
+              <div class="filter-buttons">
+                <button class="filter-btn" data-filter="bicubic">Bicubic</button>
+                <button class="filter-btn" data-filter="lanczos">Lanczos</button>
+                <button class="filter-btn" data-filter="mitchell">Mitchell</button>
+                <button class="filter-btn" data-filter="bilinear">Bilinear</button>
+                <button class="filter-btn" data-filter="nearest">Nearest</button>
               </div>
-              <div class="comparison-panel">
-                <div class="comparison-label">After (Dithered)</div>
-                <canvas id="ditherCompAfter" width="600" height="448"></canvas>
-              </div>
+              <button class="apply-filter-btn" onclick="applyFilter()">Save</button>
+              <span id="filterStatus" class="filter-status"></span>
             </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-control">
+              <div class="pipeline-control-label">Saturation</div>
+              <input type="range" id="saturationSlider" class="saturation-slider" min="0.1" max="1.0" step="0.1" value="0.5" oninput="updateSaturation(this.value)">
+              <div class="saturation-value"><span id="saturationValue">0.5</span></div>
+            </div>
+            <div class="pipeline-arrow">→</div>
           </div>
 
-          <div class="saturation-control">
-            <label>Saturation: <span id="saturationValue">0.5</span></label>
-            <input type="range" id="saturationSlider" min="0.1" max="1.0" step="0.1" value="0.5" oninput="updateSaturation(this.value)">
+          <!-- Stage 2: Dithered Image -->
+          <div class="pipeline-stage">
+            <canvas id="ditherCanvas" width="600" height="448"></canvas>
+            <div class="pipeline-stage-label">600 × 448 (7 colors)</div>
+            <span id="ditherProcessing" class="processing-indicator"></span>
           </div>
 
-          <div class="flash-options">
-            <label>
-              <input type="checkbox" id="flashTwiceCheckbox">
-              Flash twice (to overcome ghosting)
-            </label>
+          <!-- Connector to Flash -->
+          <div class="pipeline-connector pipeline-connector-final">
+            <div class="pipeline-arrow">→</div>
           </div>
 
-          <div id="ditherProcessing" class="processing-indicator"></div>
-
-          <button id="flashBtn" class="flash-button" onclick="flashImage()">
-            Flash to Display
-          </button>
+          <!-- Stage 3: Flash to Display -->
+          <div class="pipeline-flash">
+            <div class="flash-options">
+              <label>
+                <input type="checkbox" id="flashTwiceCheckbox">
+                Flash twice
+              </label>
+            </div>
+            <button id="flashBtn" class="flash-button" onclick="flashImage()">
+              ⚡ Flash to Display
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -940,7 +956,6 @@
       let currentPath = null;
       let currentFilter = 'bicubic';
       let currentSaturation = 0.5;
-      let currentDitherView = 'before';
 
       // Worker state.
       let filterWorker = null;
@@ -983,10 +998,6 @@
         document.getElementById('detailFilename').textContent = filename;
         document.getElementById('deleteImagePath').value = path;
 
-        // Load preview.
-        const cachePath = 'images/cache/' + filename + '.png';
-        document.getElementById('detailPreview').src = cachePath;
-
         // Set active filter button.
         document.querySelectorAll('.filter-btn').forEach(btn => {
           btn.classList.toggle('active', btn.dataset.filter === currentFilter);
@@ -995,9 +1006,6 @@
         // Reset saturation.
         document.getElementById('saturationSlider').value = 0.5;
         document.getElementById('saturationValue').textContent = '0.5';
-
-        // Reset dither view.
-        setDitherView('before');
 
         // Reset flash twice.
         document.getElementById('flashTwiceCheckbox').checked = false;
@@ -1105,15 +1113,6 @@
           const filterCtx = filterCanvas.getContext('2d');
           filterCtx.putImageData(imageData, 0, 0);
 
-          // Also draw to dither "before" canvases.
-          const beforeCanvas = document.getElementById('ditherCanvasBefore');
-          const beforeCtx = beforeCanvas.getContext('2d');
-          beforeCtx.putImageData(imageData, 0, 0);
-
-          const compBeforeCanvas = document.getElementById('ditherCompBefore');
-          const compBeforeCtx = compBeforeCanvas.getContext('2d');
-          compBeforeCtx.putImageData(imageData, 0, 0);
-
           document.getElementById('filterProcessing').textContent = '';
 
           // Trigger dithering - get fresh ImageData from canvas (imageData is now neutered).
@@ -1159,14 +1158,10 @@
           // Result is ImageData transferred from worker.
           const imageData = result;
 
-          // Draw to dither "after" canvases.
-          const afterCanvas = document.getElementById('ditherCanvasAfter');
-          const afterCtx = afterCanvas.getContext('2d');
-          afterCtx.putImageData(imageData, 0, 0);
-
-          const compAfterCanvas = document.getElementById('ditherCompAfter');
-          const compAfterCtx = compAfterCanvas.getContext('2d');
-          compAfterCtx.putImageData(imageData, 0, 0);
+          // Draw to dither canvas.
+          const ditherCanvas = document.getElementById('ditherCanvas');
+          const ditherCtx = ditherCanvas.getContext('2d');
+          ditherCtx.putImageData(imageData, 0, 0);
 
           document.getElementById('ditherProcessing').textContent = '';
         };
@@ -1185,20 +1180,6 @@
         const filterCtx = filterCanvas.getContext('2d');
         const imageData = filterCtx.getImageData(0, 0, CACHE_WIDTH, CACHE_HEIGHT);
         applyDither(imageData);
-      }
-
-      function setDitherView(view) {
-        currentDitherView = view;
-
-        // Update toggle buttons.
-        document.querySelectorAll('.preview-toggle .toggle-btn').forEach(btn => {
-          btn.classList.toggle('active', btn.dataset.view === view);
-        });
-
-        // Show/hide views.
-        document.getElementById('ditherViewBefore').classList.toggle('active', view === 'before');
-        document.getElementById('ditherViewAfter').classList.toggle('active', view === 'after');
-        document.getElementById('ditherViewComparison').classList.toggle('active', view === 'comparison');
       }
 
       // ===============================
@@ -1273,9 +1254,6 @@
                       galleryThumb.src = thumbData.path + '?t=' + Date.now();
                       galleryThumb.dataset.filter = currentFilter;
                     }
-
-                    // Also update preview.
-                    document.getElementById('detailPreview').src = data.path + '?t=' + Date.now();
                   });
               }, 'image/png');
             })
@@ -1295,7 +1273,7 @@
         flashBtn.disabled = true;
 
         // Get dithered image.
-        const ditherCanvas = document.getElementById('ditherCanvasAfter');
+        const ditherCanvas = document.getElementById('ditherCanvas');
         const flashTwice = document.getElementById('flashTwiceCheckbox').checked;
 
         ditherCanvas.toBlob(async function(blob) {
