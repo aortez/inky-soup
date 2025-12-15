@@ -19,6 +19,10 @@ import { applyDither } from './dither-service.js';
 import { uploadCache, uploadThumb } from './api-client.js';
 import { createImageDataFromImage, loadOriginalAndFilter } from './image-loader.js';
 
+// Track filter operation start time for logging.
+let filterStartTime = null;
+let filterParams = null;
+
 /**
  * Initialize the filter Web Worker if not already initialized.
  */
@@ -35,6 +39,18 @@ export function initFilterWorker() {
       console.error('Filter worker error:', result.error);
       elements.filterProcessing.textContent = 'Processing error';
       return;
+    }
+
+    // Log filter completion.
+    if (filterStartTime && filterParams) {
+      const elapsed = performance.now() - filterStartTime;
+      const src = `${filterParams.srcWidth}x${filterParams.srcHeight}`;
+      const target = `${filterParams.targetWidth}x${filterParams.targetHeight}`;
+      console.log(
+        `[Filter] ${filterParams.filter} completed in ${elapsed.toFixed(1)}ms (${src} → ${target})`,
+      );
+      filterStartTime = null;
+      filterParams = null;
     }
 
     // Result is ImageData transferred from worker.
@@ -69,13 +85,25 @@ export function applyFilterToCanvas(imageData) {
   initFilterWorker();
   const worker = getFilterWorker();
 
+  const filter = getCurrentFilter();
+
+  // Capture start time and params for logging.
+  filterStartTime = performance.now();
+  filterParams = {
+    filter,
+    srcWidth: imageData.width,
+    srcHeight: imageData.height,
+    targetWidth: CACHE_WIDTH,
+    targetHeight: CACHE_HEIGHT,
+  };
+
   worker.postMessage({
     data: imageData.data.buffer,
     width: imageData.width,
     height: imageData.height,
     targetWidth: CACHE_WIDTH,
     targetHeight: CACHE_HEIGHT,
-    filter: getCurrentFilter(),
+    filter,
   }, [imageData.data.buffer]);
 }
 

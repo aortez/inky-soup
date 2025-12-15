@@ -12,6 +12,10 @@ import {
 } from '../core/state.js';
 import { elements } from '../core/dom.js';
 
+// Track dither operation start time for logging.
+let ditherStartTime = null;
+let ditherParams = null;
+
 /**
  * Initialize the dither Web Worker if not already initialized.
  */
@@ -28,6 +32,17 @@ export function initDitherWorker() {
       console.error('Dither worker error:', result.error);
       elements.ditherProcessing.textContent = 'Dithering error';
       return;
+    }
+
+    // Log dither completion.
+    if (ditherStartTime && ditherParams) {
+      const elapsed = performance.now() - ditherStartTime;
+      console.log(
+        `[Dither] Floyd-Steinberg completed in ${elapsed.toFixed(1)}ms `
+        + `(${ditherParams.width}x${ditherParams.height}, saturation: ${ditherParams.saturation})`,
+      );
+      ditherStartTime = null;
+      ditherParams = null;
     }
 
     // Result is ImageData transferred from worker.
@@ -58,11 +73,21 @@ export function applyDither(imageData) {
   initDitherWorker();
   const worker = getDitherWorker();
 
+  const saturation = getCurrentSaturation();
+
+  // Capture start time and params for logging.
+  ditherStartTime = performance.now();
+  ditherParams = {
+    width: imageData.width,
+    height: imageData.height,
+    saturation,
+  };
+
   worker.postMessage({
     data: imageData.data.buffer,
     width: imageData.width,
     height: imageData.height,
-    saturation: getCurrentSaturation(),
+    saturation,
   }, [imageData.data.buffer]);
 }
 
