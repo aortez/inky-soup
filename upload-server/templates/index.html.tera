@@ -703,6 +703,7 @@
       // Filter editor state.
       let filterWorker = null;
       let originalImageData = null;
+      let originalImageDataCache = {};  // Cache full-res ImageData per filename.
       let editorCurrentFilter = 'bicubic';
 
       // Dither preview state.
@@ -1108,8 +1109,6 @@
         const processingEl = document.getElementById('filterProcessing');
 
         filenameEl.textContent = currentFilename;
-        processingEl.textContent = 'Loading original image...';
-        processingEl.style.color = '#B8956A';
 
         // Set initial filter to saved preference.
         editorCurrentFilter = currentSavedFilter;
@@ -1119,7 +1118,19 @@
 
         modal.classList.add('active');
 
+        // Check if we have cached ImageData for this file.
+        if (originalImageDataCache[currentFilename]) {
+          originalImageData = originalImageDataCache[currentFilename];
+          processingEl.textContent = 'Resizing...';
+          processingEl.style.color = '#B8956A';
+          applyFilterToCanvas(editorCurrentFilter);
+          return;
+        }
+
         // Load the original image (not the cached thumbnail).
+        processingEl.textContent = 'Loading original image...';
+        processingEl.style.color = '#B8956A';
+
         const img = new Image();
         img.onload = function() {
           // Draw full image to temporary canvas to get ImageData.
@@ -1129,6 +1140,9 @@
           const tempCtx = tempCanvas.getContext('2d');
           tempCtx.drawImage(img, 0, 0);
           originalImageData = tempCtx.getImageData(0, 0, img.width, img.height);
+
+          // Cache for future use.
+          originalImageDataCache[currentFilename] = originalImageData;
 
           processingEl.textContent = 'Resizing...';
 
