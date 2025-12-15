@@ -114,34 +114,73 @@
         margin-top: 15px;
       }
 
-      /* Upload preview area. */
-      .upload-preview {
-        display: none;
-        margin: 15px 0;
-        padding: 15px;
-        background: #f5f5f5;
+      /* Upload drop zone. */
+      .drop-zone {
+        border: 3px dashed #6B5344;
         border-radius: 8px;
+        padding: 30px 20px;
         text-align: center;
+        cursor: pointer;
+        transition: all 0.2s;
+        background: rgba(58, 42, 31, 0.3);
+        min-height: 120px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
       }
-      .upload-preview.active {
+      .drop-zone:hover {
+        border-color: #B8956A;
+        background: rgba(58, 42, 31, 0.5);
+      }
+      .drop-zone.drag-over {
+        border-color: #B8956A;
+        background: rgba(184, 149, 106, 0.2);
+        border-style: solid;
+      }
+      .drop-zone.has-file {
+        border-style: solid;
+        border-color: #6B8E4E;
+        background: rgba(107, 142, 78, 0.1);
+      }
+      .drop-zone-prompt {
+        color: #C9DBBD;
+        font-size: 1.1em;
+        margin-bottom: 8px;
+      }
+      .drop-zone-hint {
+        color: #888;
+        font-size: 0.85em;
+      }
+      .drop-zone input[type="file"] {
+        display: none;
+      }
+      .drop-zone-preview {
+        display: none;
+      }
+      .drop-zone.has-file .drop-zone-prompt,
+      .drop-zone.has-file .drop-zone-hint {
+        display: none;
+      }
+      .drop-zone.has-file .drop-zone-preview {
         display: block;
       }
-      .upload-preview img {
+      .drop-zone-preview img {
         max-width: 200px;
         max-height: 150px;
         border: 2px solid #444;
         margin-bottom: 10px;
+        border-radius: 4px;
       }
-      .upload-preview .file-info {
-        font-size: 0.9em;
-        color: #666;
-      }
-      .upload-preview .file-name {
+      .drop-zone-preview .file-name {
         font-weight: bold;
+        color: #C9DBBD;
         word-break: break-all;
+        margin-bottom: 4px;
       }
-      .upload-preview .file-size {
+      .drop-zone-preview .file-size {
         color: #888;
+        font-size: 0.9em;
       }
 
       /* Upload modal (extends flash modal pattern). */
@@ -388,12 +427,86 @@
       }
 
       /* Disabled button styling. */
-      #uploadBtn:disabled,
       #flashBtn:disabled,
       #editFilterBtn:disabled,
-      #filterSelect:disabled {
+      #deleteBtn:disabled {
         opacity: 0.5;
         cursor: not-allowed;
+      }
+
+      /* Delete confirmation modal. */
+      .confirm-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 2000;
+        justify-content: center;
+        align-items: center;
+      }
+      .confirm-modal.active {
+        display: flex;
+      }
+      .confirm-modal-content {
+        background: #4A3728;
+        border: 2px solid #B8956A;
+        border-radius: 8px;
+        padding: 30px;
+        text-align: center;
+        max-width: 450px;
+        color: #C9DBBD;
+      }
+      .confirm-modal-content h2 {
+        margin: 0 0 15px 0;
+        color: #ff6b6b;
+      }
+      .confirm-modal-content p {
+        margin: 0 0 10px 0;
+        color: #C9DBBD;
+      }
+      .confirm-modal-content .filename {
+        font-size: 0.9em;
+        color: #aaa;
+        margin-bottom: 20px;
+        word-break: break-all;
+        font-style: italic;
+      }
+      .confirm-modal-content .warning {
+        font-size: 0.85em;
+        color: #ff6b6b;
+        margin-bottom: 20px;
+      }
+      .confirm-modal-footer {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+        margin-top: 20px;
+      }
+      .confirm-modal-footer button {
+        padding: 10px 25px;
+        font-size: 1em;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .confirm-modal-footer .cancel-btn {
+        background: #3A2A1F;
+        border: 2px solid #6B5344;
+        color: #C9DBBD;
+      }
+      .confirm-modal-footer .cancel-btn:hover {
+        border-color: #B8956A;
+      }
+      .confirm-modal-footer .delete-btn {
+        background: #8B0000;
+        border: 2px solid #ff6b6b;
+        color: #fff;
+      }
+      .confirm-modal-footer .delete-btn:hover {
+        background: #a00;
       }
     </style>
   <title>inky-soup - upload</title>
@@ -424,25 +537,16 @@
         <legend>Upload New Image</legend>
 
         <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
-
-            {{
-                m::input(
-                    label="File to Upload (Image, max 10MiB)",
-                    type="file",
-                    name="submission.file"
-                )
-            }}
-
-          <div id="uploadPreview" class="upload-preview">
-            <img id="uploadPreviewImg" src="" alt="Preview" />
-            <div class="file-info">
+          <div id="dropZone" class="drop-zone">
+            <input type="file" name="submission.file" id="fileInput" accept="image/*" />
+            <div class="drop-zone-prompt">Drop image here or click to upload</div>
+            <div class="drop-zone-hint">JPEG, PNG, GIF, WebP (max 10 MB)</div>
+            <div class="drop-zone-preview">
+              <img id="uploadPreviewImg" src="" alt="Preview" />
               <div id="uploadFileName" class="file-name"></div>
               <div id="uploadFileSize" class="file-size"></div>
             </div>
           </div>
-
-          <br />
-          <input type="submit" id="uploadBtn" value="Upload Image" disabled />
         </form>
       </fieldset>
       <br />
@@ -500,7 +604,7 @@
 
             <br>
 
-            <input type="submit" formaction="/delete" value="Remove Image (warning there is no confirmation and this is permanent)" class="bad"/>
+            <button type="button" id="deleteBtn" onclick="showDeleteConfirmation()" class="bad" disabled>Remove Image</button>
         </div>
 
         <fieldset>
@@ -514,14 +618,7 @@
           <br>
 
           <div style="margin-bottom: 15px;">
-            <label for="filterSelect" style="font-weight: bold;">Resampling Filter:</label>
-            <select id="filterSelect" style="margin-left: 10px;" disabled>
-              <option value="bicubic">Bicubic (Balanced)</option>
-              <option value="lanczos">Lanczos (Sharp)</option>
-              <option value="bilinear">Bilinear (Smooth)</option>
-              <option value="nearest">Nearest (Fast)</option>
-            </select>
-            <button type="button" id="editFilterBtn" onclick="openFilterEditor()" style="margin-left: 10px;" class="button" disabled>Edit Filter...</button>
+            <button type="button" id="editFilterBtn" onclick="openFilterEditor()" class="button" disabled>Edit Filter...</button>
             <span id="filterStatus" style="margin-left: 10px; font-size: 0.85em; color: #666;"></span>
           </div>
 
@@ -682,6 +779,20 @@
         <div class="filter-editor-footer">
           <button onclick="closeDitherPreview()">Cancel</button>
           <button onclick="confirmFlash()" class="button primary">Flash to Display</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete confirmation modal. -->
+    <div id="deleteConfirmModal" class="confirm-modal">
+      <div class="confirm-modal-content">
+        <h2>Delete Image?</h2>
+        <p>You are about to delete:</p>
+        <div id="deleteConfirmFilename" class="filename"></div>
+        <div class="warning">This action cannot be undone.</div>
+        <div class="confirm-modal-footer">
+          <button type="button" class="cancel-btn" onclick="closeDeleteConfirmation()">Cancel</button>
+          <button type="button" class="delete-btn" onclick="confirmDelete()">Delete</button>
         </div>
       </div>
     </div>
@@ -1162,6 +1273,63 @@
         originalImageData = null;
       }
 
+      // Show delete confirmation modal.
+      function showDeleteConfirmation() {
+        if (!currentFilename) {
+          alert('Please select an image first.');
+          return;
+        }
+        document.getElementById('deleteConfirmFilename').textContent = currentFilename;
+        document.getElementById('deleteConfirmModal').classList.add('active');
+      }
+
+      // Close delete confirmation modal.
+      function closeDeleteConfirmation() {
+        document.getElementById('deleteConfirmModal').classList.remove('active');
+      }
+
+      // Close modal on Escape key or click outside.
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+          closeDeleteConfirmation();
+        }
+      });
+      document.getElementById('deleteConfirmModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+          closeDeleteConfirmation();
+        }
+      });
+
+      // Confirm and execute delete.
+      function confirmDelete() {
+        const imagePath = document.getElementById('submission.image_file_path').value;
+        if (!imagePath) {
+          closeDeleteConfirmation();
+          return;
+        }
+
+        // Submit delete via form POST.
+        const formData = new FormData();
+        formData.append('submission.image_file_path', imagePath);
+
+        fetch('/delete', {
+          method: 'POST',
+          body: formData
+        })
+        .then(response => {
+          if (response.ok) {
+            window.location.reload();
+          } else {
+            alert('Failed to delete image.');
+            closeDeleteConfirmation();
+          }
+        })
+        .catch(error => {
+          alert('Error deleting image: ' + error.message);
+          closeDeleteConfirmation();
+        });
+      }
+
       // Apply a filter to the canvas using the worker.
       function applyFilterToCanvas(filter) {
         if (!originalImageData) return;
@@ -1248,9 +1416,6 @@
                   thumb.src = 'images/thumbs/' + currentFilename + '.png?t=' + Date.now();
                 }
 
-                // Update main filter dropdown.
-                document.getElementById('filterSelect').value = filterToSave;
-
                 // Close modal.
                 closeFilterEditor();
 
@@ -1282,10 +1447,9 @@
         el.classList.add('selected');
         document.getElementById('submission.image_file_path').value = el.id;
 
-        // Update current filename and filter dropdown.
+        // Update current filename and filter.
         currentFilename = el.dataset.filename;
         currentSavedFilter = el.dataset.filter || 'bicubic';
-        document.getElementById('filterSelect').value = currentSavedFilter;
         document.getElementById('filterStatus').textContent = '';
 
         // Show the cached image (full 600x448 resolution for accurate preview).
@@ -1293,8 +1457,8 @@
 
         // Enable all image-dependent controls.
         document.getElementById('flashBtn').disabled = false;
-        document.getElementById('filterSelect').disabled = false;
         document.getElementById('editFilterBtn').disabled = false;
+        document.getElementById('deleteBtn').disabled = false;
       }
 
       // Placeholder selection helper (for uncached images - allows deletion).
@@ -1314,8 +1478,9 @@
 
         // Keep flash/filter buttons disabled (no cache to work with).
         document.getElementById('flashBtn').disabled = true;
-        document.getElementById('filterSelect').disabled = true;
         document.getElementById('editFilterBtn').disabled = true;
+        // But allow deletion.
+        document.getElementById('deleteBtn').disabled = false;
       }
 
       // Poll for thumb status and replace placeholder when ready.
@@ -1479,8 +1644,8 @@
 
       // Upload functionality with real progress tracking.
       const uploadForm = document.getElementById('uploadForm');
-      const fileInput = document.querySelector('input[name="submission.file"]');
-      const uploadPreview = document.getElementById('uploadPreview');
+      const fileInput = document.getElementById('fileInput');
+      const dropZone = document.getElementById('dropZone');
       const uploadPreviewImg = document.getElementById('uploadPreviewImg');
       const uploadFileName = document.getElementById('uploadFileName');
       const uploadFileSize = document.getElementById('uploadFileSize');
@@ -1501,69 +1666,94 @@
         return mins + ':' + secs.toString().padStart(2, '0');
       }
 
-      // Show preview when file is selected and prepare ImageData for cache generation.
-      fileInput.addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        const uploadBtn = document.getElementById('uploadBtn');
-        if (file) {
-          // Reset state.
-          uploadImageData = null;
-          uploadBtn.disabled = true;
-
-          // Try to load as image (validates browser can actually render it).
-          const objectUrl = URL.createObjectURL(file);
-          const img = new Image();
-
-          img.onload = function() {
-            // Successfully loaded - prepare ImageData for cache generation.
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = img.width;
-            tempCanvas.height = img.height;
-            const tempCtx = tempCanvas.getContext('2d');
-            tempCtx.drawImage(img, 0, 0);
-            uploadImageData = tempCtx.getImageData(0, 0, img.width, img.height);
-            console.log('Prepared ImageData for cache generation:', img.width, 'x', img.height);
-
-            uploadPreviewImg.src = objectUrl;
-            uploadPreviewImg.style.display = 'block';
-            uploadFileName.textContent = file.name;
-            uploadFileSize.textContent = formatBytes(file.size);
-            uploadPreview.classList.add('active');
-            uploadBtn.disabled = false;
-          };
-
-          img.onerror = function() {
-            // Failed to load - not a valid web image format.
-            URL.revokeObjectURL(objectUrl);
-            uploadPreviewImg.style.display = 'none';
-            uploadFileName.textContent = file.name + ' (unsupported format)';
-            uploadFileSize.textContent = 'Only JPEG, PNG, GIF, WebP supported';
-            uploadPreview.classList.add('active');
-            uploadBtn.disabled = true;
-            console.error('Cannot load image:', file.name, file.type);
-          };
-
-          img.src = objectUrl;
-        } else {
-          uploadPreview.classList.remove('active');
-          uploadBtn.disabled = true;
-          uploadImageData = null;
-        }
-      });
-
-      // Handle upload form submission.
-      uploadForm.addEventListener('submit', function(e) {
-        e.preventDefault();
-
-        const file = fileInput.files[0];
+      // Handle file selection (from input or drop).
+      function handleFileSelect(file) {
         if (!file) {
-          alert('Please select a file first.');
+          dropZone.classList.remove('has-file');
+          uploadImageData = null;
           return;
         }
 
-        // Require valid image data (prevents uploading unsupported formats).
-        if (!uploadImageData) {
-          alert('Please select a valid image file (JPEG, PNG, GIF, or WebP).');
+        // Reset state.
+        uploadImageData = null;
+
+        // Try to load as image (validates browser can actually render it).
+        const objectUrl = URL.createObjectURL(file);
+        const img = new Image();
+
+        img.onload = function() {
+          // Successfully loaded - prepare ImageData for cache generation.
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = img.width;
+          tempCanvas.height = img.height;
+          const tempCtx = tempCanvas.getContext('2d');
+          tempCtx.drawImage(img, 0, 0);
+          uploadImageData = tempCtx.getImageData(0, 0, img.width, img.height);
+          console.log('Prepared ImageData for cache generation:', img.width, 'x', img.height);
+
+          uploadPreviewImg.src = objectUrl;
+          uploadFileName.textContent = file.name;
+          uploadFileSize.textContent = formatBytes(file.size);
+          dropZone.classList.add('has-file');
+
+          // Auto-upload the file.
+          startUpload(file);
+        };
+
+        img.onerror = function() {
+          // Failed to load - not a valid web image format.
+          URL.revokeObjectURL(objectUrl);
+          uploadPreviewImg.src = '';
+          uploadFileName.textContent = file.name + ' (unsupported format)';
+          uploadFileSize.textContent = 'Only JPEG, PNG, GIF, WebP supported';
+          dropZone.classList.add('has-file');
+          console.error('Cannot load image:', file.name, file.type);
+        };
+
+        img.src = objectUrl;
+      }
+
+      // Click to browse.
+      dropZone.addEventListener('click', function() {
+        fileInput.click();
+      });
+
+      // File input change.
+      fileInput.addEventListener('change', function(e) {
+        handleFileSelect(e.target.files[0]);
+      });
+
+      // Drag and drop handlers.
+      dropZone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.add('drag-over');
+      });
+
+      dropZone.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('drag-over');
+      });
+
+      dropZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove('drag-over');
+
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+          // Update the file input so the form submission works.
+          const dataTransfer = new DataTransfer();
+          dataTransfer.items.add(files[0]);
+          fileInput.files = dataTransfer.files;
+          handleFileSelect(files[0]);
+        }
+      });
+
+      // Start upload for a file.
+      function startUpload(file) {
+        if (!file || !uploadImageData) {
           return;
         }
 
@@ -1750,7 +1940,7 @@
 
         xhr.open('POST', '/upload');
         xhr.send(formData);
-      });
+      }
     </script>
   </body>
 </html>
