@@ -4,35 +4,94 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="/chota.min.css">
     <style>
       body {
         background-color: #A0826D;
+        margin: 0;
+        padding-bottom: 60px; /* Space for status bar. */
       }
       .container {
         max-width: 1400px;
         margin: 0 auto;
         padding: 20px 10px;
       }
-      .thumbnails img {
+
+      /* View container management. */
+      .view-container {
+        display: none;
+        opacity: 0;
+        transition: opacity 0.25s ease-in-out;
+      }
+      .view-container.active {
+        display: block;
+        opacity: 1;
+      }
+
+      /* Gallery thumbnails. */
+      .thumbnails {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+      }
+      .thumbnail-item {
+        text-align: center;
+        cursor: pointer;
+      }
+      .thumbnail-item img {
         height: 100px;
         border: 4px solid #555;
         padding: 1px;
-        margin: 0 10px 10px 0;
+        display: block;
+        transition: border-color 0.2s;
       }
-      .thumbnails img:hover {
-        border: 4px solid #B8956A;
-        cursor:pointer;
+      .thumbnail-item img:hover {
+        border-color: #B8956A;
       }
-      .thumbnails img.selected {
-        border: 4px solid #B8956A;
+      .thumbnail-item .thumb-filename {
+        font-size: 0.75em;
+        color: #C9DBBD;
+        max-width: 140px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        margin-top: 4px;
       }
-      .preview img {
-        border: 4px solid #444;
-        padding: 1px;
-        width: 600px;
+
+      /* Thumbnail placeholder for images being cached. */
+      .thumbnail-placeholder {
+        width: 134px;
+        height: 100px;
+        background: #333;
+        border: 4px solid #555;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        cursor: pointer;
       }
+      .thumbnail-placeholder:hover {
+        border-color: #B8956A;
+      }
+      .thumbnail-placeholder .spinner {
+        width: 24px;
+        height: 24px;
+        border: 3px solid #555;
+        border-top-color: #B8956A;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      .thumbnail-placeholder .label {
+        position: absolute;
+        bottom: 4px;
+        font-size: 0.65em;
+        color: #888;
+      }
+
       .bad {
         color: red;
         background-color: black;
@@ -40,78 +99,6 @@
       .good {
         color: green;
         background-color: white;
-      }
-
-      /* Flash progress modal. */
-      .flash-modal {
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.85);
-        z-index: 1000;
-        justify-content: center;
-        align-items: center;
-      }
-      .flash-modal.active {
-        display: flex;
-      }
-      .flash-modal-content {
-        background: #4A3728;
-        border: 2px solid #B8956A;
-        border-radius: 8px;
-        padding: 30px;
-        text-align: center;
-        max-width: 500px;
-        color: #C9DBBD;
-      }
-      .flash-modal-content h2 {
-        margin: 0 0 20px 0;
-        color: #B8956A;
-      }
-      .flash-modal-content img {
-        max-width: 300px;
-        max-height: 200px;
-        border: 2px solid #444;
-        margin-bottom: 15px;
-      }
-      .flash-modal-content .filename {
-        font-size: 0.9em;
-        color: #aaa;
-        margin-bottom: 20px;
-        word-break: break-all;
-      }
-      .progress-container {
-        margin: 15px 0;
-      }
-      .progress-label {
-        font-size: 0.85em;
-        color: #888;
-        margin-bottom: 5px;
-        text-align: left;
-      }
-      .progress-bar {
-        width: 100%;
-        height: 24px;
-        background: #333;
-        border-radius: 4px;
-        overflow: hidden;
-      }
-      .progress-fill {
-        height: 100%;
-        width: 0%;
-        background: linear-gradient(90deg, #B8956A, #6B8E4E);
-        transition: width 0.5s linear;
-      }
-      .progress-fill.complete {
-        background: #6B8E4E;
-      }
-      .flash-note {
-        font-size: 0.8em;
-        color: #666;
-        margin-top: 15px;
       }
 
       /* Upload drop zone. */
@@ -183,8 +170,303 @@
         font-size: 0.9em;
       }
 
-      /* Upload modal (extends flash modal pattern). */
-      .upload-modal {
+      /* Detail view. */
+      .detail-header {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+        border-bottom: 2px solid #6B5344;
+        flex-wrap: wrap;
+      }
+      .back-button {
+        background: #3A2A1F;
+        border: 2px solid #6B5344;
+        color: #C9DBBD;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 1em;
+        transition: all 0.2s;
+        white-space: nowrap;
+      }
+      .back-button:hover {
+        border-color: #B8956A;
+        background: rgba(184, 149, 106, 0.2);
+      }
+      .detail-filename {
+        flex: 1;
+        color: #B8956A;
+        font-size: 1.3em;
+        font-weight: bold;
+        word-break: break-all;
+        min-width: 200px;
+      }
+      .delete-button {
+        background: #3A2A1F;
+        border: 2px solid #8B0000;
+        color: #ff6b6b;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 1em;
+        transition: all 0.2s;
+      }
+      .delete-button:hover {
+        background: #8B0000;
+        color: #fff;
+      }
+
+      /* Detail sections. */
+      .detail-section {
+        background: rgba(58, 42, 31, 0.3);
+        border: 2px solid #6B5344;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+      .detail-section h3 {
+        margin: 0 0 15px 0;
+        color: #B8956A;
+        border-bottom: 1px solid #6B5344;
+        padding-bottom: 10px;
+      }
+
+      /* Preview section. */
+      .preview-image {
+        max-width: 100%;
+        height: auto;
+        border: 4px solid #444;
+        display: block;
+        margin: 0 auto;
+      }
+
+      /* Filter controls. */
+      .filter-buttons {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 15px;
+      }
+      .filter-btn {
+        padding: 10px 20px;
+        border: 2px solid #6B5344;
+        background: #3A2A1F;
+        color: #C9DBBD;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .filter-btn:hover {
+        border-color: #B8956A;
+      }
+      .filter-btn.active {
+        background: #B8956A;
+        color: #2A1A0F;
+        border-color: #B8956A;
+      }
+      .filter-canvas-container {
+        text-align: center;
+        margin: 15px 0;
+      }
+      .filter-canvas-container canvas {
+        border: 2px solid #444;
+        max-width: 100%;
+        height: auto;
+      }
+      .filter-actions {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        flex-wrap: wrap;
+      }
+      .filter-status {
+        color: #6B8E4E;
+        font-size: 0.9em;
+      }
+      .processing-indicator {
+        color: #B8956A;
+        font-size: 0.9em;
+        min-height: 1.5em;
+      }
+
+      /* Dither preview. */
+      .preview-toggle {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+        flex-wrap: wrap;
+      }
+      .toggle-btn {
+        padding: 8px 16px;
+        border: 2px solid #6B5344;
+        background: #3A2A1F;
+        color: #C9DBBD;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 0.9em;
+      }
+      .toggle-btn:hover {
+        border-color: #B8956A;
+      }
+      .toggle-btn.active {
+        background: #B8956A;
+        color: #2A1A0F;
+        border-color: #B8956A;
+      }
+      .dither-canvas-container {
+        text-align: center;
+        margin: 15px 0;
+      }
+      .dither-view {
+        display: none;
+      }
+      .dither-view.active {
+        display: block;
+      }
+      .dither-view canvas {
+        border: 2px solid #444;
+        max-width: 100%;
+        height: auto;
+      }
+      .dither-comparison {
+        display: none;
+        gap: 20px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .dither-comparison.active {
+        display: flex;
+      }
+      .comparison-panel {
+        text-align: center;
+      }
+      .comparison-panel canvas {
+        border: 2px solid #444;
+        max-width: 100%;
+        height: auto;
+      }
+      .comparison-label {
+        font-weight: bold;
+        color: #B8956A;
+        margin-bottom: 8px;
+      }
+
+      /* Saturation control. */
+      .saturation-control {
+        margin: 20px 0;
+      }
+      .saturation-control label {
+        display: block;
+        font-weight: bold;
+        color: #C9DBBD;
+        margin-bottom: 8px;
+      }
+      .saturation-control input[type="range"] {
+        width: 100%;
+      }
+
+      /* Flash options. */
+      .flash-options {
+        margin: 15px 0;
+      }
+      .flash-options label {
+        color: #C9DBBD;
+        font-size: 0.95em;
+        cursor: pointer;
+      }
+
+      /* Flash button. */
+      .flash-button {
+        width: 100%;
+        padding: 15px;
+        font-size: 1.2em;
+        margin-top: 20px;
+        background: #6B8E4E;
+        border: 2px solid #8BAF6E;
+        color: #fff;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .flash-button:hover {
+        background: #7BA05E;
+      }
+      .flash-button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      /* Flash status bar (sticky bottom). */
+      .flash-status-bar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #4A3728;
+        border-top: 2px solid #B8956A;
+        padding: 12px 20px;
+        z-index: 999;
+        transform: translateY(100%);
+        transition: transform 0.3s ease;
+      }
+      .flash-status-bar.visible {
+        transform: translateY(0);
+      }
+      .status-bar-content {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+      .status-icon {
+        font-size: 1.5em;
+      }
+      .status-info {
+        flex: 1;
+      }
+      .status-text {
+        color: #C9DBBD;
+        font-size: 0.95em;
+        margin-bottom: 5px;
+      }
+      .status-progress-mini {
+        height: 6px;
+        background: #333;
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .status-progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #B8956A, #6B8E4E);
+        width: 0%;
+        transition: width 0.5s linear;
+      }
+      .status-progress-fill.complete {
+        background: #6B8E4E;
+      }
+      .status-progress-fill.failed {
+        background: #ff6b6b;
+      }
+      .status-expand-btn {
+        padding: 8px 16px;
+        background: #3A2A1F;
+        border: 2px solid #6B5344;
+        color: #C9DBBD;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9em;
+        transition: all 0.2s;
+      }
+      .status-expand-btn:hover {
+        border-color: #B8956A;
+      }
+
+      /* Upload modal. */
+      .modal {
         display: none;
         position: fixed;
         top: 0;
@@ -196,34 +478,59 @@
         justify-content: center;
         align-items: center;
       }
-      .upload-modal.active {
+      .modal.active {
         display: flex;
       }
-      .upload-modal-content {
+      .modal-content {
         background: #4A3728;
         border: 2px solid #B8956A;
         border-radius: 8px;
         padding: 30px;
         text-align: center;
         max-width: 500px;
-        min-width: 350px;
+        min-width: 320px;
         color: #C9DBBD;
       }
-      .upload-modal-content h2 {
+      .modal-content h2 {
         margin: 0 0 20px 0;
         color: #B8956A;
       }
-      .upload-modal-content img {
+      .modal-content img {
         max-width: 300px;
         max-height: 200px;
         border: 2px solid #444;
         margin-bottom: 15px;
       }
-      .upload-modal-content .filename {
+      .modal-content .filename {
         font-size: 0.9em;
         color: #aaa;
         margin-bottom: 20px;
         word-break: break-all;
+      }
+      .progress-container {
+        margin: 15px 0;
+      }
+      .progress-label {
+        font-size: 0.85em;
+        color: #888;
+        margin-bottom: 5px;
+        text-align: left;
+      }
+      .progress-bar {
+        width: 100%;
+        height: 24px;
+        background: #333;
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .progress-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #B8956A, #6B8E4E);
+        transition: width 0.5s linear;
+      }
+      .progress-fill.complete {
+        background: #6B8E4E;
       }
       .upload-stats {
         display: grid;
@@ -244,235 +551,19 @@
         font-size: 0.8em;
         color: #888;
       }
-      .upload-note {
+      .modal-note {
         font-size: 0.8em;
         color: #666;
         margin-top: 15px;
       }
 
-      /* Thumbnail placeholder for images being cached. */
-      .thumbnail-placeholder {
-        width: 134px;
-        height: 100px;
-        background: #333;
-        border: 4px solid #555;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 10px 10px 0;
-        position: relative;
-        cursor: pointer;
-      }
-      .thumbnail-placeholder:hover {
-        border-color: #B8956A;
-      }
-      .thumbnail-placeholder.selected {
-        border-color: #B8956A;
-      }
-      .thumbnail-placeholder .spinner {
-        width: 24px;
-        height: 24px;
-        border: 3px solid #555;
-        border-top-color: #B8956A;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-      }
-      @keyframes spin {
-        to { transform: rotate(360deg); }
-      }
-      .thumbnail-placeholder .label {
-        position: absolute;
-        bottom: 4px;
-        font-size: 0.65em;
-        color: #888;
-      }
-
-      /* Filter editor modal. */
-      .filter-editor-modal {
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.9);
-        z-index: 2000;
-        justify-content: center;
-        align-items: center;
-      }
-      .filter-editor-modal.active {
-        display: flex;
-      }
-      .filter-editor-content {
-        background: #4A3728;
-        border: 2px solid #B8956A;
-        border-radius: 8px;
-        padding: 30px;
-        max-width: 800px;
-        max-height: 90vh;
-        overflow-y: auto;
-        color: #C9DBBD;
-      }
-      /* Wider modal for dither preview with side-by-side comparison. */
-      #ditherPreviewModal .filter-editor-content {
-        max-width: 1300px;
-      }
-      /* On tall/narrow screens, use more vertical space for dither preview. */
-      @media (max-aspect-ratio: 4/3) {
-        #ditherPreviewModal .filter-editor-content {
-          max-height: 95vh;
-          padding: 15px;
-        }
-      }
-      .filter-editor-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 20px;
-      }
-      .filter-editor-header h2 {
-        margin: 0;
-        color: #B8956A;
-      }
-      .filter-editor-header button {
-        background: none;
-        border: none;
-        color: #C9DBBD;
-        font-size: 2em;
-        cursor: pointer;
-        padding: 0;
-        line-height: 1;
-      }
-      .filter-editor-body {
-        text-align: center;
-      }
-      #filterCanvas {
-        border: 2px solid #444;
-        margin-bottom: 20px;
-        max-width: 100%;
-        height: auto;
-      }
-      .filter-controls {
-        margin: 20px 0;
-      }
-      .filter-buttons {
-        display: flex;
-        gap: 10px;
-        justify-content: center;
-        flex-wrap: wrap;
-        margin: 15px 0;
-      }
-      .filter-buttons button {
-        padding: 10px 20px;
-        font-size: 1em;
-        border: 2px solid #6B5344;
-        background: #3A2A1F;
-        color: #C9DBBD;
-        cursor: pointer;
-        border-radius: 4px;
-        transition: all 0.2s;
-      }
-      .filter-buttons button:hover {
-        border-color: #B8956A;
-      }
-      .filter-buttons button.active {
-        background: #B8956A;
-        color: #2A1A0F;
-        border-color: #B8956A;
-      }
-      .processing-indicator {
-        font-size: 0.9em;
-        color: #B8956A;
-        min-height: 1.5em;
-      }
-
-      /* Before/after comparison layout. */
-      .comparison-container {
-        display: flex;
-        gap: 20px;
-        justify-content: center;
-        align-items: center;
-        flex-wrap: wrap;
-        margin-bottom: 20px;
-      }
-      @media (max-aspect-ratio: 4/3) {
-        .comparison-container {
-          flex-direction: column;
-        }
-      }
-      .comparison-panel {
-        text-align: center;
-      }
-      .comparison-panel canvas {
-        border: 2px solid #444;
-        max-width: 100%;
-        height: auto;
-      }
-      .comparison-label {
-        font-weight: bold;
-        color: #B8956A;
-        margin-bottom: 8px;
-      }
-      .comparison-dimensions {
-        font-size: 0.85em;
-        color: #888;
-        margin-top: 5px;
-      }
-
-      .filter-editor-footer {
-        display: flex;
-        gap: 10px;
-        justify-content: flex-end;
-        margin-top: 20px;
-      }
-
-      /* Disabled button styling. */
-      #flashBtn:disabled,
-      #editFilterBtn:disabled,
-      #deleteBtn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
-
       /* Delete confirmation modal. */
-      .confirm-modal {
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.85);
-        z-index: 2000;
-        justify-content: center;
-        align-items: center;
-      }
-      .confirm-modal.active {
-        display: flex;
-      }
       .confirm-modal-content {
         background: #4A3728;
-        border: 2px solid #B8956A;
-        border-radius: 8px;
-        padding: 30px;
-        text-align: center;
-        max-width: 450px;
-        color: #C9DBBD;
+        border: 2px solid #ff6b6b;
       }
       .confirm-modal-content h2 {
-        margin: 0 0 15px 0;
         color: #ff6b6b;
-      }
-      .confirm-modal-content p {
-        margin: 0 0 10px 0;
-        color: #C9DBBD;
-      }
-      .confirm-modal-content .filename {
-        font-size: 0.9em;
-        color: #aaa;
-        margin-bottom: 20px;
-        word-break: break-all;
-        font-style: italic;
       }
       .confirm-modal-content .warning {
         font-size: 0.85em;
@@ -508,160 +599,275 @@
       .confirm-modal-footer .delete-btn:hover {
         background: #a00;
       }
+
+      /* Empty gallery state. */
+      .empty-gallery {
+        text-align: center;
+        padding: 40px;
+        color: #888;
+      }
+      .empty-gallery p {
+        font-size: 1.1em;
+        margin-bottom: 10px;
+      }
+
+      /* Mobile responsive. */
+      @media (max-width: 768px) {
+        .detail-header {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .detail-filename {
+          order: -1;
+          text-align: center;
+          margin-bottom: 10px;
+        }
+        .detail-header .back-button,
+        .detail-header .delete-button {
+          flex: 1;
+        }
+        .dither-comparison {
+          flex-direction: column;
+        }
+        .status-bar-content {
+          flex-wrap: wrap;
+        }
+        .status-info {
+          min-width: 200px;
+        }
+      }
     </style>
-  <title>inky-soup - upload</title>
+    <title>inky-soup</title>
   </head>
   <body>
     <div class="container">
+      <!-- Gallery View -->
+      <div id="galleryView" class="view-container active">
+        {% if errors | length >= 1 %}
+          <small class="text-error" style="margin-top: 20px">
+            Errors:
+            {{ errors | length }} errors(s):
+            {% for s in errors %}
+              <p>{{s}}</p>
+            {% endfor %}
+          </small>
+        {% endif %}
 
-      {% if errors | length >= 1 %}
-        <small class="text-error" style="margin-top: 20px">
-          Errors:
-          {{ errors | length }} errors(s):
-          {% for s in errors %}
-            <p>{{s}}</p>
-          {% endfor %}
-        </small>
-      {% endif %}
-
-      {% if values | length >= 1 %}
-        <small class="good" style="margin-top: 20px">
-          {{ values | length }} Message(s):
-          {% for v in values %}
-            <p> {{v}} </p>
-          {% endfor %}
-        </small>
-      {% endif %}
-
-      <fieldset>
-        <legend>Upload New Image</legend>
-
-        <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
-          <div id="dropZone" class="drop-zone">
-            <input type="file" name="submission.file" id="fileInput" accept="image/*" />
-            <div class="drop-zone-prompt">Drop image here or click to upload</div>
-            <div class="drop-zone-hint">JPEG, PNG, GIF, WebP (max 10 MB)</div>
-            <div class="drop-zone-preview">
-              <img id="uploadPreviewImg" src="" alt="Preview" />
-              <div id="uploadFileName" class="file-name"></div>
-              <div id="uploadFileSize" class="file-size"></div>
-            </div>
-          </div>
-        </form>
-      </fieldset>
-      <br />
-
-      <form action="/flash" method="post" enctype="multipart/form-data">
-      <div class="row">
-        <div class="col">
-            <fieldset>
-              <legend>Select an Image</legend>
-              <div class="thumbnails">
-
-                <div class="row">
-                  {% for img in images %}
-                  {%- set thumb_path = "images/thumbs/" ~ img.filename ~ ".png" -%}
-                  <div class="col" style="text-align: center;">
-                    {% if img.thumb_ready %}
-                    <img
-                      onclick="selectThumbnail(this)"
-                      id="{{ img.path }}"
-                      src="{{ thumb_path }}"
-                      alt="{{ img.path }}"
-                      loading="lazy"
-                      data-filter="{{ img.filter }}"
-                      data-filename="{{ img.filename }}"
-                    />
-                    {% else %}
-                    <div
-                      class="thumbnail-placeholder"
-                      id="{{ img.path }}"
-                      onclick="selectPlaceholder(this)"
-                      data-filename="{{ img.filename }}"
-                      data-path="{{ img.path }}"
-                      data-filter="{{ img.filter }}"
-                    >
-                      <div class="spinner"></div>
-                      <span class="label">Caching...</span>
-                    </div>
-                    {% endif %}
-                    <div style="font-size: 0.75em;">
-                      {%- if img.filename | length > 40 -%}
-                        {%- set ext = img.filename | split(pat=".") | last -%}
-                        {{ img.filename | replace(from="." ~ ext, to="") | truncate(length=32, end="...") }}.{{ ext }}
-                      {%- else -%}
-                        {{ img.filename }}
-                      {%- endif -%}
-                    </div>
-                  </div>
-                  {% endfor %}
-                </div>
-
-              </div>
-            </fieldset>
-
-            <input type="submit" id="flashBtn" value="Flash Image" class="is-full-width" disabled />
-
-            <br>
-
-            <button type="button" id="deleteBtn" onclick="showDeleteConfirmation()" class="bad" disabled>Remove Image</button>
-        </div>
+        {% if values | length >= 1 %}
+          <small class="good" style="margin-top: 20px">
+            {{ values | length }} Message(s):
+            {% for v in values %}
+              <p> {{v}} </p>
+            {% endfor %}
+          </small>
+        {% endif %}
 
         <fieldset>
-          <legend>Selected Image</legend>
-          {{
-              m::input(
-                  label="Filename:",
-                  name="submission.image_file_path"
-              )
-          }}
-          <br>
-
-          <div style="margin-bottom: 15px;">
-            <button type="button" id="editFilterBtn" onclick="openFilterEditor()" class="button" disabled>Edit Filter...</button>
-            <span id="filterStatus" style="margin-left: 10px; font-size: 0.85em; color: #666;"></span>
-          </div>
-
-          Preview:
-          <div class="preview" align="center">
-            <img id="preview" src="" alt=""/>
-          </div>
+          <legend>Upload New Image</legend>
+          <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
+            <div id="dropZone" class="drop-zone">
+              <input type="file" name="submission.file" id="fileInput" accept="image/*" />
+              <div class="drop-zone-prompt">Drop image here or click to upload</div>
+              <div class="drop-zone-hint">JPEG, PNG, GIF, WebP (max 10 MB)</div>
+              <div class="drop-zone-preview">
+                <img id="uploadPreviewImg" src="" alt="Preview" />
+                <div id="uploadFileName" class="file-name"></div>
+                <div id="uploadFileSize" class="file-size"></div>
+              </div>
+            </div>
+          </form>
         </fieldset>
 
-      </div>
-      </form>
+        <br>
 
+        <fieldset>
+          <legend>Gallery</legend>
+          {% if images | length == 0 %}
+            <div class="empty-gallery">
+              <p>No images uploaded yet.</p>
+              <p style="font-size: 0.9em;">Drop an image above to get started.</p>
+            </div>
+          {% else %}
+            <div class="thumbnails">
+              {% for img in images %}
+              {%- set thumb_path = "images/thumbs/" ~ img.filename ~ ".png" -%}
+              <div class="thumbnail-item" onclick="showDetailView('{{ img.filename }}', '{{ img.path }}', '{{ img.filter }}', {{ img.thumb_ready }})">
+                {% if img.thumb_ready %}
+                <img
+                  src="{{ thumb_path }}"
+                  alt="{{ img.filename }}"
+                  loading="lazy"
+                  data-filename="{{ img.filename }}"
+                  data-path="{{ img.path }}"
+                  data-filter="{{ img.filter }}"
+                />
+                {% else %}
+                <div
+                  class="thumbnail-placeholder"
+                  id="placeholder-{{ img.filename }}"
+                  data-filename="{{ img.filename }}"
+                  data-path="{{ img.path }}"
+                  data-filter="{{ img.filter }}"
+                >
+                  <div class="spinner"></div>
+                  <span class="label">Caching...</span>
+                </div>
+                {% endif %}
+                <div class="thumb-filename">
+                  {%- if img.filename | length > 20 -%}
+                    {%- set ext = img.filename | split(pat=".") | last -%}
+                    {{ img.filename | replace(from="." ~ ext, to="") | truncate(length=15, end="...") }}.{{ ext }}
+                  {%- else -%}
+                    {{ img.filename }}
+                  {%- endif -%}
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </fieldset>
+      </div>
+
+      <!-- Detail View -->
+      <div id="detailView" class="view-container">
+        <div class="detail-header">
+          <button class="back-button" onclick="showGalleryView()">← Back to Gallery</button>
+          <div id="detailFilename" class="detail-filename"></div>
+          <button class="delete-button" onclick="showDeleteConfirmation()">Delete</button>
+        </div>
+
+        <!-- Hidden form field for delete. -->
+        <form id="deleteForm" action="/delete" method="post" style="display: none;">
+          <input type="hidden" name="submission.image_file_path" id="deleteImagePath" value="" />
+        </form>
+
+        <!-- Preview Section -->
+        <div class="detail-section">
+          <h3>Preview</h3>
+          <img id="detailPreview" class="preview-image" src="" alt="" />
+        </div>
+
+        <!-- Filter Section -->
+        <div class="detail-section">
+          <h3>Resize Filter</h3>
+          <p style="color: #888; font-size: 0.9em; margin-bottom: 15px;">
+            Choose how the image is downscaled to 600×448 for the e-ink display.
+          </p>
+          <div class="filter-buttons">
+            <button class="filter-btn" data-filter="bicubic">Bicubic</button>
+            <button class="filter-btn" data-filter="lanczos">Lanczos</button>
+            <button class="filter-btn" data-filter="mitchell">Mitchell</button>
+            <button class="filter-btn" data-filter="bilinear">Bilinear</button>
+            <button class="filter-btn" data-filter="nearest">Nearest</button>
+          </div>
+          <div class="filter-canvas-container">
+            <canvas id="filterCanvas" width="600" height="448"></canvas>
+          </div>
+          <div class="filter-actions">
+            <button id="applyFilterBtn" class="button primary" onclick="applyFilter()">Apply Filter</button>
+            <span id="filterStatus" class="filter-status"></span>
+            <span id="filterProcessing" class="processing-indicator"></span>
+          </div>
+        </div>
+
+        <!-- Dither/Flash Section -->
+        <div class="detail-section">
+          <h3>E-Ink Preview</h3>
+          <p style="color: #888; font-size: 0.9em; margin-bottom: 15px;">
+            Preview how the image will look on the 7-color e-ink display.
+          </p>
+
+          <div class="preview-toggle">
+            <button class="toggle-btn active" data-view="before" onclick="setDitherView('before')">Before</button>
+            <button class="toggle-btn" data-view="after" onclick="setDitherView('after')">After</button>
+            <button class="toggle-btn" data-view="comparison" onclick="setDitherView('comparison')">Side-by-Side</button>
+          </div>
+
+          <div class="dither-canvas-container">
+            <div id="ditherViewBefore" class="dither-view active">
+              <canvas id="ditherCanvasBefore" width="600" height="448"></canvas>
+              <div style="color: #888; font-size: 0.85em; margin-top: 5px;">600 × 448 (filtered)</div>
+            </div>
+            <div id="ditherViewAfter" class="dither-view">
+              <canvas id="ditherCanvasAfter" width="600" height="448"></canvas>
+              <div style="color: #888; font-size: 0.85em; margin-top: 5px;">600 × 448 (7 colors)</div>
+            </div>
+            <div id="ditherViewComparison" class="dither-comparison">
+              <div class="comparison-panel">
+                <div class="comparison-label">Before (Filtered)</div>
+                <canvas id="ditherCompBefore" width="600" height="448"></canvas>
+              </div>
+              <div class="comparison-panel">
+                <div class="comparison-label">After (Dithered)</div>
+                <canvas id="ditherCompAfter" width="600" height="448"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="saturation-control">
+            <label>Saturation: <span id="saturationValue">0.5</span></label>
+            <input type="range" id="saturationSlider" min="0.1" max="1.0" step="0.1" value="0.5" oninput="updateSaturation(this.value)">
+          </div>
+
+          <div class="flash-options">
+            <label>
+              <input type="checkbox" id="flashTwiceCheckbox">
+              Flash twice (to overcome ghosting)
+            </label>
+          </div>
+
+          <div id="ditherProcessing" class="processing-indicator"></div>
+
+          <button id="flashBtn" class="flash-button" onclick="flashImage()">
+            Flash to Display
+          </button>
+        </div>
+      </div>
     </div>
 
-    <!-- Flash progress modal. -->
-    <div id="flashModal" class="flash-modal">
-      <div class="flash-modal-content">
-        <h2>Flashing to Display</h2>
-        <img id="modalImage" src="" alt=""/>
-        <div id="modalFilename" class="filename"></div>
+    <!-- Flash Status Bar -->
+    <div id="flashStatusBar" class="flash-status-bar">
+      <div class="status-bar-content">
+        <span id="statusIcon" class="status-icon">⚡</span>
+        <div class="status-info">
+          <div id="statusText" class="status-text">Idle</div>
+          <div class="status-progress-mini">
+            <div id="statusProgress" class="status-progress-fill"></div>
+          </div>
+        </div>
+        <button class="status-expand-btn" onclick="expandFlashModal()">Details</button>
+      </div>
+    </div>
 
-        <div id="progress1Container" class="progress-container">
+    <!-- Flash Progress Modal (expandable from status bar). -->
+    <div id="flashModal" class="modal">
+      <div class="modal-content">
+        <h2 id="flashModalTitle">Flashing to Display</h2>
+        <img id="flashModalImage" src="" alt=""/>
+        <div id="flashModalFilename" class="filename"></div>
+
+        <div id="flashProgress1Container" class="progress-container">
           <div class="progress-label">Flash 1</div>
           <div class="progress-bar">
-            <div id="progress1" class="progress-fill"></div>
+            <div id="flashProgress1" class="progress-fill"></div>
           </div>
         </div>
 
-        <div id="progress2Container" class="progress-container" style="display: none;">
+        <div id="flashProgress2Container" class="progress-container" style="display: none;">
           <div class="progress-label">Flash 2</div>
           <div class="progress-bar">
-            <div id="progress2" class="progress-fill"></div>
+            <div id="flashProgress2" class="progress-fill"></div>
           </div>
         </div>
 
-        <div id="flashNote" class="flash-note">This takes about 40 seconds per flash...</div>
-        <button type="button" id="flashCloseBtn" style="display: none; margin-top: 15px;" onclick="document.getElementById('flashModal').classList.remove('active');">Close</button>
+        <div id="flashModalNote" class="modal-note">This takes about 40 seconds per flash...</div>
+        <button type="button" id="flashModalClose" style="display: none; margin-top: 15px;" onclick="closeFlashModal()">Close</button>
       </div>
     </div>
 
-    <!-- Upload progress modal. -->
-    <div id="uploadModal" class="upload-modal">
-      <div class="upload-modal-content">
+    <!-- Upload Progress Modal. -->
+    <div id="uploadModal" class="modal">
+      <div class="modal-content">
         <h2 id="uploadModalTitle">Uploading Image</h2>
         <img id="uploadModalImage" src="" alt=""/>
         <div id="uploadModalFilename" class="filename"></div>
@@ -699,96 +905,16 @@
           </div>
         </div>
 
-        <div id="uploadNote" class="upload-note">Uploading to server...</div>
-        <button type="button" id="uploadCloseBtn" style="display: none; margin-top: 15px;" onclick="document.getElementById('uploadModal').classList.remove('active'); window.location.reload();">Close</button>
+        <div id="uploadNote" class="modal-note">Uploading to server...</div>
+        <button type="button" id="uploadCloseBtn" style="display: none; margin-top: 15px;" onclick="closeUploadModal()">Close</button>
       </div>
     </div>
 
-    <!-- Filter editor modal. -->
-    <div id="filterEditorModal" class="filter-editor-modal">
-      <div class="filter-editor-content">
-        <div class="filter-editor-header">
-          <div>
-            <h2>Filter Editor</h2>
-            <span id="filterEditorFilename" style="color: #aaa; font-size: 0.9em;"></span>
-          </div>
-          <button onclick="closeFilterEditor()" title="Close">&times;</button>
-        </div>
-
-        <div class="filter-editor-body">
-          <canvas id="filterCanvas" width="600" height="448"></canvas>
-
-          <div class="filter-controls">
-            <label style="font-weight: bold;">Filter:</label>
-            <div class="filter-buttons">
-              <button data-filter="bicubic" class="active">Bicubic</button>
-              <button data-filter="lanczos">Lanczos</button>
-              <button data-filter="mitchell">Mitchell</button>
-              <button data-filter="bilinear">Bilinear</button>
-              <button data-filter="nearest">Nearest</button>
-            </div>
-            <div id="filterProcessing" class="processing-indicator"></div>
-          </div>
-        </div>
-
-        <div class="filter-editor-footer">
-          <button onclick="closeFilterEditor()">Cancel</button>
-          <button onclick="applyFilterFromEditor()" class="button primary">Apply & Save</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Dither preview modal. -->
-    <div id="ditherPreviewModal" class="filter-editor-modal">
-      <div class="filter-editor-content">
-        <div class="filter-editor-header">
-          <div>
-            <h2>Preview E-Ink Rendering</h2>
-            <span id="ditherPreviewFilename" style="color: #aaa; font-size: 0.9em;"></span>
-          </div>
-          <button onclick="closeDitherPreview()" title="Close">&times;</button>
-        </div>
-
-        <div class="filter-editor-body">
-          <div class="comparison-container">
-            <div class="comparison-panel">
-              <div class="comparison-label">Before (Resized)</div>
-              <canvas id="ditherCanvasBefore" width="600" height="448"></canvas>
-              <div class="comparison-dimensions">600 × 448</div>
-            </div>
-            <div class="comparison-panel">
-              <div class="comparison-label">After (Dithered)</div>
-              <canvas id="ditherCanvas" width="600" height="448"></canvas>
-              <div class="comparison-dimensions">600 × 448 (7 colors)</div>
-            </div>
-          </div>
-
-          <div class="filter-controls">
-            <label style="font-weight: bold;">Saturation: <span id="saturationValue">0.5</span></label>
-            <input type="range" id="saturationSlider" min="0.1" max="1.0" step="0.1" value="0.5"
-                   style="width: 100%; margin: 10px 0;">
-
-            <label style="display: block; margin-top: 15px;">
-              <input type="checkbox" id="flashTwiceCheckbox" style="margin-right: 5px;">
-              Flash twice (to overcome ghosting)
-            </label>
-
-            <div id="ditherProcessing" class="processing-indicator"></div>
-          </div>
-        </div>
-
-        <div class="filter-editor-footer">
-          <button onclick="closeDitherPreview()">Cancel</button>
-          <button onclick="confirmFlash()" class="button primary">Flash to Display</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Delete confirmation modal. -->
-    <div id="deleteConfirmModal" class="confirm-modal">
-      <div class="confirm-modal-content">
+    <!-- Delete Confirmation Modal. -->
+    <div id="deleteConfirmModal" class="modal">
+      <div class="modal-content confirm-modal-content">
         <h2>Delete Image?</h2>
-        <p>You are about to delete:</p>
+        <p style="color: #C9DBBD;">You are about to delete:</p>
         <div id="deleteConfirmFilename" class="filename"></div>
         <div class="warning">This action cannot be undone.</div>
         <div class="confirm-modal-footer">
@@ -801,701 +927,870 @@
     <script src="/js/filters.js"></script>
     <script src="/js/dither.js"></script>
     <script>
+      // Constants.
       const FLASH_DURATION_MS = 40000;
-
-      // Image dimensions.
-      const CACHE_WIDTH = 600;   // For preview/dithering (matches e-ink display).
+      const CACHE_WIDTH = 600;
       const CACHE_HEIGHT = 448;
-      const THUMB_WIDTH = 150;   // For gallery thumbnails.
+      const THUMB_WIDTH = 150;
       const THUMB_HEIGHT = 112;
 
-      let animationCancelled = false;
-      let isFlashing = false;
+      // Current state.
+      let currentView = 'gallery';
+      let currentFilename = null;
+      let currentPath = null;
+      let currentFilter = 'bicubic';
+      let currentSaturation = 0.5;
+      let currentDitherView = 'before';
 
-      // Filter editor state.
+      // Worker state.
       let filterWorker = null;
-      let originalImageData = null;
-      let originalImageDataCache = {};  // Cache full-res ImageData per filename.
-      let editorCurrentFilter = 'bicubic';
-
-      // Dither preview state.
       let ditherWorker = null;
-      let ditherImageData = null;
-      let ditherCurrentSaturation = 0.5;
-      let ditherPendingFlash = null;
+      let originalImageDataCache = {};
 
-      // Upload cache generation state.
+      // Flash job tracking.
+      let currentJobId = null;
+      let pollInterval = null;
+
+      // Upload workers.
       let uploadCacheWorker = null;
       let uploadThumbWorker = null;
-      let uploadImageData = null;
-      let uploadCacheBlob = null;
-      let uploadThumbBlob = null;
-      let uploadCacheReady = false;
-      let uploadThumbReady = false;
-      let uploadXhrComplete = false;
-      let uploadFilename = null;
 
-      // Initialize upload cache worker (reuses filter worker).
-      function initUploadCacheWorker() {
-        if (uploadCacheWorker) return;
+      // ===============================
+      // Navigation
+      // ===============================
 
-        uploadCacheWorker = new Worker('/js/filter-worker.js');
-        uploadCacheWorker.onmessage = function(e) {
-          if (e.data.success) {
-            // Convert ImageData to PNG blob.
-            const canvas = document.createElement('canvas');
-            canvas.width = CACHE_WIDTH;
-            canvas.height = CACHE_HEIGHT;
-            const ctx = canvas.getContext('2d');
-            ctx.putImageData(e.data.imageData, 0, 0);
-
-            canvas.toBlob(function(blob) {
-              uploadCacheBlob = blob;
-              uploadCacheReady = true;
-              console.log('Cache thumbnail generated, size:', blob.size);
-              checkUploadComplete();
-            }, 'image/png');
-          } else {
-            console.error('Cache generation failed:', e.data.error);
-            // Mark as ready anyway so upload can complete (server repair will catch it).
-            uploadCacheReady = true;
-            uploadCacheBlob = null;
-            checkUploadComplete();
-          }
-        };
+      function showGalleryView() {
+        document.getElementById('detailView').classList.remove('active');
+        document.getElementById('galleryView').classList.add('active');
+        currentView = 'gallery';
+        window.scrollTo(0, 0);
+        history.pushState({ view: 'gallery' }, '', '#');
       }
 
-      // Initialize upload thumb worker (generates small gallery thumbnail).
-      function initUploadThumbWorker() {
-        if (uploadThumbWorker) return;
-
-        uploadThumbWorker = new Worker('/js/filter-worker.js');
-        uploadThumbWorker.onmessage = function(e) {
-          if (e.data.success) {
-            // Convert ImageData to PNG blob.
-            const canvas = document.createElement('canvas');
-            canvas.width = THUMB_WIDTH;
-            canvas.height = THUMB_HEIGHT;
-            const ctx = canvas.getContext('2d');
-            ctx.putImageData(e.data.imageData, 0, 0);
-
-            canvas.toBlob(function(blob) {
-              uploadThumbBlob = blob;
-              uploadThumbReady = true;
-              console.log('Gallery thumbnail generated, size:', blob.size);
-              checkUploadComplete();
-            }, 'image/png');
-          } else {
-            console.error('Thumb generation failed:', e.data.error);
-            uploadThumbReady = true;
-            uploadThumbBlob = null;
-            checkUploadComplete();
-          }
-        };
-      }
-
-      // Check if upload, cache, and thumb generation are complete.
-      function checkUploadComplete() {
-        if (!uploadCacheReady || !uploadThumbReady || !uploadXhrComplete) return;
-
-        const noteEl = document.getElementById('uploadNote');
-        noteEl.textContent = 'Saving thumbnails...';
-
-        // Upload both cache and thumb in parallel.
-        const uploads = [];
-
-        if (uploadCacheBlob && uploadFilename) {
-          const cacheForm = new FormData();
-          cacheForm.append('filename', uploadFilename);
-          cacheForm.append('file', uploadCacheBlob, uploadFilename + '.png');
-          uploads.push(
-            fetch('/api/upload-cache', { method: 'POST', body: cacheForm })
-              .then(r => r.json())
-              .then(data => {
-                if (data.success) {
-                  console.log('Cache uploaded:', data.path);
-                } else {
-                  console.error('Cache upload failed:', data.message);
-                }
-              })
-              .catch(err => console.error('Cache upload error:', err))
-          );
-        }
-
-        if (uploadThumbBlob && uploadFilename) {
-          const thumbForm = new FormData();
-          thumbForm.append('filename', uploadFilename);
-          thumbForm.append('file', uploadThumbBlob, uploadFilename + '.png');
-          uploads.push(
-            fetch('/api/upload-thumb', { method: 'POST', body: thumbForm })
-              .then(r => r.json())
-              .then(data => {
-                if (data.success) {
-                  console.log('Thumb uploaded:', data.path);
-                } else {
-                  console.error('Thumb upload failed:', data.message);
-                }
-              })
-              .catch(err => console.error('Thumb upload error:', err))
-          );
-        }
-
-        // Wait for all uploads to complete.
-        Promise.all(uploads).then(() => finishUpload(true));
-      }
-
-      // Finish upload and show completion UI.
-      function finishUpload(success) {
-        const titleEl = document.getElementById('uploadModalTitle');
-        const noteEl = document.getElementById('uploadNote');
-        const closeBtn = document.getElementById('uploadCloseBtn');
-        const processingProgress = document.getElementById('processingProgress');
-
-        processingProgress.style.width = '100%';
-        processingProgress.classList.add('complete');
-
-        if (success) {
-          titleEl.textContent = '✓ Upload Complete!';
-          titleEl.style.color = '#6B8E4E';
-          noteEl.textContent = 'Image uploaded successfully.';
-          noteEl.style.color = '#6B8E4E';
-        } else {
-          titleEl.textContent = '✗ Upload Failed';
-          titleEl.style.color = '#ff4444';
-          noteEl.textContent = 'Upload failed.';
-          noteEl.style.color = '#ff4444';
-        }
-        closeBtn.style.display = 'inline-block';
-      }
-
-      // Initialize dither worker.
-      function initDitherWorker() {
-        if (ditherWorker) return;
-
-        ditherWorker = new Worker('/js/dither-worker.js');
-        ditherWorker.onmessage = function(e) {
-          const processingEl = document.getElementById('ditherProcessing');
-
-          if (e.data.success) {
-            const canvas = document.getElementById('ditherCanvas');
-            const ctx = canvas.getContext('2d');
-            ctx.putImageData(e.data.imageData, 0, 0);
-            processingEl.textContent = '';
-          } else {
-            processingEl.textContent = 'Error: ' + e.data.error;
-            processingEl.style.color = '#ff4444';
-          }
-        };
-      }
-
-      // Show dither preview modal with the cached image.
-      async function showDitherPreview(imagePath, filename) {
-        initDitherWorker();
-
-        // Store flash parameters for later.
-        ditherPendingFlash = {
-          imagePath: imagePath,
-          filename: filename
-        };
-
-        // Load the cached image.
-        const cachePath = imagePath.replace('images/', 'images/cache/') + '.png';
-
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = function() {
-          const canvas = document.getElementById('ditherCanvas');
-          const ctx = canvas.getContext('2d');
-
-          // Ensure canvas is 600x448.
-          canvas.width = CACHE_WIDTH;
-          canvas.height = CACHE_HEIGHT;
-
-          // Draw image to canvas.
-          ctx.drawImage(img, 0, 0, CACHE_WIDTH, CACHE_HEIGHT);
-
-          // Also draw to the "before" canvas for comparison.
-          const beforeCanvas = document.getElementById('ditherCanvasBefore');
-          const beforeCtx = beforeCanvas.getContext('2d');
-          beforeCanvas.width = CACHE_WIDTH;
-          beforeCanvas.height = CACHE_HEIGHT;
-          beforeCtx.drawImage(img, 0, 0, CACHE_WIDTH, CACHE_HEIGHT);
-
-          // Get image data.
-          ditherImageData = ctx.getImageData(0, 0, CACHE_WIDTH, CACHE_HEIGHT);
-
-          // Reset saturation slider to default.
-          const slider = document.getElementById('saturationSlider');
-          slider.value = 0.5;
-          document.getElementById('saturationValue').textContent = '0.5';
-          ditherCurrentSaturation = 0.5;
-
-          // Reset flash twice checkbox.
-          document.getElementById('flashTwiceCheckbox').checked = false;
-
-          // Perform initial dither.
-          document.getElementById('ditherProcessing').textContent = 'Processing...';
-          ditherWorker.postMessage({
-            imageData: ditherImageData,
-            saturation: ditherCurrentSaturation
-          });
-
-          // Show modal.
-          document.getElementById('ditherPreviewFilename').textContent = filename;
-          document.getElementById('ditherPreviewModal').classList.add('active');
-        };
-
-        img.onerror = function() {
-          alert('Failed to load image: ' + cachePath);
-        };
-
-        img.src = '/' + cachePath;
-      }
-
-      // Close dither preview modal.
-      function closeDitherPreview() {
-        document.getElementById('ditherPreviewModal').classList.remove('active');
-        ditherPendingFlash = null;
-      }
-
-      // Handle saturation slider change.
-      document.addEventListener('DOMContentLoaded', function() {
-        const slider = document.getElementById('saturationSlider');
-        slider.addEventListener('input', function(e) {
-          const saturation = parseFloat(e.target.value);
-          document.getElementById('saturationValue').textContent = saturation;
-          ditherCurrentSaturation = saturation;
-
-          if (ditherImageData) {
-            document.getElementById('ditherProcessing').textContent = 'Processing...';
-            ditherWorker.postMessage({
-              imageData: ditherImageData,
-              saturation: saturation
-            });
-          }
-        });
-      });
-
-      // Confirm flash - dither, upload, and flash.
-      async function confirmFlash() {
-        if (!ditherPendingFlash) {
-          alert('No flash operation pending');
+      function showDetailView(filename, path, filter, thumbReady) {
+        if (!thumbReady) {
+          // Can't view detail for uncached images yet.
+          alert('This image is still being processed. Please wait.');
           return;
         }
 
-        const { imagePath, filename } = ditherPendingFlash;
+        currentFilename = filename;
+        currentPath = path;
+        currentFilter = filter || 'bicubic';
+        currentSaturation = 0.5;
 
-        // Get flash twice setting from modal checkbox.
-        const flashTwice = document.getElementById('flashTwiceCheckbox').checked;
+        // Update UI.
+        document.getElementById('detailFilename').textContent = filename;
+        document.getElementById('deleteImagePath').value = path;
 
-        // Close dither preview modal.
-        closeDitherPreview();
+        // Load preview.
+        const cachePath = 'images/cache/' + filename + '.png';
+        document.getElementById('detailPreview').src = cachePath;
 
-        // Get the dithered canvas.
-        const canvas = document.getElementById('ditherCanvas');
-
-        // Convert canvas to blob.
-        canvas.toBlob(async function(blob) {
-          if (!blob) {
-            alert('Failed to generate dithered image');
-            return;
-          }
-
-          // Upload dithered image to server.
-          const formData = new FormData();
-          formData.append('filename', filename);
-          formData.append('saturation', ditherCurrentSaturation);
-          formData.append('file', blob, filename);
-
-          try {
-            const uploadResponse = await fetch('/api/upload-dithered', {
-              method: 'POST',
-              body: formData
-            });
-
-            if (!uploadResponse.ok) {
-              alert('Failed to upload dithered image');
-              return;
-            }
-
-            // Now proceed with flash.
-            proceedWithFlash(imagePath, flashTwice, filename);
-
-          } catch (error) {
-            alert('Error uploading dithered image: ' + error.message);
-          }
-        }, 'image/png');
-      }
-
-      // Proceed with flash operation (after dithering and upload).
-      function proceedWithFlash(imagePath, flashTwice, filename) {
-        // Reset modal state.
-        animationCancelled = false;
-        document.getElementById('modalImage').src = imagePath;
-        document.getElementById('modalFilename').textContent = filename;
-        document.getElementById('progress1').style.width = '0%';
-        document.getElementById('progress1').classList.remove('complete');
-        document.getElementById('progress2').style.width = '0%';
-        document.getElementById('progress2').classList.remove('complete');
-        document.getElementById('flashNote').textContent = 'This takes about 40 seconds per flash...';
-        document.getElementById('flashNote').style.color = '#666';
-        document.getElementById('flashCloseBtn').style.display = 'none';
-        document.querySelector('.flash-modal-content h2').textContent = 'Flashing to Display';
-        document.querySelector('.flash-modal-content h2').style.color = '#B8956A';
-
-        // Show/hide second progress bar.
-        document.getElementById('progress2Container').style.display = flashTwice ? 'block' : 'none';
-
-        // Update label if only one flash.
-        document.querySelector('#progress1Container .progress-label').textContent =
-          flashTwice ? 'Flash 1' : 'Flashing...';
-
-        // Show modal.
-        document.getElementById('flashModal').classList.add('active');
-
-        // Start progress animation.
-        if (flashTwice) {
-          animateProgress('progress1', FLASH_DURATION_MS, function() {
-            animateProgress('progress2', FLASH_DURATION_MS);
-          });
-        } else {
-          animateProgress('progress1', FLASH_DURATION_MS);
-        }
-
-        // Submit via fetch.
-        const formData = new FormData();
-        formData.append('submission.image_file_path', imagePath);
-        if (flashTwice) {
-          formData.append('submission.flash_twice', 'yes');
-        }
-
-        fetch('/flash', {
-          method: 'POST',
-          body: formData
-        })
-        .then(response => {
-          if (response.ok) {
-            showFlashResult(true);
-          } else {
-            return response.text().then(text => {
-              showFlashResult(false, 'Flash failed with status ' + response.status);
-            });
-          }
-        })
-        .catch(error => {
-          showFlashResult(false, 'Network error: ' + error.message);
+        // Set active filter button.
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.filter === currentFilter);
         });
+
+        // Reset saturation.
+        document.getElementById('saturationSlider').value = 0.5;
+        document.getElementById('saturationValue').textContent = '0.5';
+
+        // Reset dither view.
+        setDitherView('before');
+
+        // Reset flash twice.
+        document.getElementById('flashTwiceCheckbox').checked = false;
+
+        // Clear status.
+        document.getElementById('filterStatus').textContent = '';
+        document.getElementById('filterProcessing').textContent = '';
+        document.getElementById('ditherProcessing').textContent = '';
+
+        // Load image data for filter preview and dithering.
+        loadImageForProcessing(filename);
+
+        // Switch views.
+        document.getElementById('galleryView').classList.remove('active');
+        document.getElementById('detailView').classList.add('active');
+        currentView = 'detail';
+        window.scrollTo(0, 0);
+        history.pushState({ view: 'detail', filename: filename }, '', '#detail-' + encodeURIComponent(filename));
       }
 
-      // Initialize filter worker.
+      // Handle browser back/forward.
+      window.addEventListener('popstate', function(e) {
+        if (e.state && e.state.view === 'detail' && e.state.filename) {
+          // Try to find the thumbnail data.
+          const thumb = document.querySelector(`img[data-filename="${e.state.filename}"]`);
+          if (thumb) {
+            showDetailView(e.state.filename, thumb.dataset.path, thumb.dataset.filter, true);
+          } else {
+            showGalleryView();
+          }
+        } else {
+          showGalleryView();
+        }
+      });
+
+      // ===============================
+      // Image Loading & Processing
+      // ===============================
+
+      function loadImageForProcessing(filename) {
+        // Check cache first.
+        if (originalImageDataCache[filename]) {
+          applyFilterToCanvas(originalImageDataCache[filename]);
+          return;
+        }
+
+        // Load the full original image.
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = function() {
+          // Get ImageData from original.
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          const imageData = ctx.getImageData(0, 0, img.width, img.height);
+
+          // Cache it.
+          originalImageDataCache[filename] = imageData;
+
+          // Apply filter.
+          applyFilterToCanvas(imageData);
+        };
+        img.onerror = function() {
+          console.error('Failed to load image:', filename);
+          document.getElementById('filterProcessing').textContent = 'Error loading image';
+        };
+        img.src = 'images/' + filename;
+      }
+
+      function applyFilterToCanvas(imageData) {
+        document.getElementById('filterProcessing').textContent = 'Processing...';
+
+        initFilterWorker();
+        filterWorker.postMessage({
+          data: imageData.data.buffer,
+          width: imageData.width,
+          height: imageData.height,
+          targetWidth: CACHE_WIDTH,
+          targetHeight: CACHE_HEIGHT,
+          filter: currentFilter
+        }, [imageData.data.buffer]);
+      }
+
       function initFilterWorker() {
         if (filterWorker) return;
 
         filterWorker = new Worker('/js/filter-worker.js');
         filterWorker.onmessage = function(e) {
-          const processingEl = document.getElementById('filterProcessing');
+          const result = e.data;
 
-          if (e.data.success) {
-            const canvas = document.getElementById('filterCanvas');
-            const ctx = canvas.getContext('2d');
-            ctx.putImageData(e.data.imageData, 0, 0);
-            processingEl.textContent = '';
-          } else {
-            processingEl.textContent = 'Error: ' + e.data.error;
-            processingEl.style.color = '#ff4444';
+          // Handle error responses.
+          if (result.success === false) {
+            console.error('Filter worker error:', result.error);
+            document.getElementById('filterProcessing').textContent = 'Processing error';
+            return;
           }
+
+          // Result is ImageData transferred from worker.
+          const imageData = result;
+
+          // Draw to filter canvas.
+          const filterCanvas = document.getElementById('filterCanvas');
+          const filterCtx = filterCanvas.getContext('2d');
+          filterCtx.putImageData(imageData, 0, 0);
+
+          // Also draw to dither "before" canvases.
+          const beforeCanvas = document.getElementById('ditherCanvasBefore');
+          const beforeCtx = beforeCanvas.getContext('2d');
+          beforeCtx.putImageData(imageData, 0, 0);
+
+          const compBeforeCanvas = document.getElementById('ditherCompBefore');
+          const compBeforeCtx = compBeforeCanvas.getContext('2d');
+          compBeforeCtx.putImageData(imageData, 0, 0);
+
+          document.getElementById('filterProcessing').textContent = '';
+
+          // Trigger dithering - get fresh ImageData from canvas (imageData is now neutered).
+          const freshImageData = filterCtx.getImageData(0, 0, CACHE_WIDTH, CACHE_HEIGHT);
+          applyDither(freshImageData);
+        };
+        filterWorker.onerror = function(e) {
+          console.error('Filter worker error:', e);
+          document.getElementById('filterProcessing').textContent = 'Processing error';
         };
       }
 
-      // Open filter editor for the currently selected image.
-      function openFilterEditor() {
-        if (!currentFilename) {
-          alert('Please select an image first.');
-          return;
-        }
+      // ===============================
+      // Dithering
+      // ===============================
 
-        initFilterWorker();
+      function applyDither(imageData) {
+        document.getElementById('ditherProcessing').textContent = 'Dithering...';
 
-        const modal = document.getElementById('filterEditorModal');
-        const filenameEl = document.getElementById('filterEditorFilename');
-        const processingEl = document.getElementById('filterProcessing');
+        initDitherWorker();
+        ditherWorker.postMessage({
+          data: imageData.data.buffer,
+          width: imageData.width,
+          height: imageData.height,
+          saturation: currentSaturation
+        }, [imageData.data.buffer]);
+      }
 
-        filenameEl.textContent = currentFilename;
+      function initDitherWorker() {
+        if (ditherWorker) return;
 
-        // Set initial filter to saved preference.
-        editorCurrentFilter = currentSavedFilter;
-        document.querySelectorAll('.filter-buttons button').forEach(btn => {
-          btn.classList.toggle('active', btn.dataset.filter === editorCurrentFilter);
+        ditherWorker = new Worker('/js/dither-worker.js');
+        ditherWorker.onmessage = function(e) {
+          const result = e.data;
+
+          // Handle error responses.
+          if (result.success === false) {
+            console.error('Dither worker error:', result.error);
+            document.getElementById('ditherProcessing').textContent = 'Dithering error';
+            return;
+          }
+
+          // Result is ImageData transferred from worker.
+          const imageData = result;
+
+          // Draw to dither "after" canvases.
+          const afterCanvas = document.getElementById('ditherCanvasAfter');
+          const afterCtx = afterCanvas.getContext('2d');
+          afterCtx.putImageData(imageData, 0, 0);
+
+          const compAfterCanvas = document.getElementById('ditherCompAfter');
+          const compAfterCtx = compAfterCanvas.getContext('2d');
+          compAfterCtx.putImageData(imageData, 0, 0);
+
+          document.getElementById('ditherProcessing').textContent = '';
+        };
+        ditherWorker.onerror = function(e) {
+          console.error('Dither worker error:', e);
+          document.getElementById('ditherProcessing').textContent = 'Dithering error';
+        };
+      }
+
+      function updateSaturation(value) {
+        currentSaturation = parseFloat(value);
+        document.getElementById('saturationValue').textContent = value;
+
+        // Re-dither with new saturation.
+        const filterCanvas = document.getElementById('filterCanvas');
+        const filterCtx = filterCanvas.getContext('2d');
+        const imageData = filterCtx.getImageData(0, 0, CACHE_WIDTH, CACHE_HEIGHT);
+        applyDither(imageData);
+      }
+
+      function setDitherView(view) {
+        currentDitherView = view;
+
+        // Update toggle buttons.
+        document.querySelectorAll('.preview-toggle .toggle-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.view === view);
         });
 
-        modal.classList.add('active');
+        // Show/hide views.
+        document.getElementById('ditherViewBefore').classList.toggle('active', view === 'before');
+        document.getElementById('ditherViewAfter').classList.toggle('active', view === 'after');
+        document.getElementById('ditherViewComparison').classList.toggle('active', view === 'comparison');
+      }
 
-        // Check if we have cached ImageData for this file.
+      // ===============================
+      // Filter Application
+      // ===============================
+
+      function selectFilter(filter) {
+        currentFilter = filter;
+
+        // Update buttons.
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.filter === filter);
+        });
+
+        // Re-process.
         if (originalImageDataCache[currentFilename]) {
-          originalImageData = originalImageDataCache[currentFilename];
-          processingEl.textContent = 'Resizing...';
-          processingEl.style.color = '#B8956A';
-          applyFilterToCanvas(editorCurrentFilter);
-          return;
+          applyFilterToCanvas(originalImageDataCache[currentFilename]);
         }
-
-        // Load the original image (not the cached thumbnail).
-        processingEl.textContent = 'Loading original image...';
-        processingEl.style.color = '#B8956A';
-
-        const img = new Image();
-        img.onload = function() {
-          // Draw full image to temporary canvas to get ImageData.
-          const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = img.width;
-          tempCanvas.height = img.height;
-          const tempCtx = tempCanvas.getContext('2d');
-          tempCtx.drawImage(img, 0, 0);
-          originalImageData = tempCtx.getImageData(0, 0, img.width, img.height);
-
-          // Cache for future use.
-          originalImageDataCache[currentFilename] = originalImageData;
-
-          processingEl.textContent = 'Resizing...';
-
-          // Resize with current filter and display.
-          applyFilterToCanvas(editorCurrentFilter);
-        };
-        img.onerror = function() {
-          processingEl.textContent = 'Failed to load image.';
-          processingEl.style.color = '#ff4444';
-        };
-        img.src = 'images/' + currentFilename;
       }
 
-      // Close filter editor.
-      function closeFilterEditor() {
-        document.getElementById('filterEditorModal').classList.remove('active');
-        originalImageData = null;
+      // Set up filter button clicks.
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          selectFilter(this.dataset.filter);
+        });
+      });
+
+      function applyFilter() {
+        // Save the filtered image to the server.
+        const filterCanvas = document.getElementById('filterCanvas');
+        const statusEl = document.getElementById('filterStatus');
+
+        statusEl.textContent = 'Saving...';
+
+        filterCanvas.toBlob(function(cacheBlob) {
+          // Upload cache image.
+          const cacheFormData = new FormData();
+          cacheFormData.append('filename', currentFilename);
+          cacheFormData.append('filter', currentFilter);
+          cacheFormData.append('file', cacheBlob, currentFilename + '.png');
+
+          fetch('/api/upload-cache', { method: 'POST', body: cacheFormData })
+            .then(r => r.json())
+            .then(data => {
+              if (!data.success) {
+                statusEl.textContent = 'Error: ' + data.message;
+                statusEl.style.color = '#ff4444';
+                return;
+              }
+
+              // Also regenerate thumb.
+              const thumbCanvas = document.createElement('canvas');
+              thumbCanvas.width = THUMB_WIDTH;
+              thumbCanvas.height = THUMB_HEIGHT;
+              const thumbCtx = thumbCanvas.getContext('2d');
+              thumbCtx.drawImage(filterCanvas, 0, 0, THUMB_WIDTH, THUMB_HEIGHT);
+
+              thumbCanvas.toBlob(function(thumbBlob) {
+                const thumbFormData = new FormData();
+                thumbFormData.append('filename', currentFilename);
+                thumbFormData.append('file', thumbBlob, currentFilename + '.png');
+
+                fetch('/api/upload-thumb', { method: 'POST', body: thumbFormData })
+                  .then(r => r.json())
+                  .then(thumbData => {
+                    statusEl.textContent = '✓ Filter saved';
+                    statusEl.style.color = '#6B8E4E';
+
+                    // Update gallery thumbnail if visible.
+                    const galleryThumb = document.querySelector(`img[data-filename="${currentFilename}"]`);
+                    if (galleryThumb) {
+                      galleryThumb.src = thumbData.path + '?t=' + Date.now();
+                      galleryThumb.dataset.filter = currentFilter;
+                    }
+
+                    // Also update preview.
+                    document.getElementById('detailPreview').src = data.path + '?t=' + Date.now();
+                  });
+              }, 'image/png');
+            })
+            .catch(err => {
+              statusEl.textContent = 'Error: ' + err.message;
+              statusEl.style.color = '#ff4444';
+            });
+        }, 'image/png');
       }
 
-      // Show delete confirmation modal.
+      // ===============================
+      // Flash Image
+      // ===============================
+
+      function flashImage() {
+        const flashBtn = document.getElementById('flashBtn');
+        flashBtn.disabled = true;
+
+        // Get dithered image.
+        const ditherCanvas = document.getElementById('ditherCanvasAfter');
+        const flashTwice = document.getElementById('flashTwiceCheckbox').checked;
+
+        ditherCanvas.toBlob(async function(blob) {
+          try {
+            // Upload dithered image.
+            const uploadFormData = new FormData();
+            uploadFormData.append('filename', currentFilename);
+            uploadFormData.append('saturation', currentSaturation);
+            uploadFormData.append('file', blob, currentFilename + '.png');
+
+            const uploadResp = await fetch('/api/upload-dithered', {
+              method: 'POST',
+              body: uploadFormData
+            });
+            const uploadData = await uploadResp.json();
+
+            if (!uploadData.success) {
+              alert('Failed to upload dithered image: ' + uploadData.message);
+              flashBtn.disabled = false;
+              return;
+            }
+
+            // Submit flash job.
+            const flashFormData = new FormData();
+            flashFormData.append('submission.image_file_path', currentPath);
+            if (flashTwice) {
+              flashFormData.append('submission.flash_twice', 'yes');
+            }
+
+            const flashResp = await fetch('/flash', {
+              method: 'POST',
+              body: flashFormData
+            });
+            const flashData = await flashResp.json();
+
+            if (!flashData.success) {
+              alert('Failed to queue flash: ' + flashData.message);
+              flashBtn.disabled = false;
+              return;
+            }
+
+            // Start tracking the job.
+            currentJobId = flashData.job_id;
+            startFlashTracking(flashData.job_id, flashTwice);
+            flashBtn.disabled = false;
+
+          } catch (err) {
+            alert('Error: ' + err.message);
+            flashBtn.disabled = false;
+          }
+        }, 'image/png');
+      }
+
+      // ===============================
+      // Flash Status Tracking
+      // ===============================
+
+      function startFlashTracking(jobId, flashTwice) {
+        // Show status bar.
+        const statusBar = document.getElementById('flashStatusBar');
+        const statusText = document.getElementById('statusText');
+        const statusProgress = document.getElementById('statusProgress');
+        const statusIcon = document.getElementById('statusIcon');
+
+        statusBar.classList.add('visible');
+        statusText.textContent = 'Queued: ' + currentFilename;
+        statusProgress.style.width = '0%';
+        statusProgress.classList.remove('complete', 'failed');
+        statusIcon.textContent = '⏳';
+
+        // Set up flash modal.
+        document.getElementById('flashModalImage').src = 'images/cache/' + currentFilename + '.png';
+        document.getElementById('flashModalFilename').textContent = currentFilename;
+        document.getElementById('flashModalTitle').textContent = 'Flash Job Queued';
+        document.getElementById('flashModalTitle').style.color = '#B8956A';
+        document.getElementById('flashModalNote').textContent = 'Waiting in queue...';
+        document.getElementById('flashModalClose').style.display = 'none';
+        document.getElementById('flashProgress1').style.width = '0%';
+        document.getElementById('flashProgress1').classList.remove('complete');
+        document.getElementById('flashProgress2').style.width = '0%';
+        document.getElementById('flashProgress2').classList.remove('complete');
+        document.getElementById('flashProgress2Container').style.display = flashTwice ? 'block' : 'none';
+        document.querySelector('#flashProgress1Container .progress-label').textContent = flashTwice ? 'Flash 1' : 'Flashing...';
+
+        // Start polling.
+        if (pollInterval) clearInterval(pollInterval);
+        pollInterval = setInterval(() => pollJobStatus(jobId, flashTwice), 1000);
+      }
+
+      async function pollJobStatus(jobId, flashTwice) {
+        try {
+          const resp = await fetch('/api/flash/status/' + jobId);
+          if (!resp.ok) {
+            // Job not found - stop polling.
+            clearInterval(pollInterval);
+            pollInterval = null;
+            return;
+          }
+
+          const job = await resp.json();
+          updateFlashStatus(job, flashTwice);
+
+          // Stop polling if job is done.
+          if (job.status === 'Completed' || job.status === 'Failed') {
+            clearInterval(pollInterval);
+            pollInterval = null;
+          }
+        } catch (err) {
+          console.error('Poll error:', err);
+        }
+      }
+
+      function updateFlashStatus(job, flashTwice) {
+        const statusBar = document.getElementById('flashStatusBar');
+        const statusText = document.getElementById('statusText');
+        const statusProgress = document.getElementById('statusProgress');
+        const statusIcon = document.getElementById('statusIcon');
+        const modalTitle = document.getElementById('flashModalTitle');
+        const modalNote = document.getElementById('flashModalNote');
+        const closeBtn = document.getElementById('flashModalClose');
+
+        switch (job.status) {
+          case 'Queued':
+            statusIcon.textContent = '⏳';
+            statusText.textContent = 'Queued: ' + job.filename;
+            statusProgress.style.width = '0%';
+            modalTitle.textContent = 'Flash Job Queued';
+            modalNote.textContent = 'Waiting in queue...';
+            break;
+
+          case 'Flashing':
+            statusIcon.textContent = '⚡';
+            statusText.textContent = 'Flashing: ' + job.filename;
+            modalTitle.textContent = 'Flashing to Display';
+            modalNote.textContent = 'This takes about 40 seconds per flash...';
+
+            // Calculate progress based on elapsed time.
+            if (job.started_at) {
+              const elapsed = Date.now() - job.started_at;
+              const totalDuration = flashTwice ? FLASH_DURATION_MS * 2 : FLASH_DURATION_MS;
+              const progress = Math.min(95, (elapsed / totalDuration) * 100);
+              statusProgress.style.width = progress + '%';
+
+              // Update modal progress bars.
+              const progress1 = Math.min(100, (elapsed / FLASH_DURATION_MS) * 100);
+              document.getElementById('flashProgress1').style.width = progress1 + '%';
+
+              if (flashTwice && elapsed > FLASH_DURATION_MS) {
+                document.getElementById('flashProgress1').classList.add('complete');
+                const progress2 = Math.min(100, ((elapsed - FLASH_DURATION_MS) / FLASH_DURATION_MS) * 100);
+                document.getElementById('flashProgress2').style.width = progress2 + '%';
+              }
+            }
+            break;
+
+          case 'Completed':
+            statusIcon.textContent = '✓';
+            statusText.textContent = 'Complete: ' + job.filename;
+            statusProgress.style.width = '100%';
+            statusProgress.classList.add('complete');
+            document.getElementById('flashProgress1').style.width = '100%';
+            document.getElementById('flashProgress1').classList.add('complete');
+            if (flashTwice) {
+              document.getElementById('flashProgress2').style.width = '100%';
+              document.getElementById('flashProgress2').classList.add('complete');
+            }
+            modalTitle.textContent = '✓ Flash Complete!';
+            modalTitle.style.color = '#6B8E4E';
+            modalNote.textContent = 'Image sent to display.';
+            closeBtn.style.display = 'block';
+
+            // Hide status bar after 5 seconds.
+            setTimeout(() => {
+              statusBar.classList.remove('visible');
+            }, 5000);
+            break;
+
+          case 'Failed':
+            statusIcon.textContent = '✗';
+            statusText.textContent = 'Failed: ' + job.filename;
+            statusProgress.style.width = '100%';
+            statusProgress.classList.add('failed');
+            modalTitle.textContent = '✗ Flash Failed';
+            modalTitle.style.color = '#ff6b6b';
+            modalNote.textContent = job.error_message || 'Unknown error';
+            closeBtn.style.display = 'block';
+            break;
+        }
+      }
+
+      function expandFlashModal() {
+        document.getElementById('flashModal').classList.add('active');
+      }
+
+      function closeFlashModal() {
+        document.getElementById('flashModal').classList.remove('active');
+      }
+
+      // ===============================
+      // Delete
+      // ===============================
+
       function showDeleteConfirmation() {
-        if (!currentFilename) {
-          alert('Please select an image first.');
-          return;
-        }
         document.getElementById('deleteConfirmFilename').textContent = currentFilename;
         document.getElementById('deleteConfirmModal').classList.add('active');
       }
 
-      // Close delete confirmation modal.
       function closeDeleteConfirmation() {
         document.getElementById('deleteConfirmModal').classList.remove('active');
       }
 
-      // Close modal on Escape key or click outside.
-      document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-          closeDeleteConfirmation();
+      function confirmDelete() {
+        closeDeleteConfirmation();
+        document.getElementById('deleteForm').submit();
+      }
+
+      // ===============================
+      // Upload Handling
+      // ===============================
+
+      const dropZone = document.getElementById('dropZone');
+      const fileInput = document.getElementById('fileInput');
+
+      dropZone.addEventListener('click', () => fileInput.click());
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-over');
+      });
+      dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('drag-over');
+      });
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+          handleFileSelect(files[0]);
         }
       });
-      document.getElementById('deleteConfirmModal').addEventListener('click', function(e) {
-        if (e.target === this) {
-          closeDeleteConfirmation();
+      fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+          handleFileSelect(e.target.files[0]);
         }
       });
 
-      // Confirm and execute delete.
-      function confirmDelete() {
-        const imagePath = document.getElementById('submission.image_file_path').value;
-        if (!imagePath) {
-          closeDeleteConfirmation();
+      function handleFileSelect(file) {
+        // Validate file type.
+        const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+        if (!validTypes.includes(file.type)) {
+          alert('Please select a valid image file (JPEG, PNG, GIF, or WebP).');
           return;
         }
 
-        // Submit delete via form POST.
+        // Validate size (10MB max).
+        if (file.size > 10 * 1024 * 1024) {
+          alert('File is too large. Maximum size is 10 MB.');
+          return;
+        }
+
+        // Show upload modal.
+        const modal = document.getElementById('uploadModal');
+        const modalImg = document.getElementById('uploadModalImage');
+        const modalFilename = document.getElementById('uploadModalFilename');
+        const progressEl = document.getElementById('uploadProgress');
+        const percentEl = document.getElementById('uploadPercent');
+        const speedEl = document.getElementById('uploadSpeed');
+        const transferredEl = document.getElementById('uploadTransferred');
+        const timeEl = document.getElementById('uploadTime');
+        const noteEl = document.getElementById('uploadNote');
+        const closeBtn = document.getElementById('uploadCloseBtn');
+        const titleEl = document.getElementById('uploadModalTitle');
+        const processingContainer = document.getElementById('processingProgressContainer');
+        const processingEl = document.getElementById('processingProgress');
+
+        // Reset modal state.
+        titleEl.textContent = 'Uploading Image';
+        titleEl.style.color = '#B8956A';
+        progressEl.style.width = '0%';
+        progressEl.classList.remove('complete');
+        processingContainer.style.display = 'none';
+        processingEl.style.width = '0%';
+        processingEl.classList.remove('complete');
+        percentEl.textContent = '0%';
+        speedEl.textContent = '-- MB/s';
+        transferredEl.textContent = '0 / ' + formatSize(file.size);
+        timeEl.textContent = '0:00';
+        noteEl.textContent = 'Uploading to server...';
+        closeBtn.style.display = 'none';
+
+        // Preview image.
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          modalImg.src = e.target.result;
+
+          // Start generating cache and thumb in parallel.
+          generateThumbnails(e.target.result, file.name);
+        };
+        reader.readAsDataURL(file);
+        modalFilename.textContent = file.name;
+
+        modal.classList.add('active');
+
+        // Upload with progress tracking.
         const formData = new FormData();
-        formData.append('submission.image_file_path', imagePath);
+        formData.append('submission.file', file, file.name);
 
-        fetch('/delete', {
-          method: 'POST',
-          body: formData
-        })
-        .then(response => {
-          if (response.ok) {
-            window.location.reload();
+        const xhr = new XMLHttpRequest();
+        const startTime = Date.now();
+
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            const elapsed = (Date.now() - startTime) / 1000;
+            const speed = e.loaded / elapsed;
+
+            progressEl.style.width = percent + '%';
+            percentEl.textContent = percent + '%';
+            speedEl.textContent = formatSpeed(speed);
+            transferredEl.textContent = formatSize(e.loaded) + ' / ' + formatSize(e.total);
+            timeEl.textContent = formatTime(elapsed);
+          }
+        });
+
+        xhr.addEventListener('load', () => {
+          if (xhr.status === 200 || xhr.status === 303) {
+            progressEl.style.width = '100%';
+            progressEl.classList.add('complete');
+            percentEl.textContent = '100%';
+            noteEl.textContent = 'Upload complete! Processing thumbnails...';
+
+            // Show processing progress.
+            processingContainer.style.display = 'block';
+
+            // Wait for thumbnails to finish (they started in parallel).
+            checkThumbnailsReady(file.name, titleEl, noteEl, closeBtn, processingEl);
           } else {
-            alert('Failed to delete image.');
-            closeDeleteConfirmation();
+            titleEl.textContent = '✗ Upload Failed';
+            titleEl.style.color = '#ff6b6b';
+            noteEl.textContent = 'Server returned error: ' + xhr.status;
+            closeBtn.style.display = 'block';
           }
-        })
-        .catch(error => {
-          alert('Error deleting image: ' + error.message);
-          closeDeleteConfirmation();
         });
+
+        xhr.addEventListener('error', () => {
+          titleEl.textContent = '✗ Upload Failed';
+          titleEl.style.color = '#ff6b6b';
+          noteEl.textContent = 'Network error occurred.';
+          closeBtn.style.display = 'block';
+        });
+
+        xhr.open('POST', '/upload');
+        xhr.send(formData);
       }
 
-      // Apply a filter to the canvas using the worker.
-      function applyFilterToCanvas(filter) {
-        if (!originalImageData) return;
+      let pendingThumbnails = { cache: null, thumb: null };
 
-        const processingEl = document.getElementById('filterProcessing');
-        processingEl.textContent = 'Processing...';
-        processingEl.style.color = '#B8956A';
+      function generateThumbnails(dataUrl, filename) {
+        const img = new Image();
+        img.onload = function() {
+          // Generate cache (600x448).
+          const cacheCanvas = document.createElement('canvas');
+          cacheCanvas.width = CACHE_WIDTH;
+          cacheCanvas.height = CACHE_HEIGHT;
+          const cacheCtx = cacheCanvas.getContext('2d');
 
-        filterWorker.postMessage({
-          imageData: originalImageData,
-          width: CACHE_WIDTH,
-          height: CACHE_HEIGHT,
-          filter: filter
-        });
-      }
+          // Use simple draw for initial cache (bicubic is default).
+          cacheCtx.drawImage(img, 0, 0, CACHE_WIDTH, CACHE_HEIGHT);
 
-      // Handle filter button clicks.
-      document.addEventListener('DOMContentLoaded', function() {
-        document.querySelectorAll('.filter-buttons button').forEach(btn => {
-          btn.addEventListener('click', function() {
-            // Update active state.
-            document.querySelectorAll('.filter-buttons button').forEach(b => {
-              b.classList.remove('active');
-            });
-            this.classList.add('active');
+          cacheCanvas.toBlob(function(cacheBlob) {
+            pendingThumbnails.cache = { blob: cacheBlob, filename: filename };
+            uploadPendingThumbnails(filename);
+          }, 'image/png');
 
-            // Apply the filter.
-            editorCurrentFilter = this.dataset.filter;
-            applyFilterToCanvas(editorCurrentFilter);
-          });
-        });
-      });
-
-      // Apply filter from editor and save to server.
-      function applyFilterFromEditor() {
-        if (!currentFilename) return;
-
-        const filterToSave = editorCurrentFilter;
-        const processingEl = document.getElementById('filterProcessing');
-        processingEl.textContent = 'Saving...';
-
-        // Get the canvas with the already-computed filtered image (600x448).
-        const canvas = document.getElementById('filterCanvas');
-
-        // Generate both cache blob and thumb blob.
-        canvas.toBlob(function(cacheBlob) {
-          if (!cacheBlob) {
-            processingEl.textContent = 'Error: Failed to generate image';
-            processingEl.style.color = '#ff4444';
-            return;
-          }
-
-          // Create smaller thumb from the same canvas.
+          // Generate thumb (150x112).
           const thumbCanvas = document.createElement('canvas');
           thumbCanvas.width = THUMB_WIDTH;
           thumbCanvas.height = THUMB_HEIGHT;
           const thumbCtx = thumbCanvas.getContext('2d');
-          thumbCtx.drawImage(canvas, 0, 0, THUMB_WIDTH, THUMB_HEIGHT);
+          thumbCtx.drawImage(img, 0, 0, THUMB_WIDTH, THUMB_HEIGHT);
 
           thumbCanvas.toBlob(function(thumbBlob) {
-            // Upload both in parallel.
-            const cacheForm = new FormData();
-            cacheForm.append('filename', currentFilename);
-            cacheForm.append('filter', filterToSave);
-            cacheForm.append('file', cacheBlob, currentFilename + '.png');
-
-            const thumbForm = new FormData();
-            thumbForm.append('filename', currentFilename);
-            thumbForm.append('file', thumbBlob, currentFilename + '.png');
-
-            Promise.all([
-              fetch('/api/upload-cache', { method: 'POST', body: cacheForm }).then(r => r.json()),
-              fetch('/api/upload-thumb', { method: 'POST', body: thumbForm }).then(r => r.json())
-            ])
-            .then(([cacheData, thumbData]) => {
-              if (cacheData.success && thumbData.success) {
-                // Update saved filter.
-                currentSavedFilter = filterToSave;
-
-                // Update the thumbnail.
-                const thumb = document.querySelector('img[data-filename="' + currentFilename + '"]');
-                if (thumb) {
-                  thumb.dataset.filter = filterToSave;
-                  thumb.src = 'images/thumbs/' + currentFilename + '.png?t=' + Date.now();
-                }
-
-                // Close modal.
-                closeFilterEditor();
-
-                // Show success message.
-                const statusEl = document.getElementById('filterStatus');
-                statusEl.textContent = '✓ Filter saved';
-                statusEl.style.color = '#6B8E4E';
-              } else {
-                processingEl.textContent = 'Error: Upload failed';
-                processingEl.style.color = '#ff4444';
-              }
-            })
-            .catch(err => {
-              processingEl.textContent = 'Error: ' + err.message;
-              processingEl.style.color = '#ff4444';
-            });
+            pendingThumbnails.thumb = { blob: thumbBlob, filename: filename };
+            uploadPendingThumbnails(filename);
           }, 'image/png');
-        }, 'image/png');
+        };
+        img.src = dataUrl;
       }
 
-      // Currently selected image filename and its saved filter.
-      let currentFilename = null;
-      let currentSavedFilter = null;
+      function uploadPendingThumbnails(filename) {
+        // Wait for both thumbnails to be ready.
+        if (!pendingThumbnails.cache || !pendingThumbnails.thumb) return;
+        if (pendingThumbnails.cache.filename !== filename || pendingThumbnails.thumb.filename !== filename) return;
 
-      // Thumbnail selection helper.
-      function selectThumbnail(el) {
-        document.querySelectorAll('.thumbnails img').forEach(img => img.classList.remove('selected'));
-        document.querySelectorAll('.thumbnail-placeholder').forEach(p => p.classList.remove('selected'));
-        el.classList.add('selected');
-        document.getElementById('submission.image_file_path').value = el.id;
+        const cache = pendingThumbnails.cache;
+        const thumb = pendingThumbnails.thumb;
 
-        // Update current filename and filter.
-        currentFilename = el.dataset.filename;
-        currentSavedFilter = el.dataset.filter || 'bicubic';
-        document.getElementById('filterStatus').textContent = '';
+        // Upload cache.
+        const cacheFormData = new FormData();
+        cacheFormData.append('filename', filename);
+        cacheFormData.append('filter', 'bicubic');
+        cacheFormData.append('file', cache.blob, filename + '.png');
 
-        // Show the cached image (full 600x448 resolution for accurate preview).
-        document.getElementById('preview').src = 'images/cache/' + currentFilename + '.png';
+        fetch('/api/upload-cache', { method: 'POST', body: cacheFormData })
+          .then(r => r.json())
+          .then(data => {
+            if (!data.success) {
+              console.error('Cache upload failed:', data.message);
+            }
+          });
 
-        // Enable all image-dependent controls.
-        document.getElementById('flashBtn').disabled = false;
-        document.getElementById('editFilterBtn').disabled = false;
-        document.getElementById('deleteBtn').disabled = false;
+        // Upload thumb.
+        const thumbFormData = new FormData();
+        thumbFormData.append('filename', filename);
+        thumbFormData.append('file', thumb.blob, filename + '.png');
+
+        fetch('/api/upload-thumb', { method: 'POST', body: thumbFormData })
+          .then(r => r.json())
+          .then(data => {
+            if (!data.success) {
+              console.error('Thumb upload failed:', data.message);
+            }
+            // Mark thumbnails as uploaded.
+            pendingThumbnails.uploaded = true;
+          });
       }
 
-      // Placeholder selection helper (for uncached images - allows deletion).
-      function selectPlaceholder(el) {
-        document.querySelectorAll('.thumbnails img').forEach(img => img.classList.remove('selected'));
-        document.querySelectorAll('.thumbnail-placeholder').forEach(p => p.classList.remove('selected'));
-        el.classList.add('selected');
-        document.getElementById('submission.image_file_path').value = el.id;
+      function checkThumbnailsReady(filename, titleEl, noteEl, closeBtn, processingEl) {
+        // Poll until thumbnails are uploaded.
+        const checkInterval = setInterval(() => {
+          if (pendingThumbnails.uploaded) {
+            clearInterval(checkInterval);
+            processingEl.style.width = '100%';
+            processingEl.classList.add('complete');
+            titleEl.textContent = '✓ Upload Complete!';
+            titleEl.style.color = '#6B8E4E';
+            noteEl.textContent = 'Image and thumbnails ready.';
+            closeBtn.style.display = 'block';
 
-        // Update current filename.
-        currentFilename = el.dataset.filename;
-        currentSavedFilter = null;
-        document.getElementById('filterStatus').textContent = '(no cache available)';
-
-        // Clear preview since there's no cache.
-        document.getElementById('preview').src = '';
-
-        // Keep flash/filter buttons disabled (no cache to work with).
-        document.getElementById('flashBtn').disabled = true;
-        document.getElementById('editFilterBtn').disabled = true;
-        // But allow deletion.
-        document.getElementById('deleteBtn').disabled = false;
+            // Reset pending state.
+            pendingThumbnails = { cache: null, thumb: null };
+          } else {
+            // Animate processing bar.
+            const current = parseFloat(processingEl.style.width) || 0;
+            processingEl.style.width = Math.min(90, current + 10) + '%';
+          }
+        }, 200);
       }
 
-      // Poll for thumb status and replace placeholder when ready.
-      // If thumb doesn't exist but cache does, generate thumb from cache.
+      function closeUploadModal() {
+        document.getElementById('uploadModal').classList.remove('active');
+        window.location.reload();
+      }
+
+      // ===============================
+      // Utility Functions
+      // ===============================
+
+      function formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+      }
+
+      function formatSpeed(bytesPerSec) {
+        if (bytesPerSec < 1024) return bytesPerSec.toFixed(0) + ' B/s';
+        if (bytesPerSec < 1024 * 1024) return (bytesPerSec / 1024).toFixed(1) + ' KB/s';
+        return (bytesPerSec / (1024 * 1024)).toFixed(2) + ' MB/s';
+      }
+
+      function formatTime(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return mins + ':' + (secs < 10 ? '0' : '') + secs;
+      }
+
+      // ===============================
+      // Placeholder Polling
+      // ===============================
+
+      // Poll for thumbnail status on uncached images.
+      document.querySelectorAll('.thumbnail-placeholder').forEach(placeholder => {
+        const filename = placeholder.dataset.filename;
+        const path = placeholder.dataset.path;
+        pollThumbStatus(filename, path, placeholder);
+      });
+
       function pollThumbStatus(filename, path, placeholderEl) {
         fetch('/api/thumb-status/' + encodeURIComponent(filename))
           .then(r => r.json())
           .then(data => {
             if (data.ready) {
-              // Thumb exists - show it.
               replacePlaceholderWithThumb(filename, path, placeholderEl, data.thumb_path);
             } else {
-              // No thumb - try to generate from cache.
-              generateThumbFromCache(filename, path, placeholderEl);
+              // Keep polling.
+              setTimeout(() => pollThumbStatus(filename, path, placeholderEl), 2000);
             }
           })
           .catch(err => {
@@ -1504,443 +1799,57 @@
           });
       }
 
-      // Generate thumb from cache image.
-      function generateThumbFromCache(filename, path, placeholderEl) {
-        const cachePath = 'images/cache/' + filename + '.png';
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-
-        img.onload = function() {
-          // Resize to thumb dimensions.
-          const canvas = document.createElement('canvas');
-          canvas.width = THUMB_WIDTH;
-          canvas.height = THUMB_HEIGHT;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, THUMB_WIDTH, THUMB_HEIGHT);
-
-          // Upload thumb.
-          canvas.toBlob(function(blob) {
-            const formData = new FormData();
-            formData.append('filename', filename);
-            formData.append('file', blob, filename + '.png');
-
-            fetch('/api/upload-thumb', { method: 'POST', body: formData })
-              .then(r => r.json())
-              .then(data => {
-                if (data.success) {
-                  replacePlaceholderWithThumb(filename, path, placeholderEl, data.path);
-                } else {
-                  console.error('Thumb upload failed:', data.message);
-                  setTimeout(() => pollThumbStatus(filename, path, placeholderEl), 5000);
-                }
-              })
-              .catch(err => {
-                console.error('Thumb upload error:', err);
-                setTimeout(() => pollThumbStatus(filename, path, placeholderEl), 5000);
-              });
-          }, 'image/png');
-        };
-
-        img.onerror = function() {
-          // Cache doesn't exist either - keep polling (upload may be in progress).
-          setTimeout(() => pollThumbStatus(filename, path, placeholderEl), 1000);
-        };
-
-        img.src = cachePath;
-      }
-
-      // Replace placeholder with actual thumbnail image.
       function replacePlaceholderWithThumb(filename, path, placeholderEl, thumbPath) {
+        const filter = placeholderEl.dataset.filter || 'bicubic';
         const img = document.createElement('img');
         img.src = thumbPath;
-        img.id = path;
-        img.alt = path;
+        img.alt = filename;
+        img.loading = 'lazy';
         img.dataset.filename = filename;
-        img.dataset.filter = placeholderEl.dataset.filter || 'bicubic';
-        img.onclick = function() { selectThumbnail(this); };
-        placeholderEl.replaceWith(img);
-      }
+        img.dataset.path = path;
+        img.dataset.filter = filter;
 
-      // Start polling for any placeholders on page load.
-      document.addEventListener('DOMContentLoaded', function() {
-        document.querySelectorAll('.thumbnail-placeholder').forEach(el => {
-          const filename = el.dataset.filename;
-          const path = el.dataset.path;
-          pollThumbStatus(filename, path, el);
-        });
-      });
+        // Replace placeholder with image.
+        placeholderEl.parentNode.replaceChild(img, placeholderEl);
 
-      function animateProgress(elementId, durationMs, onComplete) {
-        const el = document.getElementById(elementId);
-        const startTime = Date.now();
-
-        function update() {
-          if (animationCancelled) return;
-
-          const elapsed = Date.now() - startTime;
-          const progress = Math.min(100, (elapsed / durationMs) * 100);
-          el.style.width = progress + '%';
-
-          if (progress < 100) {
-            requestAnimationFrame(update);
-          } else {
-            el.classList.add('complete');
-            if (onComplete) onComplete();
-          }
-        }
-        requestAnimationFrame(update);
-      }
-
-      function completeAllProgress() {
-        animationCancelled = true;
-        const p1 = document.getElementById('progress1');
-        const p2 = document.getElementById('progress2');
-        p1.style.width = '100%';
-        p1.classList.add('complete');
-        if (document.getElementById('progress2Container').style.display !== 'none') {
-          p2.style.width = '100%';
-          p2.classList.add('complete');
-        }
-      }
-
-      function showFlashResult(success, message) {
-        completeAllProgress();
-        const note = document.getElementById('flashNote');
-        const closeBtn = document.getElementById('flashCloseBtn');
-        const title = document.querySelector('.flash-modal-content h2');
-
-        if (success) {
-          title.textContent = '✓ Flash Complete!';
-          title.style.color = '#6B8E4E';
-          note.textContent = 'Image sent to display successfully.';
-          note.style.color = '#6B8E4E';
-        } else {
-          title.textContent = '✗ Flash Failed';
-          title.style.color = '#ff4444';
-          note.textContent = message || 'An error occurred.';
-          note.style.color = '#ff4444';
-        }
-        closeBtn.style.display = 'inline-block';
-      }
-
-      document.querySelector('form[action="/flash"]').addEventListener('submit', function(e) {
-        // Check if delete button was clicked - if so, let form submit normally.
-        if (e.submitter && e.submitter.formAction && e.submitter.formAction.endsWith('/delete')) {
-          return;
-        }
-
-        e.preventDefault();
-
-        const imagePath = document.getElementById('submission.image_file_path').value;
-        if (!imagePath) {
-          alert('Please select an image first.');
-          return;
-        }
-
-        const filename = imagePath.split('/').pop();
-
-        // Show dither preview modal (saturation and flash_twice are set in the modal).
-        showDitherPreview(imagePath, filename);
-      });
-
-      // Upload functionality with real progress tracking.
-      const uploadForm = document.getElementById('uploadForm');
-      const fileInput = document.getElementById('fileInput');
-      const dropZone = document.getElementById('dropZone');
-      const uploadPreviewImg = document.getElementById('uploadPreviewImg');
-      const uploadFileName = document.getElementById('uploadFileName');
-      const uploadFileSize = document.getElementById('uploadFileSize');
-
-      // Format bytes to human readable.
-      function formatBytes(bytes) {
-        if (bytes === 0) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-      }
-
-      // Format seconds to mm:ss.
-      function formatTime(seconds) {
-        const mins = Math.floor(seconds / 60);
-        const secs = Math.floor(seconds % 60);
-        return mins + ':' + secs.toString().padStart(2, '0');
-      }
-
-      // Handle file selection (from input or drop).
-      function handleFileSelect(file) {
-        if (!file) {
-          dropZone.classList.remove('has-file');
-          uploadImageData = null;
-          return;
-        }
-
-        // Reset state.
-        uploadImageData = null;
-
-        // Try to load as image (validates browser can actually render it).
-        const objectUrl = URL.createObjectURL(file);
-        const img = new Image();
-
-        img.onload = function() {
-          // Successfully loaded - prepare ImageData for cache generation.
-          const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = img.width;
-          tempCanvas.height = img.height;
-          const tempCtx = tempCanvas.getContext('2d');
-          tempCtx.drawImage(img, 0, 0);
-          uploadImageData = tempCtx.getImageData(0, 0, img.width, img.height);
-          console.log('Prepared ImageData for cache generation:', img.width, 'x', img.height);
-
-          uploadPreviewImg.src = objectUrl;
-          uploadFileName.textContent = file.name;
-          uploadFileSize.textContent = formatBytes(file.size);
-          dropZone.classList.add('has-file');
-
-          // Auto-upload the file.
-          startUpload(file);
+        // Update the parent click handler.
+        img.parentNode.onclick = function() {
+          showDetailView(filename, path, filter, true);
         };
-
-        img.onerror = function() {
-          // Failed to load - not a valid web image format.
-          URL.revokeObjectURL(objectUrl);
-          uploadPreviewImg.src = '';
-          uploadFileName.textContent = file.name + ' (unsupported format)';
-          uploadFileSize.textContent = 'Only JPEG, PNG, GIF, WebP supported';
-          dropZone.classList.add('has-file');
-          console.error('Cannot load image:', file.name, file.type);
-        };
-
-        img.src = objectUrl;
       }
 
-      // Click to browse.
-      dropZone.addEventListener('click', function() {
-        fileInput.click();
-      });
+      // ===============================
+      // Global Flash Status Polling
+      // ===============================
 
-      // File input change.
-      fileInput.addEventListener('change', function(e) {
-        handleFileSelect(e.target.files[0]);
-      });
+      // Check for any active flash jobs on page load.
+      checkGlobalFlashStatus();
 
-      // Drag and drop handlers.
-      dropZone.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        dropZone.classList.add('drag-over');
-      });
+      async function checkGlobalFlashStatus() {
+        try {
+          const resp = await fetch('/api/flash/status');
+          const data = await resp.json();
 
-      dropZone.addEventListener('dragleave', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        dropZone.classList.remove('drag-over');
-      });
+          if (data.current_job && (data.current_job.status === 'Queued' || data.current_job.status === 'Flashing')) {
+            // There's an active job - show status bar and track it.
+            currentJobId = data.current_job.job_id;
+            const flashTwice = data.current_job.flash_twice;
+            currentFilename = data.current_job.filename;
 
-      dropZone.addEventListener('drop', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        dropZone.classList.remove('drag-over');
+            const statusBar = document.getElementById('flashStatusBar');
+            statusBar.classList.add('visible');
 
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-          // Update the file input so the form submission works.
-          const dataTransfer = new DataTransfer();
-          dataTransfer.items.add(files[0]);
-          fileInput.files = dataTransfer.files;
-          handleFileSelect(files[0]);
-        }
-      });
-
-      // Start upload for a file.
-      function startUpload(file) {
-        if (!file || !uploadImageData) {
-          return;
-        }
-
-        // Reset and show modal.
-        const modal = document.getElementById('uploadModal');
-        const modalImage = document.getElementById('uploadModalImage');
-        const modalFilename = document.getElementById('uploadModalFilename');
-        const progressBar = document.getElementById('uploadProgress');
-        const percentEl = document.getElementById('uploadPercent');
-        const speedEl = document.getElementById('uploadSpeed');
-        const transferredEl = document.getElementById('uploadTransferred');
-        const timeEl = document.getElementById('uploadTime');
-        const noteEl = document.getElementById('uploadNote');
-        const closeBtn = document.getElementById('uploadCloseBtn');
-        const titleEl = document.getElementById('uploadModalTitle');
-
-        const uploadProgressContainer = document.getElementById('uploadProgressContainer');
-        const processingProgressContainer = document.getElementById('processingProgressContainer');
-        const processingProgress = document.getElementById('processingProgress');
-
-        // Set initial state.
-        if (file.type.startsWith('image/')) {
-          modalImage.src = URL.createObjectURL(file);
-          modalImage.style.display = 'block';
-        } else {
-          modalImage.style.display = 'none';
-        }
-        modalFilename.textContent = file.name;
-        progressBar.style.width = '0%';
-        progressBar.classList.remove('complete');
-        processingProgress.style.width = '0%';
-        processingProgress.classList.remove('complete');
-        uploadProgressContainer.style.display = 'block';
-        processingProgressContainer.style.display = 'none';
-        percentEl.textContent = '0%';
-        speedEl.textContent = '-- MB/s';
-        transferredEl.textContent = '0 / ' + formatBytes(file.size);
-        timeEl.textContent = '0:00';
-        noteEl.textContent = 'Uploading to server...';
-        noteEl.style.color = '#666';
-        closeBtn.style.display = 'none';
-        titleEl.textContent = 'Uploading Image';
-        titleEl.style.color = '#B8956A';
-
-        modal.classList.add('active');
-        let processingAnimationId = null;
-
-        // Reset upload state.
-        uploadCacheReady = false;
-        uploadThumbReady = false;
-        uploadXhrComplete = false;
-        uploadCacheBlob = null;
-        uploadThumbBlob = null;
-        uploadFilename = file.name;
-
-        // Start cache and thumb generation in parallel (if we have ImageData).
-        if (uploadImageData) {
-          initUploadCacheWorker();
-          initUploadThumbWorker();
-          console.log('Starting parallel cache/thumb generation for:', file.name);
-
-          // Generate 600x448 cache for preview/dithering.
-          uploadCacheWorker.postMessage({
-            imageData: uploadImageData,
-            width: CACHE_WIDTH,
-            height: CACHE_HEIGHT,
-            filter: 'bicubic'
-          });
-
-          // Generate gallery thumb.
-          uploadThumbWorker.postMessage({
-            imageData: uploadImageData,
-            width: THUMB_WIDTH,
-            height: THUMB_HEIGHT,
-            filter: 'bicubic'
-          });
-        } else {
-          // No ImageData (non-image file?), mark as ready to skip.
-          uploadCacheReady = true;
-          uploadThumbReady = true;
-        }
-
-        // Create XMLHttpRequest for progress tracking.
-        const xhr = new XMLHttpRequest();
-        const startTime = Date.now();
-        let timerInterval;
-
-        // Update elapsed time every second.
-        timerInterval = setInterval(function() {
-          const elapsed = (Date.now() - startTime) / 1000;
-          timeEl.textContent = formatTime(elapsed);
-        }, 1000);
-
-        xhr.upload.addEventListener('progress', function(e) {
-          if (e.lengthComputable) {
-            const percent = Math.round((e.loaded / e.total) * 100);
-            const elapsed = (Date.now() - startTime) / 1000;
-            const speed = e.loaded / elapsed; // bytes per second
-
-            progressBar.style.width = percent + '%';
-            percentEl.textContent = percent + '%';
-            transferredEl.textContent = formatBytes(e.loaded) + ' / ' + formatBytes(e.total);
-
-            if (elapsed > 0.5) { // Wait a bit before showing speed to get stable reading.
-              speedEl.textContent = formatBytes(speed) + '/s';
+            // Set up tracking.
+            if (!pollInterval) {
+              pollInterval = setInterval(() => pollJobStatus(currentJobId, flashTwice), 1000);
             }
+
+            // Update status immediately.
+            updateFlashStatus(data.current_job, flashTwice);
           }
-        });
-
-        // When upload finishes, switch to processing state.
-        xhr.upload.addEventListener('loadend', function() {
-          progressBar.style.width = '100%';
-          progressBar.classList.add('complete');
-          percentEl.textContent = '100%';
-          noteEl.textContent = 'Processing...';
-
-          // Show processing progress bar and animate it.
-          processingProgressContainer.style.display = 'block';
-          const processingStartTime = Date.now();
-          const estimatedProcessingMs = 3000; // Estimate ~3 seconds for processing.
-
-          function animateProcessing() {
-            const elapsed = Date.now() - processingStartTime;
-            // Use asymptotic curve - gets slower as it approaches 95%.
-            const progress = Math.min(95, (elapsed / estimatedProcessingMs) * 80 + (elapsed / (elapsed + 1000)) * 15);
-            processingProgress.style.width = progress + '%';
-            processingAnimationId = requestAnimationFrame(animateProcessing);
-          }
-          animateProcessing();
-        });
-
-        xhr.addEventListener('load', function() {
-          clearInterval(timerInterval);
-          if (processingAnimationId) cancelAnimationFrame(processingAnimationId);
-
-          const elapsed = (Date.now() - startTime) / 1000;
-          timeEl.textContent = formatTime(elapsed);
-
-          // Complete upload progress bar.
-          progressBar.style.width = '100%';
-          progressBar.classList.add('complete');
-          percentEl.textContent = '100%';
-
-          if (xhr.status >= 200 && xhr.status < 300) {
-            // Original upload succeeded, now wait for cache generation and upload.
-            noteEl.textContent = 'Generating thumbnail...';
-            uploadXhrComplete = true;
-            checkUploadComplete();
-          } else {
-            // Upload failed, show error immediately.
-            processingProgress.style.width = '100%';
-            processingProgress.classList.add('complete');
-            titleEl.textContent = '✗ Upload Failed';
-            titleEl.style.color = '#ff4444';
-            noteEl.textContent = 'Server returned status ' + xhr.status;
-            noteEl.style.color = '#ff4444';
-            closeBtn.style.display = 'inline-block';
-          }
-        });
-
-        xhr.addEventListener('error', function() {
-          clearInterval(timerInterval);
-          if (processingAnimationId) cancelAnimationFrame(processingAnimationId);
-          titleEl.textContent = '✗ Upload Failed';
-          titleEl.style.color = '#ff4444';
-          noteEl.textContent = 'Network error occurred.';
-          noteEl.style.color = '#ff4444';
-          closeBtn.style.display = 'inline-block';
-        });
-
-        xhr.addEventListener('abort', function() {
-          clearInterval(timerInterval);
-          if (processingAnimationId) cancelAnimationFrame(processingAnimationId);
-          titleEl.textContent = '✗ Upload Cancelled';
-          titleEl.style.color = '#ff4444';
-          noteEl.textContent = 'Upload was cancelled.';
-          noteEl.style.color = '#ff4444';
-          closeBtn.style.display = 'inline-block';
-        });
-
-        // Build form data and send.
-        const formData = new FormData();
-        formData.append('submission.file', file);
-
-        xhr.open('POST', '/upload');
-        xhr.send(formData);
+        } catch (err) {
+          console.error('Failed to check global flash status:', err);
+        }
       }
     </script>
   </body>

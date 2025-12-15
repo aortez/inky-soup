@@ -2,6 +2,7 @@
 
 mod cache_worker;
 mod cleanup;
+mod flash_queue;
 mod metadata;
 
 use glob::glob;
@@ -15,11 +16,14 @@ use rocket::http::Status;
 use rocket::response::Redirect;
 use rocket::serde::json::Json;
 use rocket::serde::Serialize;
-use rocket::Rocket;
+use rocket::{Rocket, State};
 
 use std::fs;
 use std::path::Path;
-use tokio::process::Command;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+use flash_queue::{FlashJob, FlashQueue, FlashQueueState};
 
 
 #[derive(Debug, FromForm)]
@@ -199,6 +203,35 @@ struct UploadThumbResponse {
     success: bool,
     message: String,
     path: Option<String>,
+}
+
+/// Response for flash submission (queue).
+#[derive(Serialize)]
+#[serde(crate = "rocket::serde")]
+struct FlashResponse {
+    success: bool,
+    message: String,
+    job_id: u64,
+    queue_position: usize,
+}
+
+/// Simplified job info for queue display.
+#[derive(Serialize)]
+#[serde(crate = "rocket::serde")]
+struct FlashJobSummary {
+    job_id: u64,
+    filename: String,
+    flash_twice: bool,
+    queue_position: usize,
+}
+
+/// Response for flash status API.
+#[derive(Serialize)]
+#[serde(crate = "rocket::serde")]
+struct FlashStatusResponse {
+    current_job: Option<FlashJob>,
+    queue: Vec<FlashJobSummary>,
+    queue_length: usize,
 }
 
 /// API endpoint to upload a pre-dithered image.
@@ -406,8 +439,12 @@ async fn submit_delete_image<'r>(mut form: Form<Contextual<'r, SubmitDeleteImage
     Ok(Redirect::to(uri!(upload_form)))
 }
 
+/// Queue a flash job (returns immediately).
 #[post("/flash", data = "<form>")]
-async fn submit_flash_image<'r>(mut form: Form<Contextual<'r, SubmitFlashImage>>) -> Result<Redirect, (Status, String)> {
+async fn submit_flash_image<'r>(
+    mut form: Form<Contextual<'r, SubmitFlashImage>>,
+    queue_state: &State<FlashQueueState>
+) -> Result<Json<FlashResponse>, (Status, String)> {
     let submission = match form.value {
         Some(ref mut s) => s,
         None => {
@@ -424,7 +461,7 @@ async fn submit_flash_image<'r>(mut form: Form<Contextual<'r, SubmitFlashImage>>
         .unwrap_or("unknown");
     let flash_twice = submission.submission.flash_twice;
 
-    info!("Flash started: {} (flash_twice: {})", filename, flash_twice);
+    info!("Flash request received: {} (flash_twice: {})", filename, flash_twice);
 
     // Require pre-dithered version to exist (uploaded from preview dialog).
     let dithered_path = format!("static/images/dithered/{}.png", filename);
@@ -433,58 +470,64 @@ async fn submit_flash_image<'r>(mut form: Form<Contextual<'r, SubmitFlashImage>>
         return Err((Status::NotFound, format!("Pre-dithered image not found: {}", filename)));
     }
 
-    // Run image update script to flash pre-dithered image to display.
-    debug!("Executing flash script for {}", filename);
-    let output = Command::new("python3")
-        .arg("./update-image.py")
-        .arg(&dithered_path)
-        .arg("--skip-dither")
-        .output()
-        .await;
+    // Add to queue.
+    let mut queue = queue_state.lock().await;
+    let job_id = queue.enqueue(filename.to_string(), dithered_path, flash_twice);
+    let queue_position = queue.get_position(job_id).unwrap_or(0);
+    drop(queue);
 
-    match output {
-        Ok(result) => {
-            if !result.status.success() {
-                let exit_code = result.status.code().unwrap_or(-1);
-                let stderr = String::from_utf8_lossy(&result.stderr);
-                error!("Flash failed for {}: exit code {} - {}", filename, exit_code, stderr.trim());
-                return Err((Status::InternalServerError, format!("Flash failed (exit code {})", exit_code)));
-            }
-        }
-        Err(e) => {
-            error!("Flash failed for {}: could not execute script - {}", filename, e);
-            return Err((Status::InternalServerError, format!("Failed to run flash script: {}", e)));
+    info!("Flash job {} queued for {} at position {}", job_id, filename, queue_position);
+
+    Ok(Json(FlashResponse {
+        success: true,
+        message: format!("Flash job queued (position {})", queue_position),
+        job_id,
+        queue_position,
+    }))
+}
+
+/// Get flash queue status (all users can see).
+#[get("/api/flash/status")]
+async fn flash_status(queue_state: &State<FlashQueueState>) -> Json<FlashStatusResponse> {
+    let queue = queue_state.lock().await;
+
+    let queue_summaries: Vec<FlashJobSummary> = queue
+        .get_queued_jobs()
+        .iter()
+        .enumerate()
+        .map(|(idx, job)| FlashJobSummary {
+            job_id: job.job_id,
+            filename: job.filename.clone(),
+            flash_twice: job.flash_twice,
+            queue_position: idx + 1, // +1 because 0 is current job.
+        })
+        .collect();
+
+    Json(FlashStatusResponse {
+        current_job: queue.get_current_job(),
+        queue: queue_summaries,
+        queue_length: queue.get_queued_jobs().len(),
+    })
+}
+
+/// Get status for a specific job.
+#[get("/api/flash/status/<job_id>")]
+async fn flash_job_status(job_id: u64, queue_state: &State<FlashQueueState>) -> Result<Json<FlashJob>, Status> {
+    let queue = queue_state.lock().await;
+
+    // Check current job.
+    if let Some(ref current) = queue.get_current_job() {
+        if current.job_id == job_id {
+            return Ok(Json(current.clone()));
         }
     }
 
-    // Maybe do it a second time.
-    if flash_twice {
-        debug!("Executing second flash for {}", filename);
-        let output2 = Command::new("python3")
-            .arg("./update-image.py")
-            .arg(&dithered_path)
-            .arg("--skip-dither")
-            .output()
-            .await;
-
-        match output2 {
-            Ok(result) => {
-                if !result.status.success() {
-                    let exit_code = result.status.code().unwrap_or(-1);
-                    let stderr = String::from_utf8_lossy(&result.stderr);
-                    error!("Second flash failed for {}: exit code {} - {}", filename, exit_code, stderr.trim());
-                    return Err((Status::InternalServerError, format!("Second flash failed (exit code {})", exit_code)));
-                }
-            }
-            Err(e) => {
-                error!("Second flash failed for {}: could not execute script - {}", filename, e);
-                return Err((Status::InternalServerError, format!("Failed to run second flash: {}", e)));
-            }
-        }
+    // Check queued jobs.
+    if let Some(job) = queue.get_queued_jobs().iter().find(|j| j.job_id == job_id) {
+        return Ok(Json(job.clone()));
     }
 
-    info!("Flash completed: {}", filename);
-    Ok(Redirect::to(uri!(upload_form)))
+    Err(Status::NotFound)
 }
 
 #[post("/upload", data = "<form>")]
@@ -545,6 +588,28 @@ impl Fairing for CleanupFairing {
     }
 }
 
+/// Fairing to spawn background flash queue worker.
+struct FlashQueueFairing;
+
+#[rocket::async_trait]
+impl Fairing for FlashQueueFairing {
+    fn info(&self) -> Info {
+        Info {
+            name: "Flash Queue Worker",
+            kind: Kind::Liftoff,
+        }
+    }
+
+    async fn on_liftoff(&self, rocket: &Rocket<rocket::Orbit>) {
+        info!("Starting flash queue worker");
+        let queue_state = rocket
+            .state::<FlashQueueState>()
+            .expect("FlashQueueState not in managed state")
+            .clone();
+        flash_queue::spawn_flash_worker(queue_state);
+    }
+}
+
 #[launch]
 fn rocket() -> _ {
     // Ensure image directories exist.
@@ -554,8 +619,14 @@ fn rocket() -> _ {
         }
     }
 
+    // Initialize flash queue state.
+    let flash_queue_state: FlashQueueState = Arc::new(Mutex::new(FlashQueue::new()));
+
     rocket::build()
+        .manage(flash_queue_state)
         .mount("/", routes![
+            flash_job_status,
+            flash_status,
             submit_delete_image,
             submit_flash_image,
             submit_new_image,
@@ -568,4 +639,5 @@ fn rocket() -> _ {
         .mount("/", FileServer::from("static"))
         .attach(Template::fairing())
         .attach(CleanupFairing)
+        .attach(FlashQueueFairing)
 }

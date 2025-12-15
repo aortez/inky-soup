@@ -22,25 +22,35 @@ Browser                              Server                    Hardware
 Upload image ──────────────────────► Save original
                                      (static/images/)
        │
-       ├─► Filter Worker ──────────► Save cache thumbnail
+       ├─► Filter Worker ──────────► Save cache & thumbnail
        │   (resize 600x448)          (static/images/cache/*.png)
+       │                             (static/images/thumbs/*.png)
        │
        ▼
-Select image, click Flash
+Gallery → Click thumbnail → Detail View
+       │
+       ├─► Filter Worker ──────────► Optional: save new filter
+       │   (adjust filter)           (static/images/cache/*.png)
        │
        ├─► Dither Worker
        │   (Floyd-Steinberg,
-       │    7-color palette)
+       │    7-color palette,
+       │    adjust saturation)
        │
        ▼
-Adjust saturation slider
+Click "Flash to Display"
        │
-       ▼
-Click "Flash to Display" ──────────► Save dithered image ────► Python script
-                                     (static/images/dithered/) (update-image.py)
-                                                                     │
-                                                                     ▼
-                                                               E-ink display
+       ├─► Upload dithered ─────────► Save dithered image
+       │                              (static/images/dithered/)
+       │
+       └─► Submit flash job ────────► Queue job ───────────────► Background worker
+                                      (returns immediately)       │
+                                                                  ▼
+                                      Poll /api/flash/status ◄─── Python script
+                                      (track progress)            (update-image.py)
+                                                                  │
+                                                                  ▼
+                                                            E-ink display
 ```
 
 ### Rust Server Modules (`upload-server/src/`)
@@ -51,6 +61,7 @@ Click "Flash to Display" ──────────► Save dithered image �
 | `metadata.rs` | Per-image settings (filter, saturation) stored in JSON |
 | `cache_worker.rs` | Utility for cache path computation |
 | `cleanup.rs` | Background task that removes orphaned files every 5 minutes |
+| `flash_queue.rs` | Async flash queue system with background worker for non-blocking display updates |
 
 ### JavaScript Modules (`upload-server/static/js/`)
 
@@ -67,7 +78,9 @@ Click "Flash to Display" ──────────► Save dithered image �
 static/images/
 ├── *.jpg, *.png, ...      # Original uploaded images
 ├── cache/
-│   └── {filename}.png     # Resized thumbnails (600x448)
+│   └── {filename}.png     # Resized images (600x448) for preview and dithering
+├── thumbs/
+│   └── {filename}.png     # Gallery thumbnails (150x112)
 ├── dithered/
 │   └── {filename}.png     # Pre-dithered images ready for flashing
 └── metadata.json          # Per-image settings (filter preference, saturation)
@@ -76,11 +89,13 @@ static/images/
 ### Key Design Decisions
 
 - **Client-side processing** — All resizing and dithering runs in the browser via Web Workers, keeping the Pi Zero's CPU free.
+- **Async flash queue** — Flash jobs are queued and processed by a background worker, allowing the UI to return immediately and support multiple users.
+- **Detail view UX** — Click a thumbnail to enter a full detail view with all controls (filter, saturation, dither preview, flash) in one place. No modal-hopping.
 - **Pre-dithered flashing** — The server requires a pre-dithered PNG before flashing; Python script just sends bytes to hardware.
 - **Background cleanup** — A Rocket fairing spawns a task that removes orphaned cache/dithered files every 5 minutes.
 - **Cross-compilation** — Uses `cross` with Docker for ARMv6 support (Pi Zero's architecture).
-- **File naming** — Cache and dithered files are always PNG, named `{original}.png` (e.g., `photo.jpg.png`).
-- **Templates** — Tera template engine; main UI in `index.html.tera` with shared macros in `macros.html.tera`.
+- **File naming** — Cache, thumb, and dithered files are always PNG, named `{original}.png` (e.g., `photo.jpg.png`).
+- **Templates** — Tera template engine; single-page app in `index.html.tera` with shared macros in `macros.html.tera`.
 - **"Flash twice" option** — Overcomes e-ink ghosting by flashing the image twice.
 
 ## Build and Development
@@ -146,10 +161,13 @@ SDCARD_ROOT=/media/user/rootfs ./deploy-sdcard.sh
 |--------|------|---------|
 | `GET` | `/` | Main gallery page |
 | `POST` | `/upload` | Upload original image |
-| `POST` | `/flash` | Flash pre-dithered image to display |
+| `POST` | `/flash` | Queue flash job (returns immediately with job_id) |
 | `POST` | `/delete` | Delete image and associated cache/dithered files |
-| `GET` | `/api/cache-status/<filename>` | Check if cache thumbnail exists |
-| `POST` | `/api/upload-cache` | Upload client-generated cache thumbnail |
+| `GET` | `/api/thumb-status/<filename>` | Check if gallery thumbnail exists |
+| `GET` | `/api/flash/status` | Get current flash job and queue status (all users) |
+| `GET` | `/api/flash/status/<job_id>` | Get status of specific flash job |
+| `POST` | `/api/upload-cache` | Upload client-generated cache image (600x448) |
+| `POST` | `/api/upload-thumb` | Upload client-generated gallery thumbnail (150x112) |
 | `POST` | `/api/upload-dithered` | Upload client-generated dithered image |
 
 ## Known Issues

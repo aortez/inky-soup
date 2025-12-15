@@ -7,17 +7,17 @@
 importScripts('/js/filters.js');
 
 self.onmessage = function(e) {
-  const { imageData, width, height, filter } = e.data;
+  const { data, width, height, targetWidth, targetHeight, filter } = e.data;
 
   try {
-    // Perform the resize operation.
-    const result = FilterLib.resize(imageData, width, height, filter);
+    // Reconstruct ImageData from transferred buffer.
+    const imageData = new ImageData(new Uint8ClampedArray(data), width, height);
 
-    // Send the result back to the main thread.
-    self.postMessage({
-      success: true,
-      imageData: result
-    });
+    // Perform the resize operation.
+    const result = FilterLib.resize(imageData, targetWidth, targetHeight, filter);
+
+    // Send the result back to the main thread (transfer the buffer).
+    self.postMessage(result, [result.data.buffer]);
   } catch (error) {
     // Send error back to main thread.
     self.postMessage({
