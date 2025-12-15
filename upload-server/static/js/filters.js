@@ -36,6 +36,20 @@ const FilterLib = (function() {
     return (a * Math.sin(pi_x) * Math.sin(pi_x / a)) / (pi_x * pi_x);
   }
 
+  function mitchell(x) {
+    // Mitchell-Netravali filter with B=1/3, C=1/3.
+    // Good balance between blur and ringing artifacts.
+    const B = 1/3, C = 1/3;
+    const ax = Math.abs(x);
+    if (ax < 1) {
+      return ((12 - 9*B - 6*C)*ax*ax*ax + (-18 + 12*B + 6*C)*ax*ax + (6 - 2*B)) / 6;
+    }
+    if (ax < 2) {
+      return ((-B - 6*C)*ax*ax*ax + (6*B + 30*C)*ax*ax + (-12*B - 48*C)*ax + (8*B + 24*C)) / 6;
+    }
+    return 0;
+  }
+
   // Get filter kernel and support radius.
   function getFilter(filterType) {
     switch (filterType) {
@@ -45,6 +59,8 @@ const FilterLib = (function() {
         return { fn: bilinear, radius: 1.0 };
       case 'bicubic':
         return { fn: catmullRom, radius: 2.0 };
+      case 'mitchell':
+        return { fn: mitchell, radius: 2.0 };
       case 'lanczos':
         return { fn: (x) => lanczos(x, 3), radius: 3.0 };
       default:
@@ -54,28 +70,27 @@ const FilterLib = (function() {
 
   /**
    * Resize an image using the specified filter.
+   * Uses separable two-pass filtering for better performance.
    * @param {ImageData} srcData - Source image data.
    * @param {number} dstWidth - Target width.
    * @param {number} dstHeight - Target height.
-   * @param {string} filterType - Filter type: 'nearest', 'bilinear', 'bicubic', 'lanczos'.
+   * @param {string} filterType - Filter type: 'nearest', 'bilinear', 'bicubic', 'mitchell', 'lanczos'.
    * @returns {ImageData} Resized image data.
    */
   function resize(srcData, dstWidth, dstHeight, filterType) {
     const srcWidth = srcData.width;
     const srcHeight = srcData.height;
     const src = srcData.data;
-
-    const dst = new Uint8ClampedArray(dstWidth * dstHeight * 4);
     const filter = getFilter(filterType);
 
+    // Pass 1: Horizontal resize (srcWidth -> dstWidth, keep srcHeight).
+    // Use Float32Array for intermediate buffer to avoid precision loss.
+    const temp = new Float32Array(dstWidth * srcHeight * 4);
     const xRatio = srcWidth / dstWidth;
-    const yRatio = srcHeight / dstHeight;
 
-    // Resize row by row for better cache locality.
-    for (let dstY = 0; dstY < dstHeight; dstY++) {
-      const srcY = (dstY + 0.5) * yRatio - 0.5;
-      const yMin = Math.max(0, Math.floor(srcY - filter.radius));
-      const yMax = Math.min(srcHeight - 1, Math.ceil(srcY + filter.radius));
+    for (let y = 0; y < srcHeight; y++) {
+      const rowOffset = y * srcWidth * 4;
+      const tempRowOffset = y * dstWidth * 4;
 
       for (let dstX = 0; dstX < dstWidth; dstX++) {
         const srcX = (dstX + 0.5) * xRatio - 0.5;
@@ -85,28 +100,58 @@ const FilterLib = (function() {
         let r = 0, g = 0, b = 0, a = 0;
         let weightSum = 0;
 
-        for (let sy = yMin; sy <= yMax; sy++) {
-          const wy = filter.fn(sy - srcY);
-
-          for (let sx = xMin; sx <= xMax; sx++) {
-            const wx = filter.fn(sx - srcX);
-            const weight = wx * wy;
-
-            const srcIdx = (sy * srcWidth + sx) * 4;
-            r += src[srcIdx] * weight;
-            g += src[srcIdx + 1] * weight;
-            b += src[srcIdx + 2] * weight;
-            a += src[srcIdx + 3] * weight;
-            weightSum += weight;
-          }
+        for (let sx = xMin; sx <= xMax; sx++) {
+          const weight = filter.fn(sx - srcX);
+          const srcIdx = rowOffset + sx * 4;
+          r += src[srcIdx] * weight;
+          g += src[srcIdx + 1] * weight;
+          b += src[srcIdx + 2] * weight;
+          a += src[srcIdx + 3] * weight;
+          weightSum += weight;
         }
 
-        const dstIdx = (dstY * dstWidth + dstX) * 4;
+        const tempIdx = tempRowOffset + dstX * 4;
         if (weightSum > 0) {
-          dst[dstIdx] = r / weightSum;
-          dst[dstIdx + 1] = g / weightSum;
-          dst[dstIdx + 2] = b / weightSum;
-          dst[dstIdx + 3] = a / weightSum;
+          const invWeight = 1 / weightSum;
+          temp[tempIdx] = r * invWeight;
+          temp[tempIdx + 1] = g * invWeight;
+          temp[tempIdx + 2] = b * invWeight;
+          temp[tempIdx + 3] = a * invWeight;
+        }
+      }
+    }
+
+    // Pass 2: Vertical resize (srcHeight -> dstHeight, width is already dstWidth).
+    const dst = new Uint8ClampedArray(dstWidth * dstHeight * 4);
+    const yRatio = srcHeight / dstHeight;
+
+    for (let dstY = 0; dstY < dstHeight; dstY++) {
+      const srcY = (dstY + 0.5) * yRatio - 0.5;
+      const yMin = Math.max(0, Math.floor(srcY - filter.radius));
+      const yMax = Math.min(srcHeight - 1, Math.ceil(srcY + filter.radius));
+      const dstRowOffset = dstY * dstWidth * 4;
+
+      for (let x = 0; x < dstWidth; x++) {
+        let r = 0, g = 0, b = 0, a = 0;
+        let weightSum = 0;
+
+        for (let sy = yMin; sy <= yMax; sy++) {
+          const weight = filter.fn(sy - srcY);
+          const tempIdx = (sy * dstWidth + x) * 4;
+          r += temp[tempIdx] * weight;
+          g += temp[tempIdx + 1] * weight;
+          b += temp[tempIdx + 2] * weight;
+          a += temp[tempIdx + 3] * weight;
+          weightSum += weight;
+        }
+
+        const dstIdx = dstRowOffset + x * 4;
+        if (weightSum > 0) {
+          const invWeight = 1 / weightSum;
+          dst[dstIdx] = r * invWeight;
+          dst[dstIdx + 1] = g * invWeight;
+          dst[dstIdx + 2] = b * invWeight;
+          dst[dstIdx + 3] = a * invWeight;
         }
       }
     }
@@ -117,9 +162,10 @@ const FilterLib = (function() {
   // Public API.
   return {
     resize: resize,
-    NEAREST: 'nearest',
-    BILINEAR: 'bilinear',
     BICUBIC: 'bicubic',
-    LANCZOS: 'lanczos'
+    BILINEAR: 'bilinear',
+    LANCZOS: 'lanczos',
+    MITCHELL: 'mitchell',
+    NEAREST: 'nearest'
   };
 })();

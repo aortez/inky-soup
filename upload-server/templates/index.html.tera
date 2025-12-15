@@ -723,6 +723,7 @@
             <div class="filter-buttons">
               <button data-filter="bicubic" class="active">Bicubic</button>
               <button data-filter="lanczos">Lanczos</button>
+              <button data-filter="mitchell">Mitchell</button>
               <button data-filter="bilinear">Bilinear</button>
               <button data-filter="nearest">Nearest</button>
             </div>
