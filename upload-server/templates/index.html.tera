@@ -358,7 +358,8 @@
 
       /* Processing indicator. */
       .processing-indicator {
-        color: #B8956A;
+        color: #6B8E4E;
+        font-weight: bold;
         font-size: 0.85em;
         min-height: 1.2em;
         margin-top: 5px;
@@ -960,7 +961,7 @@
       // Worker state.
       let filterWorker = null;
       let ditherWorker = null;
-      let originalImageDataCache = {};
+      let originalImageCache = {};
 
       // Flash job tracking.
       let currentJobId = null;
@@ -1012,8 +1013,20 @@
 
         // Clear status.
         document.getElementById('filterStatus').textContent = '';
-        document.getElementById('filterProcessing').textContent = '';
+        document.getElementById('filterProcessing').textContent = 'Loading...';
         document.getElementById('ditherProcessing').textContent = '';
+
+        // Clear canvases immediately to avoid showing previous image.
+        const filterCanvas = document.getElementById('filterCanvas');
+        const ditherCanvas = document.getElementById('ditherCanvas');
+        const filterCtx = filterCanvas.getContext('2d');
+        const ditherCtx = ditherCanvas.getContext('2d');
+
+        // Fill with neutral background color.
+        filterCtx.fillStyle = '#2A2A2A';
+        filterCtx.fillRect(0, 0, filterCanvas.width, filterCanvas.height);
+        ditherCtx.fillStyle = '#2A2A2A';
+        ditherCtx.fillRect(0, 0, ditherCanvas.width, ditherCanvas.height);
 
         // Load image data for filter preview and dithering.
         loadImageForProcessing(filename);
@@ -1046,9 +1059,33 @@
       // ===============================
 
       function loadImageForProcessing(filename) {
-        // Check cache first.
-        if (originalImageDataCache[filename]) {
-          applyFilterToCanvas(originalImageDataCache[filename]);
+        // Try to load from server-side cache first (600x448 PNG already filtered).
+        const cachedImg = new Image();
+        cachedImg.crossOrigin = 'anonymous';
+        cachedImg.onload = function() {
+          // Cache exists - use it directly, skip filtering.
+          document.getElementById('filterProcessing').textContent = '';
+
+          // Draw cached image to filter canvas.
+          const filterCanvas = document.getElementById('filterCanvas');
+          const filterCtx = filterCanvas.getContext('2d');
+          filterCtx.drawImage(cachedImg, 0, 0);
+
+          // Get ImageData for dithering.
+          const imageData = filterCtx.getImageData(0, 0, CACHE_WIDTH, CACHE_HEIGHT);
+          applyDither(imageData);
+        };
+        cachedImg.onerror = function() {
+          // Cache doesn't exist - fall back to loading and filtering original.
+          loadOriginalAndFilter(filename);
+        };
+        cachedImg.src = 'images/cache/' + filename + '.png';
+      }
+
+      function loadOriginalAndFilter(filename) {
+        // Check in-memory cache first.
+        if (originalImageCache[filename]) {
+          applyFilterFromImage(originalImageCache[filename]);
           return;
         }
 
@@ -1056,25 +1093,30 @@
         const img = new Image();
         img.crossOrigin = 'anonymous';
         img.onload = function() {
-          // Get ImageData from original.
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0);
-          const imageData = ctx.getImageData(0, 0, img.width, img.height);
-
-          // Cache it.
-          originalImageDataCache[filename] = imageData;
+          // Cache the image element.
+          originalImageCache[filename] = img;
 
           // Apply filter.
-          applyFilterToCanvas(imageData);
+          applyFilterFromImage(img);
         };
         img.onerror = function() {
           console.error('Failed to load image:', filename);
           document.getElementById('filterProcessing').textContent = 'Error loading image';
         };
         img.src = 'images/' + filename;
+      }
+
+      function applyFilterFromImage(img) {
+        // Create fresh ImageData from the image element.
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, img.width, img.height);
+
+        // Apply filter to the fresh ImageData.
+        applyFilterToCanvas(imageData);
       }
 
       function applyFilterToCanvas(imageData) {
@@ -1194,9 +1236,11 @@
           btn.classList.toggle('active', btn.dataset.filter === filter);
         });
 
-        // Re-process.
-        if (originalImageDataCache[currentFilename]) {
-          applyFilterToCanvas(originalImageDataCache[currentFilename]);
+        // Re-process from original (bypass server cache since filter changed).
+        if (originalImageCache[currentFilename]) {
+          applyFilterFromImage(originalImageCache[currentFilename]);
+        } else {
+          loadOriginalAndFilter(currentFilename);
         }
       }
 

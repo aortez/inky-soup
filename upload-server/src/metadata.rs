@@ -82,13 +82,33 @@ fn save_metadata_to_file(metadata: &HashMap<String, ImageMetadata>) {
     }
 }
 
+/// Validates if a filter name is recognized.
+fn is_valid_filter(filter: &str) -> bool {
+    matches!(filter, "bicubic" | "lanczos" | "mitchell" | "bilinear" | "nearest")
+}
+
 /// Gets the filter preference for an image.
+/// Automatically corrects invalid filter names in metadata.
 pub fn get_filter_for_image(filename: &str) -> String {
-    let cache = METADATA_CACHE.lock().unwrap();
-    cache
-        .get(filename)
-        .map(|m| m.filter.clone())
-        .unwrap_or_else(|| DEFAULT_FILTER.to_string())
+    let mut cache = METADATA_CACHE.lock().unwrap();
+
+    if let Some(metadata) = cache.get(filename) {
+        let stored_filter = &metadata.filter;
+
+        // Check if filter is valid.
+        if is_valid_filter(stored_filter) {
+            stored_filter.clone()
+        } else {
+            // Invalid filter - correct it.
+            warn!("Invalid filter '{}' for '{}', correcting to '{}'", stored_filter, filename, DEFAULT_FILTER);
+            let entry = cache.get_mut(filename).unwrap();
+            entry.filter = DEFAULT_FILTER.to_string();
+            save_metadata_to_file(&cache);
+            DEFAULT_FILTER.to_string()
+        }
+    } else {
+        DEFAULT_FILTER.to_string()
+    }
 }
 
 /// Sets the filter preference for an image.

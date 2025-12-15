@@ -161,12 +161,6 @@ impl FlashQueue {
     pub fn get_queued_jobs(&self) -> Vec<FlashJob> {
         self.queue.iter().cloned().collect()
     }
-
-    /// Gets the total number of jobs (current + queued).
-    pub fn total_jobs(&self) -> usize {
-        let current = if self.current_job.is_some() { 1 } else { 0 };
-        current + self.queue.len()
-    }
 }
 
 impl Default for FlashQueue {

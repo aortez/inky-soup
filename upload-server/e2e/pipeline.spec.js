@@ -4,22 +4,23 @@
 
 import { test, expect } from '@playwright/test';
 
-test.describe('Pipeline Detail View', () => {
-  // Helper to navigate to detail view (requires at least one image in gallery).
-  async function openDetailView(page) {
-    await page.goto('/');
+// Shared helper to navigate to detail view (requires at least one image in gallery).
+async function openDetailView(page) {
+  await page.goto('/');
 
-    const thumbnails = page.locator('.thumbnail-item img');
-    const count = await thumbnails.count();
+  const thumbnails = page.locator('.thumbnail-item img');
+  const count = await thumbnails.count();
 
-    if (count === 0) {
-      return false;
-    }
-
-    await thumbnails.first().click();
-    await expect(page.locator('#detailView')).toBeVisible();
-    return true;
+  if (count === 0) {
+    return false;
   }
+
+  await thumbnails.first().click();
+  await expect(page.locator('#detailView')).toBeVisible();
+  return true;
+}
+
+test.describe('Pipeline Detail View', () => {
 
   test('should display pipeline stages', async ({ page }) => {
     const hasImages = await openDetailView(page);
@@ -218,22 +219,44 @@ test.describe('Pipeline Detail View', () => {
 });
 
 test.describe('Pipeline Processing Indicators', () => {
-  async function openDetailView(page) {
-    await page.goto('/');
-
-    const thumbnails = page.locator('.thumbnail-item img');
-    const count = await thumbnails.count();
-
-    if (count === 0) {
-      return false;
+  test('should process filter changes without console errors', async ({ page }) => {
+    const hasImages = await openDetailView(page);
+    if (!hasImages) {
+      test.skip();
+      return;
     }
 
-    await thumbnails.first().click();
-    await expect(page.locator('#detailView')).toBeVisible();
-    return true;
-  }
+    // Monitor console for errors.
+    const consoleErrors = [];
+    page.on('console', msg => {
+      if (msg.type() === 'error') {
+        consoleErrors.push(msg.text());
+      }
+    });
 
-  test('should show processing indicator when changing filter', async ({ page }) => {
+    // Monitor page errors (uncaught exceptions).
+    const pageErrors = [];
+    page.on('pageerror', error => {
+      pageErrors.push(error.message);
+    });
+
+    // Get current active filter.
+    const initialActive = await page.locator('.filter-btn.active').getAttribute('data-filter');
+    const targetFilter = initialActive === 'lanczos' ? 'mitchell' : 'lanczos';
+
+    // Click a different filter.
+    await page.locator(`.filter-btn[data-filter="${targetFilter}"]`).click();
+
+    // Wait for processing to complete (indicators should clear).
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+
+    // Verify no console or page errors occurred.
+    expect(consoleErrors).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+
+  test('should clear processing indicators after filter change', async ({ page }) => {
     const hasImages = await openDetailView(page);
     if (!hasImages) {
       test.skip();
@@ -242,13 +265,167 @@ test.describe('Pipeline Processing Indicators', () => {
 
     // Get current active filter.
     const initialActive = await page.locator('.filter-btn.active').getAttribute('data-filter');
-    const targetFilter = initialActive === 'lanczos' ? 'mitchell' : 'lanczos';
+    const targetFilter = initialActive === 'bicubic' ? 'nearest' : 'bicubic';
 
-    // Click a different filter and check for processing indicator.
+    // Click filter and wait for processing to start.
     await page.locator(`.filter-btn[data-filter="${targetFilter}"]`).click();
 
-    // Processing indicator might flash briefly - just check element exists.
+    // Processing indicators should appear (may be very brief).
+    // We'll just verify they exist and are attached to the DOM.
     await expect(page.locator('#filterProcessing')).toBeAttached();
     await expect(page.locator('#ditherProcessing')).toBeAttached();
+
+    // Wait for both indicators to clear.
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+  });
+
+  test('should update canvas content when filter changes', async ({ page }) => {
+    const hasImages = await openDetailView(page);
+    if (!hasImages) {
+      test.skip();
+      return;
+    }
+
+    // Get initial canvas data URL.
+    const getCanvasData = async () => {
+      return await page.evaluate(() => {
+        const canvas = document.getElementById('filterCanvas');
+        return canvas.toDataURL();
+      });
+    };
+
+    // Wait for initial processing to complete.
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+
+    const initialData = await getCanvasData();
+
+    // Get current active filter.
+    const initialActive = await page.locator('.filter-btn.active').getAttribute('data-filter');
+
+    // Choose a very different filter (nearest vs lanczos should produce visible differences).
+    const targetFilter = initialActive === 'nearest' ? 'lanczos' : 'nearest';
+
+    // Click the new filter.
+    await page.locator(`.filter-btn[data-filter="${targetFilter}"]`).click();
+
+    // Wait for processing to complete.
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+
+    // Get new canvas data.
+    const newData = await getCanvasData();
+
+    // Canvas content should have changed.
+    expect(newData).not.toBe(initialData);
+  });
+
+  test('should handle multiple rapid filter changes', async ({ page }) => {
+    const hasImages = await openDetailView(page);
+    if (!hasImages) {
+      test.skip();
+      return;
+    }
+
+    // Monitor for errors.
+    const consoleErrors = [];
+    page.on('console', msg => {
+      if (msg.type() === 'error') {
+        consoleErrors.push(msg.text());
+      }
+    });
+
+    const pageErrors = [];
+    page.on('pageerror', error => {
+      pageErrors.push(error.message);
+    });
+
+    // Rapidly click through several filters.
+    const filters = ['bicubic', 'lanczos', 'mitchell', 'bilinear'];
+    for (const filter of filters) {
+      await page.locator(`.filter-btn[data-filter="${filter}"]`).click();
+      // Small delay to allow worker to receive message.
+      await page.waitForTimeout(100);
+    }
+
+    // Wait for final processing to complete.
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+
+    // Verify no errors occurred.
+    expect(consoleErrors).toEqual([]);
+    expect(pageErrors).toEqual([]);
+  });
+});
+
+test.describe('Cache Optimization', () => {
+  test('should load from server cache when available', async ({ page }) => {
+    const hasImages = await openDetailView(page);
+    if (!hasImages) {
+      test.skip();
+      return;
+    }
+
+    // Track network requests to see if cache or original is loaded.
+    const networkRequests = [];
+    page.on('request', request => {
+      const url = request.url();
+      if (url.includes('/images/')) {
+        networkRequests.push(url);
+      }
+    });
+
+    // Get the current filename.
+    const filename = await page.locator('#detailFilename').textContent();
+
+    // Go back to gallery.
+    await page.locator('.back-button').click();
+    await expect(page.locator('#galleryView')).toBeVisible();
+
+    // Clear network requests.
+    networkRequests.length = 0;
+
+    // Re-open the same image.
+    const thumbnail = page.locator(`.thumbnail-item img[data-filename="${filename}"]`);
+    await thumbnail.click();
+    await expect(page.locator('#detailView')).toBeVisible();
+
+    // Wait for processing to complete.
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+
+    // Should have loaded from cache (cache URL contains "/cache/").
+    const cacheRequests = networkRequests.filter(url => url.includes('/images/cache/'));
+    expect(cacheRequests.length).toBeGreaterThan(0);
+  });
+
+  test('should refilter when changing filters', async ({ page }) => {
+    const hasImages = await openDetailView(page);
+    if (!hasImages) {
+      test.skip();
+      return;
+    }
+
+    // Wait for initial load to complete.
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+
+    // Get initial active filter.
+    const initialActive = await page.locator('.filter-btn.active').getAttribute('data-filter');
+    const targetFilter = initialActive === 'nearest' ? 'lanczos' : 'nearest';
+
+    // Click a different filter.
+    await page.locator(`.filter-btn[data-filter="${targetFilter}"]`).click();
+
+    // Should show processing indicator (meaning it's refiltering, not using cache).
+    await expect(page.locator('#filterProcessing')).toHaveText('Processing...', { timeout: 1000 });
+
+    // Wait for processing to complete.
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+
+    // Verify new filter is active.
+    await expect(page.locator(`.filter-btn[data-filter="${targetFilter}"]`)).toHaveClass(/active/);
   });
 });
