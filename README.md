@@ -93,10 +93,42 @@ For initial setup or when the Pi isn't on the network, use the SD card deploy sc
 
 This copies files directly to a mounted SD card via a remote machine (useful for headless setup).
 
+## Development & Testing
+
+### Running the Test Suite
+
+The project includes a test suite with linting, unit tests, and E2E tests:
+
+    cd upload-server
+    ./run-tests.sh
+
+This script runs:
+1. **ESLint** - Code style checks (Airbnb config)
+2. **Unit tests** (Vitest) - JavaScript functions and modules
+3. **E2E tests** (Playwright) - Complete user workflows
+
+### Manual Testing
+
+**Start the development server:**
+
+    cd upload-server
+    cargo run
+
+**Run individual test suites:**
+
+    cd upload-server
+    npm run lint         # Code style only
+    npm test             # Unit tests only
+    npm run test:e2e     # E2E tests only (requires server running)
+
+**Frontend development:**
+
+    npm install          # First time only
+    npm run lint:fix     # Auto-fix style issues
+
 # TODO
 
 ## Image Gallery
-- [ ] Confirmation dialog for the delete button.
 - [ ] Arbitrary hard limit on number of uploaded images.
 
 ## Image Rotation

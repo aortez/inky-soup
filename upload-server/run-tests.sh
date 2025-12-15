@@ -21,10 +21,21 @@ echo -e "${YELLOW}════════════════════�
 echo
 
 # Track overall success.
+LINT_RESULT=0
 UNIT_RESULT=0
 E2E_RESULT=0
 
-# Run unit tests first (no server needed).
+# Run linter first.
+echo -e "${YELLOW}▶ Running ESLint...${NC}"
+if npm run lint; then
+    echo -e "${GREEN}✓ Linting passed${NC}"
+else
+    echo -e "${RED}✗ Linting failed${NC}"
+    LINT_RESULT=1
+fi
+echo
+
+# Run unit tests (no server needed).
 echo -e "${YELLOW}▶ Running unit tests...${NC}"
 if npm test; then
     echo -e "${GREEN}✓ Unit tests passed${NC}"
@@ -85,12 +96,15 @@ echo
 
 # Summary.
 echo -e "${YELLOW}═══════════════════════════════════════════${NC}"
-if [ $UNIT_RESULT -eq 0 ] && [ $E2E_RESULT -eq 0 ]; then
+if [ $LINT_RESULT -eq 0 ] && [ $UNIT_RESULT -eq 0 ] && [ $E2E_RESULT -eq 0 ]; then
     echo -e "${GREEN}  All tests passed! ✓${NC}"
     echo -e "${YELLOW}═══════════════════════════════════════════${NC}"
     exit 0
 else
     echo -e "${RED}  Some tests failed ✗${NC}"
+    [ $LINT_RESULT -ne 0 ] && echo -e "${RED}    - Linting${NC}"
+    [ $UNIT_RESULT -ne 0 ] && echo -e "${RED}    - Unit tests${NC}"
+    [ $E2E_RESULT -ne 0 ] && echo -e "${RED}    - E2E tests${NC}"
     echo -e "${YELLOW}═══════════════════════════════════════════${NC}"
     exit 1
 fi

@@ -63,14 +63,50 @@ Click "Flash to Display"
 | `cleanup.rs` | Background task that removes orphaned files every 5 minutes |
 | `flash_queue.rs` | Async flash queue system with background worker for non-blocking display updates |
 
-### JavaScript Modules (`upload-server/static/js/`)
+### JavaScript Architecture (`upload-server/static/js/`)
 
-| File | Purpose |
-|------|---------|
-| `dither.js` | Floyd-Steinberg dithering for 7-color e-ink palette |
-| `filters.js` | Image resampling kernels (Lanczos3, CatmullRom, Bilinear, Nearest) |
-| `filter-worker.js` | Web Worker for non-blocking resize operations |
-| `dither-worker.js` | Web Worker for non-blocking dither operations |
+The frontend uses **ES6 modules** with a clean separation of concerns:
+
+```
+static/js/
+├── main.js                    # Entry point, initialization, window exports
+├── core/                      # Foundation (no dependencies)
+│   ├── constants.js          # Configuration constants
+│   ├── state.js              # Centralized state management
+│   └── dom.js                # Cached DOM element references
+├── services/                  # Business logic (depends on core)
+│   ├── api-client.js         # All server API calls
+│   ├── image-loader.js       # Image loading and caching
+│   ├── filter-service.js     # Filter processing with Web Workers
+│   ├── dither-service.js     # Dithering with Web Workers
+│   ├── flash-service.js      # Flash job management and polling
+│   └── upload-service.js     # File upload and thumbnail generation
+├── ui/                        # UI components (depends on core + services)
+│   ├── navigation.js         # View switching and history
+│   ├── detail-view.js        # Detail view management
+│   ├── gallery-view.js       # Gallery and thumbnail polling
+│   ├── filter-controls.js    # Filter button handlers
+│   ├── saturation-controls.js # Saturation slider
+│   ├── flash-status.js       # Flash status bar and modal
+│   ├── upload-ui.js          # Upload drop zone and modal
+│   └── delete-ui.js          # Delete confirmation modal
+├── utils/                     # Pure utility functions
+│   └── formatters.js         # Display formatters (size, speed, time)
+└── lib/                       # External libraries (legacy IIFE pattern)
+    ├── filters.js            # Image resampling kernels
+    ├── dither.js             # Floyd-Steinberg dithering
+    ├── filter-worker.js      # Web Worker for non-blocking resize
+    └── dither-worker.js      # Web Worker for non-blocking dither
+```
+
+**Dependency Hierarchy:** Core → Services → UI → Main
+
+**Key Features:**
+- Clean module boundaries with single responsibilities
+- Centralized state management (no scattered globals)
+- DOM elements cached once on initialization
+- All functions independently testable
+- ESLint enforced code style (Airbnb base config)
 
 ### Data Storage
 
@@ -89,6 +125,7 @@ static/images/
 ### Key Design Decisions
 
 - **Client-side processing** — All resizing and dithering runs in the browser via Web Workers, keeping the Pi Zero's CPU free.
+- **Centralized state management** — Single source of truth in `core/state.js`.
 - **Async flash queue** — Flash jobs are queued and processed by a background worker, allowing the UI to return immediately and support multiple users.
 - **Detail view UX** — Click a thumbnail to enter a full detail view with all controls (filter, saturation, dither preview, flash) in one place. No modal-hopping.
 - **Pre-dithered flashing** — The server requires a pre-dithered PNG before flashing; Python script just sends bytes to hardware.
@@ -97,16 +134,29 @@ static/images/
 - **File naming** — Cache, thumb, and dithered files are always PNG, named `{original}.png` (e.g., `photo.jpg.png`).
 - **Templates** — Tera template engine; single-page app in `index.html.tera` with shared macros in `macros.html.tera`.
 - **"Flash twice" option** — Overcomes e-ink ghosting by flashing the image twice.
+- **Test coverage** — Comprehensive testing with Vitest (unit), Playwright (E2E), and ESLint (code quality).
 
 ## Build and Development
 
 ### Local Development (x86_64)
+
+**Rust server:**
 ```bash
 cd upload-server
 cargo check          # Check compilation
 cargo build          # Build for local arch
 cargo run            # Run server locally (port 8000)
-cargo test           # Run tests
+cargo test           # Run Rust tests
+```
+
+**JavaScript frontend:**
+```bash
+cd upload-server
+npm install          # Install dependencies (first time only)
+npm test             # Run unit tests (Vitest)
+npm run lint         # Check code style (ESLint)
+npm run lint:fix     # Auto-fix code style issues
+npm run test:e2e     # Run E2E tests (requires server running)
 ```
 
 ### Cross-Compilation Setup (for Pi Zero)
@@ -170,9 +220,61 @@ SDCARD_ROOT=/media/user/rootfs ./deploy-sdcard.sh
 | `POST` | `/api/upload-thumb` | Upload client-generated gallery thumbnail (150x112) |
 | `POST` | `/api/upload-dithered` | Upload client-generated dithered image |
 
+## Testing
+
+The project has two test frameworks:
+
+### Unit Tests (Vitest)
+
+Located in `upload-server/tests/`, unit tests cover isolated functions and modules.
+
+```bash
+cd upload-server
+npm test              # Run all unit tests
+npm run test:watch   # Run tests in watch mode
+npm run test:coverage # Run with coverage report
+```
+
+**Current unit tests:**
+- `tests/filters.test.js` - Image resampling filter kernels (25 tests)
+- `tests/dither.test.js` - Floyd-Steinberg dithering algorithm (23 tests)
+- `tests/utils/formatters.test.js` - Display formatters (11 tests)
+
+**Configuration:** `vitest.config.js` with Node environment and ImageData polyfill in `tests/setup.js`
+
+### E2E Tests (Playwright)
+
+Located in `e2e/`, end-to-end tests verify the entire application workflow.
+
+```bash
+cd upload-server
+npm run test:e2e        # Run E2E tests (requires running server)
+npm run test:e2e:ui     # Run with Playwright UI
+npm run test:e2e:headed # Run in headed browser mode
+```
+
+**Current E2E tests:**
+- `e2e/gallery.spec.js` - Gallery view, drop zone, navigation
+- `e2e/pipeline.spec.js` - Detail view, filters, saturation, flash controls
+- `e2e/upload.spec.js` - File upload workflow and progress tracking
+
+**Important:** E2E tests require the server to be running (`cargo run`) before execution.
+
+### Code Quality (ESLint)
+
+ESLint with Airbnb style guide enforces consistent code quality.
+
+```bash
+cd upload-server
+npm run lint         # Check code style
+npm run lint:fix     # Auto-fix formatting issues
+```
+
+**Configuration:** `.eslintrc.json` with Airbnb base config and browser environment.
+
 ## Known Issues
 
-### Test File Mismatch
+### Rust Test File Mismatch
 `src/tests.rs` contains boilerplate Rocket form validation tests that don't match this application's forms (`FormInput`, `FormOption` don't exist in the actual code). These tests aren't active but should be replaced with real integration tests for upload/flash/delete endpoints.
 
 ## Server Configuration
