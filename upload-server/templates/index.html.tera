@@ -470,10 +470,10 @@
           <div style="margin-bottom: 15px;">
             <label for="filterSelect" style="font-weight: bold;">Resampling Filter:</label>
             <select id="filterSelect" style="margin-left: 10px;" disabled>
-              <option value="CatmullRom">CatmullRom (Balanced)</option>
-              <option value="Lanczos3">Lanczos3 (Sharp)</option>
-              <option value="Gaussian">Gaussian (Smooth)</option>
-              <option value="Triangle">Triangle (Fast)</option>
+              <option value="bicubic">Bicubic (Balanced)</option>
+              <option value="lanczos">Lanczos (Sharp)</option>
+              <option value="bilinear">Bilinear (Smooth)</option>
+              <option value="nearest">Nearest (Fast)</option>
             </select>
             <button type="button" id="editFilterBtn" onclick="openFilterEditor()" style="margin-left: 10px;" class="button" disabled>Edit Filter...</button>
             <span id="filterStatus" style="margin-left: 10px; font-size: 0.85em; color: #666;"></span>
@@ -578,8 +578,8 @@
           <div class="filter-controls">
             <label style="font-weight: bold;">Filter:</label>
             <div class="filter-buttons">
-              <button data-filter="bicubic" class="active">CatmullRom</button>
-              <button data-filter="lanczos">Lanczos3</button>
+              <button data-filter="bicubic" class="active">Bicubic</button>
+              <button data-filter="lanczos">Lanczos</button>
               <button data-filter="bilinear">Bilinear</button>
               <button data-filter="nearest">Nearest</button>
             </div>
@@ -995,7 +995,7 @@
         processingEl.style.color = '#B8956A';
 
         // Set initial filter to saved preference.
-        editorCurrentFilter = mapServerFilterToClient(currentSavedFilter);
+        editorCurrentFilter = currentSavedFilter;
         document.querySelectorAll('.filter-buttons button').forEach(btn => {
           btn.classList.toggle('active', btn.dataset.filter === editorCurrentFilter);
         });
@@ -1064,32 +1064,11 @@
         });
       });
 
-      // Map client-side filter names to server-side names.
-      function mapClientFilterToServer(clientFilter) {
-        const map = {
-          'nearest': 'Triangle',
-          'bilinear': 'Triangle',
-          'bicubic': 'CatmullRom',
-          'lanczos': 'Lanczos3'
-        };
-        return map[clientFilter] || 'CatmullRom';
-      }
-
-      function mapServerFilterToClient(serverFilter) {
-        const map = {
-          'Triangle': 'bilinear',
-          'CatmullRom': 'bicubic',
-          'Lanczos3': 'lanczos',
-          'Gaussian': 'bicubic'
-        };
-        return map[serverFilter] || 'bicubic';
-      }
-
       // Apply filter from editor and save to server.
       function applyFilterFromEditor() {
         if (!currentFilename) return;
 
-        const serverFilter = mapClientFilterToServer(editorCurrentFilter);
+        const filterToSave = editorCurrentFilter;
         const processingEl = document.getElementById('filterProcessing');
         processingEl.textContent = 'Saving...';
 
@@ -1106,7 +1085,7 @@
 
           const formData = new FormData();
           formData.append('filename', currentFilename);
-          formData.append('filter', serverFilter);
+          formData.append('filter', filterToSave);
           formData.append('file', blob, currentFilename + '.png');
 
           fetch('/api/upload-cache', {
@@ -1117,17 +1096,17 @@
           .then(data => {
             if (data.success) {
               // Update saved filter.
-              currentSavedFilter = serverFilter;
+              currentSavedFilter = filterToSave;
 
               // Update the thumbnail.
               const thumb = document.querySelector('img[data-filename="' + currentFilename + '"]');
               if (thumb) {
-                thumb.dataset.filter = serverFilter;
+                thumb.dataset.filter = filterToSave;
                 thumb.src = 'images/cache/' + currentFilename + '.png?t=' + Date.now();
               }
 
               // Update main filter dropdown.
-              document.getElementById('filterSelect').value = serverFilter;
+              document.getElementById('filterSelect').value = filterToSave;
 
               // Close modal.
               closeFilterEditor();
@@ -1161,7 +1140,7 @@
 
         // Update current filename and filter dropdown.
         currentFilename = el.dataset.filename;
-        currentSavedFilter = el.dataset.filter || 'CatmullRom';
+        currentSavedFilter = el.dataset.filter || 'bicubic';
         document.getElementById('filterSelect').value = currentSavedFilter;
         document.getElementById('filterStatus').textContent = '';
 
@@ -1207,7 +1186,7 @@
               img.id = path;
               img.alt = path;
               img.dataset.filename = filename;
-              img.dataset.filter = placeholderEl.dataset.filter || 'CatmullRom';
+              img.dataset.filter = placeholderEl.dataset.filter || 'bicubic';
               img.onclick = function() { selectThumbnail(this); };
               placeholderEl.replaceWith(img);
             } else {

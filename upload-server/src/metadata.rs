@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 const METADATA_FILE: &str = "static/images/metadata.json";
-const DEFAULT_FILTER: &str = "CatmullRom";
+const DEFAULT_FILTER: &str = "bicubic";
 
 /// Metadata stored for each image.
 #[derive(Debug, Clone, Serialize, Deserialize)]
