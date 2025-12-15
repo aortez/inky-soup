@@ -274,6 +274,17 @@
         overflow-y: auto;
         color: #C9DBBD;
       }
+      /* Wider modal for dither preview with side-by-side comparison. */
+      #ditherPreviewModal .filter-editor-content {
+        max-width: 1300px;
+      }
+      /* On tall/narrow screens, use more vertical space for dither preview. */
+      @media (max-aspect-ratio: 4/3) {
+        #ditherPreviewModal .filter-editor-content {
+          max-height: 95vh;
+          padding: 15px;
+        }
+      }
       .filter-editor-header {
         display: flex;
         justify-content: space-between;
@@ -341,8 +352,14 @@
         display: flex;
         gap: 20px;
         justify-content: center;
+        align-items: center;
         flex-wrap: wrap;
         margin-bottom: 20px;
+      }
+      @media (max-aspect-ratio: 4/3) {
+        .comparison-container {
+          flex-direction: column;
+        }
       }
       .comparison-panel {
         text-align: center;
@@ -363,19 +380,6 @@
         margin-top: 5px;
       }
 
-      /* Scrollable native-resolution preview for filter editor. */
-      .native-preview-container {
-        max-width: 600px;
-        max-height: 448px;
-        overflow: auto;
-        border: 2px solid #444;
-        background: #222;
-      }
-      .native-preview-container canvas {
-        border: none;
-        display: block;
-        max-width: none;
-      }
       .filter-editor-footer {
         display: flex;
         gap: 10px;
@@ -615,20 +619,7 @@
         </div>
 
         <div class="filter-editor-body">
-          <div class="comparison-container">
-            <div class="comparison-panel">
-              <div class="comparison-label">Before (Original)</div>
-              <div id="filterBeforeContainer" class="native-preview-container">
-                <canvas id="filterCanvasBefore"></canvas>
-              </div>
-              <div id="filterDimensionsBefore" class="comparison-dimensions"></div>
-            </div>
-            <div class="comparison-panel">
-              <div class="comparison-label">After (Resized)</div>
-              <canvas id="filterCanvas" width="600" height="448"></canvas>
-              <div id="filterDimensionsAfter" class="comparison-dimensions">600 × 448</div>
-            </div>
-          </div>
+          <canvas id="filterCanvas" width="600" height="448"></canvas>
 
           <div class="filter-controls">
             <label style="font-weight: bold;">Filter:</label>
@@ -1138,17 +1129,6 @@
           const tempCtx = tempCanvas.getContext('2d');
           tempCtx.drawImage(img, 0, 0);
           originalImageData = tempCtx.getImageData(0, 0, img.width, img.height);
-
-          // Draw original image at native resolution to "before" canvas.
-          const beforeCanvas = document.getElementById('filterCanvasBefore');
-          beforeCanvas.width = img.width;
-          beforeCanvas.height = img.height;
-          const beforeCtx = beforeCanvas.getContext('2d');
-          beforeCtx.drawImage(img, 0, 0);
-
-          // Update dimensions label with original image size.
-          document.getElementById('filterDimensionsBefore').textContent =
-            img.width + ' × ' + img.height;
 
           processingEl.textContent = 'Resizing...';
 
