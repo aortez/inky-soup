@@ -69,6 +69,7 @@ struct GalleryImage {
     filename: String,
     thumb_ready: bool,
     filter: String,
+    saturation: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -111,6 +112,8 @@ fn sanitize_filename(filename: &str) -> Option<String> {
 
 fn get_gallery_images() -> Vec<GalleryImage> {
     let mut images: Vec<GalleryImage> = Vec::new();
+    let mut existing_filenames: Vec<String> = Vec::new();
+
     for entry in glob("static/images/*").expect("Failed to read glob pattern") {
         match entry {
             Ok(path) => {
@@ -128,17 +131,36 @@ fn get_gallery_images() -> Vec<GalleryImage> {
                 let thumb_path = format!("static/images/thumbs/{}.png", filename);
                 let thumb_ready = Path::new(&thumb_path).exists();
                 let filter = metadata::get_filter_for_image(&filename);
+                let saturation = metadata::get_saturation_for_image(&filename);
+
+                existing_filenames.push(filename.clone());
 
                 images.push(GalleryImage {
                     path: image_path,
                     filename,
                     thumb_ready,
                     filter,
+                    saturation,
                 });
             },
             Err(e) => warn!("Error reading gallery entry: {:?}", e),
         }
     }
+
+    // Clean up metadata for images that no longer exist.
+    let metadata_filenames = metadata::get_all_filenames();
+    let orphaned: Vec<String> = metadata_filenames
+        .into_iter()
+        .filter(|f| !existing_filenames.contains(f))
+        .collect();
+
+    if !orphaned.is_empty() {
+        let removed = metadata::remove_entries(&orphaned);
+        if removed > 0 {
+            info!("Removed {} orphaned metadata entries", removed);
+        }
+    }
+
     debug!("Found {} images in gallery", images.len());
     images
 }
@@ -387,7 +409,7 @@ fn upload_form() -> Template {
 
     Template::render("index", &TemplateContext {
         images: get_gallery_images(),
-        values: vec!["Welcome!".to_string()],
+        values: vec!["Upload images, then select them from the Gallery to Flash to the screen.".to_string()],
         errors: vec![],
     })
 }

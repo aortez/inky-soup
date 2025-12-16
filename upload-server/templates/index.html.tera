@@ -696,9 +696,8 @@
 
         {% if values | length >= 1 %}
           <small class="good" style="margin-top: 20px">
-            {{ values | length }} Message(s):
             {% for v in values %}
-              <p> {{v}} </p>
+              <p>{{v}}</p>
             {% endfor %}
           </small>
         {% endif %}
@@ -732,7 +731,8 @@
             <div class="thumbnails">
               {% for img in images %}
               {%- set thumb_path = "images/thumbs/" ~ img.filename ~ ".png" -%}
-              <div class="thumbnail-item" onclick="showDetailView('{{ img.filename }}', '{{ img.path }}', '{{ img.filter }}', {{ img.thumb_ready }})">
+              {%- set sat = img.saturation | default(value=0.5) -%}
+              <div class="thumbnail-item" onclick="showDetailView('{{ img.filename }}', '{{ img.path }}', '{{ img.filter }}', {{ img.thumb_ready }}, {{ sat }})">
                 {% if img.thumb_ready %}
                 <img
                   src="{{ thumb_path }}"
@@ -741,6 +741,7 @@
                   data-filename="{{ img.filename }}"
                   data-path="{{ img.path }}"
                   data-filter="{{ img.filter }}"
+                  data-saturation="{{ sat }}"
                 />
                 {% else %}
                 <div
@@ -749,6 +750,7 @@
                   data-filename="{{ img.filename }}"
                   data-path="{{ img.path }}"
                   data-filter="{{ img.filter }}"
+                  data-saturation="{{ sat }}"
                 >
                   <div class="spinner"></div>
                   <span class="label">Caching...</span>

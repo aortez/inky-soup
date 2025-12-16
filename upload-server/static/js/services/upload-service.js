@@ -4,12 +4,72 @@
  */
 
 import {
-  CACHE_WIDTH, CACHE_HEIGHT, THUMB_WIDTH, THUMB_HEIGHT,
+  CACHE_WIDTH, CACHE_HEIGHT, THUMB_WIDTH, THUMB_HEIGHT, DEFAULT_FILTER,
 } from '../core/constants.js';
 import { getPendingThumbnails, setPendingThumbnails } from '../core/state.js';
 import { elements } from '../core/dom.js';
 import { formatSize, formatSpeed, formatTime } from '../utils/formatters.js';
 import { uploadCache, uploadThumb, uploadOriginalImage } from './api-client.js';
+
+// Dedicated filter worker for upload processing.
+let uploadFilterWorker = null;
+
+/**
+ * Get or create the upload filter worker.
+ * @returns {Worker} The filter worker instance.
+ */
+function getUploadFilterWorker() {
+  if (!uploadFilterWorker) {
+    uploadFilterWorker = new Worker('/js/filter-worker.js');
+  }
+  return uploadFilterWorker;
+}
+
+/**
+ * Process an image through the filter worker.
+ * @param {ImageData} imageData - Source image data.
+ * @param {number} targetWidth - Target width.
+ * @param {number} targetHeight - Target height.
+ * @param {string} filter - Filter name to use.
+ * @returns {Promise<ImageData>} Filtered image data.
+ */
+function filterImage(imageData, targetWidth, targetHeight, filter) {
+  return new Promise((resolve, reject) => {
+    const worker = getUploadFilterWorker();
+
+    // Define handlers as function declarations to avoid use-before-define.
+    function handleMessage(e) {
+      worker.removeEventListener('message', handleMessage);
+      worker.removeEventListener('error', handleError);
+
+      if (e.data.success === false) {
+        reject(new Error(e.data.error));
+        return;
+      }
+
+      resolve(e.data);
+    }
+
+    function handleError(e) {
+      worker.removeEventListener('message', handleMessage);
+      worker.removeEventListener('error', handleError);
+      reject(e);
+    }
+
+    worker.addEventListener('message', handleMessage);
+    worker.addEventListener('error', handleError);
+
+    // Transfer the buffer to the worker.
+    worker.postMessage({
+      data: imageData.data.buffer,
+      width: imageData.width,
+      height: imageData.height,
+      targetWidth,
+      targetHeight,
+      filter,
+    }, [imageData.data.buffer]);
+  });
+}
 
 /**
  * Handle file selection from drop zone or file input.
@@ -109,33 +169,68 @@ function showUploadModal(file) {
 }
 
 /**
- * Generate cache and thumbnail images in parallel.
+ * Generate cache and thumbnail images.
+ * Cache uses filter worker with default filter for quality.
+ * Thumbnail uses simple resize for speed.
  * @param {string} dataUrl - The data URL of the uploaded image.
  * @param {string} filename - The filename.
  */
 export function generateThumbnails(dataUrl, filename) {
   const img = new Image();
 
-  img.onload = () => {
-    // Generate cache (600x448).
-    const cacheCanvas = document.createElement('canvas');
-    cacheCanvas.width = CACHE_WIDTH;
-    cacheCanvas.height = CACHE_HEIGHT;
-    const cacheCtx = cacheCanvas.getContext('2d');
+  img.onload = async () => {
+    // Get source image data.
+    const srcCanvas = document.createElement('canvas');
+    srcCanvas.width = img.width;
+    srcCanvas.height = img.height;
+    const srcCtx = srcCanvas.getContext('2d');
+    srcCtx.drawImage(img, 0, 0);
+    const srcImageData = srcCtx.getImageData(0, 0, img.width, img.height);
 
-    // Use simple draw for initial cache (bicubic is default).
-    cacheCtx.drawImage(img, 0, 0, CACHE_WIDTH, CACHE_HEIGHT);
+    // Generate cache (600x448) using filter worker with default filter.
+    try {
+      const filteredData = await filterImage(
+        srcImageData,
+        CACHE_WIDTH,
+        CACHE_HEIGHT,
+        DEFAULT_FILTER,
+      );
 
-    cacheCanvas.toBlob((cacheBlob) => {
-      const pending = getPendingThumbnails();
-      setPendingThumbnails({
-        ...pending,
-        cache: { blob: cacheBlob, filename },
-      });
-      uploadPendingThumbnails(filename);
-    }, 'image/png');
+      // Convert filtered ImageData to blob.
+      const cacheCanvas = document.createElement('canvas');
+      cacheCanvas.width = CACHE_WIDTH;
+      cacheCanvas.height = CACHE_HEIGHT;
+      const cacheCtx = cacheCanvas.getContext('2d');
+      cacheCtx.putImageData(filteredData, 0, 0);
 
-    // Generate thumb (150x112).
+      cacheCanvas.toBlob((cacheBlob) => {
+        const pending = getPendingThumbnails();
+        setPendingThumbnails({
+          ...pending,
+          cache: { blob: cacheBlob, filename, filter: DEFAULT_FILTER },
+        });
+        uploadPendingThumbnails(filename);
+      }, 'image/png');
+    } catch (err) {
+      console.error('Filter worker error during upload:', err);
+      // Fall back to simple resize on error.
+      const cacheCanvas = document.createElement('canvas');
+      cacheCanvas.width = CACHE_WIDTH;
+      cacheCanvas.height = CACHE_HEIGHT;
+      const cacheCtx = cacheCanvas.getContext('2d');
+      cacheCtx.drawImage(img, 0, 0, CACHE_WIDTH, CACHE_HEIGHT);
+
+      cacheCanvas.toBlob((cacheBlob) => {
+        const pending = getPendingThumbnails();
+        setPendingThumbnails({
+          ...pending,
+          cache: { blob: cacheBlob, filename, filter: null },
+        });
+        uploadPendingThumbnails(filename);
+      }, 'image/png');
+    }
+
+    // Generate thumb (150x112) using simple resize (fast, just for gallery).
     const thumbCanvas = document.createElement('canvas');
     thumbCanvas.width = THUMB_WIDTH;
     thumbCanvas.height = THUMB_HEIGHT;
@@ -167,8 +262,8 @@ export async function uploadPendingThumbnails(filename) {
   if (pending.cache.filename !== filename || pending.thumb.filename !== filename) return;
 
   try {
-    // Upload cache.
-    const cacheData = await uploadCache(filename, pending.cache.blob);
+    // Upload cache with filter metadata.
+    const cacheData = await uploadCache(filename, pending.cache.blob, pending.cache.filter);
     if (!cacheData.success) {
       console.error('Cache upload failed:', cacheData.message);
     }

@@ -143,3 +143,35 @@ pub fn clear_dithered_saturation(filename: &str) {
         save_metadata_to_file(&cache);
     }
 }
+
+/// Gets the last dithered saturation for an image.
+/// Returns None if no saturation has been saved.
+pub fn get_saturation_for_image(filename: &str) -> Option<f32> {
+    let cache = METADATA_CACHE.lock().unwrap();
+    cache.get(filename).and_then(|m| m.last_dithered_saturation)
+}
+
+/// Removes metadata entries for the given filenames.
+/// Returns the number of entries removed.
+pub fn remove_entries(filenames: &[String]) -> usize {
+    if filenames.is_empty() {
+        return 0;
+    }
+    let mut cache = METADATA_CACHE.lock().unwrap();
+    let mut removed = 0;
+    for filename in filenames {
+        if cache.remove(filename).is_some() {
+            removed += 1;
+        }
+    }
+    if removed > 0 {
+        save_metadata_to_file(&cache);
+    }
+    removed
+}
+
+/// Returns a list of all filenames that have metadata entries.
+pub fn get_all_filenames() -> Vec<String> {
+    let cache = METADATA_CACHE.lock().unwrap();
+    cache.keys().cloned().collect()
+}

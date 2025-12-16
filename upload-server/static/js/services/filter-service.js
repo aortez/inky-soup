@@ -160,8 +160,8 @@ export async function applyFilter() {
       elements.filterCanvas.toBlob(resolve, 'image/png');
     });
 
-    // Upload cache image.
-    const data = await uploadCache(filename, cacheBlob);
+    // Upload cache image with filter metadata.
+    const data = await uploadCache(filename, cacheBlob, filter);
 
     if (!data.success) {
       statusEl.textContent = `Error: ${data.message}`;

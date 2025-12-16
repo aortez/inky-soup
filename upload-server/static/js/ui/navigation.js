@@ -30,8 +30,9 @@ export function showGalleryView() {
  * @param {string} path - The full file path.
  * @param {string} filter - The filter name.
  * @param {boolean} thumbReady - Whether thumbnail is ready.
+ * @param {number} [saturation=0.5] - The saturation value.
  */
-export function showDetailView(filename, path, filter, thumbReady) {
+export function showDetailView(filename, path, filter, thumbReady, saturation = 0.5) {
   if (!thumbReady) {
     // Can't view detail for uncached images yet.
     alert('This image is still being processed. Please wait.');
@@ -41,7 +42,7 @@ export function showDetailView(filename, path, filter, thumbReady) {
   setCurrentFilename(filename);
   setCurrentPath(path);
   setCurrentFilter(filter || 'bicubic');
-  setCurrentSaturation(0.5);
+  setCurrentSaturation(saturation);
 
   // Update UI.
   elements.detailFilename.textContent = filename;
@@ -52,9 +53,10 @@ export function showDetailView(filename, path, filter, thumbReady) {
     btn.classList.toggle('active', btn.dataset.filter === (filter || 'bicubic'));
   });
 
-  // Reset saturation.
-  elements.saturationSlider.value = 0.5;
-  elements.saturationValue.textContent = '0.5';
+  // Restore saturation from saved value (round to 1 decimal for display).
+  const roundedSaturation = Math.round(saturation * 10) / 10;
+  elements.saturationSlider.value = roundedSaturation;
+  elements.saturationValue.textContent = roundedSaturation.toFixed(1);
 
   // Reset flash twice.
   elements.flashTwiceCheckbox.checked = false;
@@ -99,11 +101,13 @@ export function initNavigation() {
       // Try to find the thumbnail data.
       const thumb = query(`img[data-filename="${e.state.filename}"]`);
       if (thumb) {
+        const saturation = parseFloat(thumb.dataset.saturation) || 0.5;
         showDetailView(
           e.state.filename,
           thumb.dataset.path,
           thumb.dataset.filter,
           true,
+          saturation,
         );
       } else {
         showGalleryView();

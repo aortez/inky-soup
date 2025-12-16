@@ -68,6 +68,52 @@ test.describe('Pipeline Detail View', () => {
     await expect(page.locator(`.filter-btn[data-filter="${initialActive}"]`)).not.toHaveClass(/active/);
   });
 
+  test('saved filter should persist after navigation', async ({ page }) => {
+    const hasImages = await openDetailView(page);
+    if (!hasImages) {
+      test.skip();
+      return;
+    }
+
+    // Get the current filename.
+    const filename = await page.locator('#detailFilename').textContent();
+
+    // Wait for initial processing to complete.
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+
+    // Get initial active filter.
+    const initialActive = await page.locator('.filter-btn.active').getAttribute('data-filter');
+
+    // Select a different filter.
+    const targetFilter = initialActive === 'lanczos' ? 'mitchell' : 'lanczos';
+    await page.locator(`.filter-btn[data-filter="${targetFilter}"]`).click();
+    await expect(page.locator(`.filter-btn[data-filter="${targetFilter}"]`)).toHaveClass(/active/);
+
+    // Wait for filter processing to complete.
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+
+    // Click Save button.
+    await page.locator('.apply-filter-btn').click();
+
+    // Wait for save confirmation.
+    await expect(page.locator('#filterStatus')).toContainText('saved', { timeout: 10000 });
+
+    // Go back to gallery.
+    await page.locator('.back-button').click();
+    await expect(page.locator('#galleryView')).toBeVisible();
+
+    // Re-open the same image.
+    const thumbnail = page.locator(`.thumbnail-item img[data-filename="${filename}"]`);
+    await thumbnail.click();
+    await expect(page.locator('#detailView')).toBeVisible();
+
+    // The saved filter should still be active.
+    await expect(page.locator(`.filter-btn[data-filter="${targetFilter}"]`)).toHaveClass(/active/);
+
+    // The old filter should not be active.
+    await expect(page.locator(`.filter-btn[data-filter="${initialActive}"]`)).not.toHaveClass(/active/);
+  });
+
   test('changing saturation should update dither canvas', async ({ page }) => {
     const hasImages = await openDetailView(page);
     if (!hasImages) {

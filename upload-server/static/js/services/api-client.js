@@ -7,11 +7,15 @@
  * Upload a cache image (600x448 PNG) to the server.
  * @param {string} filename - Original filename (without .png extension).
  * @param {Blob} blob - PNG blob data.
+ * @param {string} [filter] - Optional filter name to save in metadata.
  * @returns {Promise<Object>} Server response.
  */
-export async function uploadCache(filename, blob) {
+export async function uploadCache(filename, blob, filter = null) {
   const formData = new FormData();
   formData.append('filename', filename);
+  if (filter) {
+    formData.append('filter', filter);
+  }
   formData.append('file', blob, `${filename}.png`);
 
   const response = await fetch('/api/upload-cache', {
