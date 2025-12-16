@@ -155,6 +155,15 @@ fn thumb_status(filename: &str) -> Json<ThumbStatus> {
     })
 }
 
+/// Response for original image upload endpoint.
+#[derive(Serialize)]
+#[serde(crate = "rocket::serde")]
+struct UploadResponse {
+    success: bool,
+    message: String,
+    filename: Option<String>,
+}
+
 /// Response for upload-dithered endpoint.
 #[derive(Serialize)]
 #[serde(crate = "rocket::serde")]
@@ -453,18 +462,18 @@ async fn submit_flash_image<'r>(
         }
     };
 
-    // Get filename for dithered image lookup.
-    let original_path = format!("static/{}", submission.submission.image_file_path.clone());
-    let filename = Path::new(&original_path)
+    // Get the full path to the dithered image.
+    let dithered_path = format!("static/{}", submission.submission.image_file_path.clone());
+    let filename = Path::new(&dithered_path)
         .file_name()
         .and_then(|f| f.to_str())
-        .unwrap_or("unknown");
+        .unwrap_or("unknown")
+        .to_string();
     let flash_twice = submission.submission.flash_twice;
 
     info!("Flash request received: {} (flash_twice: {})", filename, flash_twice);
 
     // Require pre-dithered version to exist (uploaded from preview dialog).
-    let dithered_path = format!("static/images/dithered/{}.png", filename);
     if !Path::new(&dithered_path).exists() {
         error!("Flash failed for {}: pre-dithered image not found", filename);
         return Err((Status::NotFound, format!("Pre-dithered image not found: {}", filename)));
@@ -533,7 +542,7 @@ async fn flash_job_status(job_id: u64, queue_state: &State<FlashQueueState>) -> 
 #[post("/upload", data = "<form>")]
 async fn submit_new_image<'r>(
     mut form: Form<Contextual<'r, SubmitNewImage<'r>>>
-) -> Redirect {
+) -> Json<UploadResponse> {
     match form.value {
         Some(ref mut submission) => {
             let file = &mut submission.submission.file;
@@ -554,20 +563,32 @@ async fn submit_new_image<'r>(
             match file.copy_to(image_file_path.clone()).await {
                 Ok(_) => {
                     info!("Upload completed: {}", filename);
+                    // Cache is now generated client-side and uploaded separately via /api/upload-cache.
+                    Json(UploadResponse {
+                        success: true,
+                        message: "Upload completed successfully".to_string(),
+                        filename: Some(filename),
+                    })
                 }
                 Err(e) => {
                     error!("Upload failed for {}: {}", filename, e);
+                    Json(UploadResponse {
+                        success: false,
+                        message: format!("Upload failed: {}", e),
+                        filename: None,
+                    })
                 }
             }
-
-            // Cache is now generated client-side and uploaded separately via /api/upload-cache.
         }
         None => {
             warn!("Upload form validation failed");
+            Json(UploadResponse {
+                success: false,
+                message: "Invalid form submission".to_string(),
+                filename: None,
+            })
         }
-    };
-
-    Redirect::to(uri!(upload_form))
+    }
 }
 
 /// Fairing to spawn background cleanup task.

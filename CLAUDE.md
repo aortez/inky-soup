@@ -222,7 +222,20 @@ SDCARD_ROOT=/media/user/rootfs ./deploy-sdcard.sh
 
 ## Testing
 
-The project has two test frameworks:
+### Run All Tests
+
+The easiest way to run all tests is with the all-in-one test runner:
+
+```bash
+cd upload-server
+./run-tests.sh
+```
+
+This script runs ESLint, unit tests, starts the server, runs E2E tests, stops the server, and cleans up test artifacts. It exits with a non-zero status if any tests fail.
+
+### Individual Test Commands
+
+For running specific test suites during development:
 
 ### Unit Tests (Vitest)
 

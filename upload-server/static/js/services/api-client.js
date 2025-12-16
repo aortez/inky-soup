@@ -11,6 +11,7 @@
  */
 export async function uploadCache(filename, blob) {
   const formData = new FormData();
+  formData.append('filename', filename);
   formData.append('file', blob, `${filename}.png`);
 
   const response = await fetch('/api/upload-cache', {
@@ -33,6 +34,7 @@ export async function uploadCache(filename, blob) {
  */
 export async function uploadThumb(filename, blob) {
   const formData = new FormData();
+  formData.append('filename', filename);
   formData.append('file', blob, `${filename}.png`);
 
   const response = await fetch('/api/upload-thumb', {
@@ -80,9 +82,9 @@ export async function uploadDithered(filename, blob, saturation) {
  */
 export async function submitFlashJob(filename, flashTwice) {
   const formData = new FormData();
-  formData.append('file_path', `static/images/dithered/${filename}.png`);
+  formData.append('submission.image_file_path', `images/dithered/${filename}.png`);
   if (flashTwice) {
-    formData.append('flash_twice', 'true');
+    formData.append('submission.flash_twice', 'true');
   }
 
   const response = await fetch('/flash', {
@@ -152,7 +154,7 @@ export async function getThumbStatus(filename) {
  */
 export function uploadOriginalImage(file, onProgress, onSuccess, onError) {
   const formData = new FormData();
-  formData.append('file', file);
+  formData.append('submission.file', file);
 
   const xhr = new XMLHttpRequest();
 

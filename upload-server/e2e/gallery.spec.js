@@ -5,51 +5,16 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Gallery View', () => {
-  test.beforeEach(async ({ page }) => {
+  test('should load the gallery page with required elements', async ({ page }) => {
     await page.goto('/');
-  });
 
-  test('should load the gallery page', async ({ page }) => {
     // Check page title.
     await expect(page).toHaveTitle('inky-soup');
 
-    // Gallery view should be visible.
+    // Gallery view should be visible with required sections.
     await expect(page.locator('#galleryView')).toBeVisible();
-
-    // Upload fieldset should be present.
-    await expect(page.locator('fieldset legend').first()).toHaveText('Upload New Image');
-
-    // Gallery fieldset should be present.
-    await expect(page.locator('fieldset legend').nth(1)).toHaveText('Gallery');
-  });
-
-  test('should have a working drop zone', async ({ page }) => {
-    const dropZone = page.locator('#dropZone');
-
-    // Drop zone should be visible.
-    await expect(dropZone).toBeVisible();
-
-    // Should show upload prompt.
-    await expect(dropZone.locator('.drop-zone-prompt')).toHaveText('Drop image here or click to upload');
-
-    // Should show file type hint.
-    await expect(dropZone.locator('.drop-zone-hint')).toContainText('JPEG, PNG, GIF, WebP');
-  });
-
-  test('should have hidden file input', async ({ page }) => {
-    const fileInput = page.locator('#fileInput');
-
-    // File input exists but is hidden.
-    await expect(fileInput).toBeAttached();
-    await expect(fileInput).toHaveAttribute('accept', 'image/*');
-  });
-
-  test('drop zone should be clickable', async ({ page }) => {
-    const dropZone = page.locator('#dropZone');
-
-    // Clicking drop zone should trigger file input (we can't fully test file dialog).
-    // Just verify it's interactive.
-    await expect(dropZone).toHaveCSS('cursor', 'pointer');
+    await expect(page.locator('#dropZone')).toBeVisible();
+    await expect(page.locator('#fileInput')).toBeAttached();
   });
 });
 

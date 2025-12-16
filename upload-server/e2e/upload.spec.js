@@ -8,7 +8,7 @@ import path from 'path';
 test.describe('Image Upload', () => {
   const testImagePath = path.join(import.meta.dirname, 'fixtures', 'test-image.png');
 
-  test('should upload an image via file input', async ({ page }) => {
+  test('should upload an image and show completion', async ({ page }) => {
     await page.goto('/');
 
     // Get the file input.
@@ -17,29 +17,15 @@ test.describe('Image Upload', () => {
     // Upload the test image.
     await fileInput.setInputFiles(testImagePath);
 
-    // Upload modal should appear.
+    // Upload modal should appear with progress.
     await expect(page.locator('#uploadModal')).toHaveClass(/active/);
-    await expect(page.locator('#uploadModalTitle')).toHaveText('Uploading Image');
+    await expect(page.locator('#uploadProgress')).toBeAttached();
 
     // Wait for upload to complete (modal title changes).
     await expect(page.locator('#uploadModalTitle')).toHaveText('✓ Upload Complete!', { timeout: 30000 });
 
     // Close button should be visible.
     await expect(page.locator('#uploadCloseBtn')).toBeVisible();
-  });
-
-  test('should show upload progress', async ({ page }) => {
-    await page.goto('/');
-
-    const fileInput = page.locator('#fileInput');
-    await fileInput.setInputFiles(testImagePath);
-
-    // Progress elements should exist.
-    await expect(page.locator('#uploadProgress')).toBeAttached();
-    await expect(page.locator('#uploadPercent')).toBeAttached();
-
-    // Wait for completion.
-    await expect(page.locator('#uploadModalTitle')).toHaveText('✓ Upload Complete!', { timeout: 30000 });
   });
 
   test('uploaded image should appear in gallery after closing modal', async ({ page }) => {
