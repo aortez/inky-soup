@@ -11,6 +11,9 @@ let currentPath = null;
 // Image processing state.
 let currentFilter = 'bicubic';
 let currentSaturation = 0.5;
+let currentDitherAlgorithm = 'floyd-steinberg';
+let currentBrightness = 0; // Range: -100 to +100.
+let currentContrast = 0; // Range: -100 to +100.
 
 // Worker state.
 let filterWorker = null;
@@ -45,6 +48,21 @@ export const setCurrentFilter = (filter) => { currentFilter = filter; };
 export const getCurrentSaturation = () => currentSaturation;
 export const setCurrentSaturation = (saturation) => {
   currentSaturation = saturation;
+};
+
+export const getCurrentDitherAlgorithm = () => currentDitherAlgorithm;
+export const setCurrentDitherAlgorithm = (algorithm) => {
+  currentDitherAlgorithm = algorithm;
+};
+
+export const getCurrentBrightness = () => currentBrightness;
+export const setCurrentBrightness = (brightness) => {
+  currentBrightness = brightness;
+};
+
+export const getCurrentContrast = () => currentContrast;
+export const setCurrentContrast = (contrast) => {
+  currentContrast = contrast;
 };
 
 // Worker state getters/setters.

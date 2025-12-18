@@ -9,6 +9,12 @@ import {
   setDitherWorker,
   getCurrentSaturation,
   setCurrentSaturation,
+  getCurrentDitherAlgorithm,
+  setCurrentDitherAlgorithm,
+  getCurrentBrightness,
+  setCurrentBrightness,
+  getCurrentContrast,
+  setCurrentContrast,
 } from '../core/state.js';
 import { elements } from '../core/dom.js';
 
@@ -37,9 +43,15 @@ export function initDitherWorker() {
     // Log dither completion.
     if (ditherStartTime && ditherParams) {
       const elapsed = performance.now() - ditherStartTime;
+      const {
+        width, height, saturation, algorithm, brightness, contrast,
+      } = ditherParams;
+      const adjustments = brightness !== 0 || contrast !== 0
+        ? `, brightness: ${brightness}, contrast: ${contrast}`
+        : '';
       console.log(
-        `[Dither] Floyd-Steinberg completed in ${elapsed.toFixed(1)}ms `
-        + `(${ditherParams.width}x${ditherParams.height}, saturation: ${ditherParams.saturation})`,
+        `[Dither] ${algorithm} completed in ${elapsed.toFixed(1)}ms `
+        + `(${width}x${height}, saturation: ${saturation}${adjustments})`,
       );
       ditherStartTime = null;
       ditherParams = null;
@@ -74,6 +86,9 @@ export function applyDither(imageData) {
   const worker = getDitherWorker();
 
   const saturation = getCurrentSaturation();
+  const algorithm = getCurrentDitherAlgorithm();
+  const brightness = getCurrentBrightness();
+  const contrast = getCurrentContrast();
 
   // Capture start time and params for logging.
   ditherStartTime = performance.now();
@@ -81,6 +96,9 @@ export function applyDither(imageData) {
     width: imageData.width,
     height: imageData.height,
     saturation,
+    algorithm,
+    brightness,
+    contrast,
   };
 
   worker.postMessage({
@@ -88,6 +106,9 @@ export function applyDither(imageData) {
     width: imageData.width,
     height: imageData.height,
     saturation,
+    algorithm,
+    brightness,
+    contrast,
   }, [imageData.data.buffer]);
 }
 
@@ -101,6 +122,54 @@ export function updateSaturation(value) {
   elements.saturationValue.textContent = value;
 
   // Re-dither with new saturation.
+  const filterCtx = elements.filterCanvas.getContext('2d');
+  const imageData = filterCtx.getImageData(0, 0, CACHE_WIDTH, CACHE_HEIGHT);
+  applyDither(imageData);
+}
+
+/**
+ * Update dither algorithm and re-dither the current image.
+ * @param {string} algorithm - The dither algorithm ('floyd-steinberg', 'atkinson', 'ordered').
+ */
+export function updateDitherAlgorithm(algorithm) {
+  setCurrentDitherAlgorithm(algorithm);
+
+  // Update button states.
+  elements.ditherButtons.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.dither === algorithm);
+  });
+
+  // Re-dither with new algorithm.
+  const filterCtx = elements.filterCanvas.getContext('2d');
+  const imageData = filterCtx.getImageData(0, 0, CACHE_WIDTH, CACHE_HEIGHT);
+  applyDither(imageData);
+}
+
+/**
+ * Update brightness and re-dither the current image.
+ * @param {number|string} value - The brightness value (-100 to +100).
+ */
+export function updateBrightness(value) {
+  const brightness = parseInt(value, 10);
+  setCurrentBrightness(brightness);
+  elements.brightnessValue.textContent = brightness;
+
+  // Re-dither with new brightness.
+  const filterCtx = elements.filterCanvas.getContext('2d');
+  const imageData = filterCtx.getImageData(0, 0, CACHE_WIDTH, CACHE_HEIGHT);
+  applyDither(imageData);
+}
+
+/**
+ * Update contrast and re-dither the current image.
+ * @param {number|string} value - The contrast value (-100 to +100).
+ */
+export function updateContrast(value) {
+  const contrast = parseInt(value, 10);
+  setCurrentContrast(contrast);
+  elements.contrastValue.textContent = contrast;
+
+  // Re-dither with new contrast.
   const filterCtx = elements.filterCanvas.getContext('2d');
   const imageData = filterCtx.getImageData(0, 0, CACHE_WIDTH, CACHE_HEIGHT);
   applyDither(imageData);

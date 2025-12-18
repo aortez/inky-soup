@@ -19,6 +19,10 @@ export function initDOMCache() {
   elements.deleteImagePath = document.getElementById('deleteImagePath');
   elements.saturationSlider = document.getElementById('saturationSlider');
   elements.saturationValue = document.getElementById('saturationValue');
+  elements.brightnessSlider = document.getElementById('brightnessSlider');
+  elements.brightnessValue = document.getElementById('brightnessValue');
+  elements.contrastSlider = document.getElementById('contrastSlider');
+  elements.contrastValue = document.getElementById('contrastValue');
   elements.flashTwiceCheckbox = document.getElementById('flashTwiceCheckbox');
   elements.filterStatus = document.getElementById('filterStatus');
   elements.filterProcessing = document.getElementById('filterProcessing');
@@ -26,6 +30,9 @@ export function initDOMCache() {
   elements.filterCanvas = document.getElementById('filterCanvas');
   elements.ditherCanvas = document.getElementById('ditherCanvas');
   elements.flashBtn = document.getElementById('flashBtn');
+
+  // Dither method buttons.
+  elements.ditherButtons = document.querySelectorAll('.dither-btn');
 
   // Flash status bar.
   elements.flashStatusBar = document.getElementById('flashStatusBar');

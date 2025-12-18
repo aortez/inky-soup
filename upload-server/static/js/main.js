@@ -12,6 +12,8 @@ import { initDetailView } from './ui/detail-view.js';
 import { initGalleryView } from './ui/gallery-view.js';
 import { initFilterControls, applyFilter } from './ui/filter-controls.js';
 import { initSaturationControls } from './ui/saturation-controls.js';
+import { initDitherControls } from './ui/dither-controls.js';
+import { initBrightnessContrastControls } from './ui/brightness-contrast-controls.js';
 import { initFlashStatus, expandFlashModal, closeFlashModal } from './ui/flash-status.js';
 import { initUploadUI, closeUploadModal } from './ui/upload-ui.js';
 import {
@@ -23,7 +25,7 @@ import {
 
 // Service imports.
 import { checkGlobalFlashStatus, flashImage } from './services/flash-service.js';
-import { updateSaturation } from './services/dither-service.js';
+import { updateSaturation, updateBrightness, updateContrast } from './services/dither-service.js';
 
 /**
  * Initialize the application.
@@ -38,6 +40,8 @@ function init() {
   initGalleryView();
   initFilterControls();
   initSaturationControls();
+  initBrightnessContrastControls();
+  initDitherControls();
   initFlashStatus();
   initUploadUI();
   initDeleteUI();
@@ -65,4 +69,6 @@ window.expandFlashModal = expandFlashModal;
 window.closeFlashModal = closeFlashModal;
 window.closeUploadModal = closeUploadModal;
 window.updateSaturation = updateSaturation;
+window.updateBrightness = updateBrightness;
+window.updateContrast = updateContrast;
 window.flashImage = flashImage;

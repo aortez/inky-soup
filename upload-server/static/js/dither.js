@@ -1,11 +1,19 @@
 /**
  * E-Ink Dithering Library
  *
- * Implements the exact dithering algorithm from the Pimoroni Inky library
- * for 7-color e-ink displays (Inky Impression).
+ * Implements dithering algorithms for 7-color e-ink displays (Inky Impression).
+ * Supports Floyd-Steinberg, Atkinson, and Ordered (Bayer) dithering.
  *
  * Based on: https://github.com/pimoroni/inky/blob/main/inky/inky_uc8159.py
  */
+
+// ===========================================================================
+// COMPILE-TIME CONFIGURATION
+// ===========================================================================
+// Set to true to use weighted RGB distance (better perceptual matching).
+// Set to false for standard Euclidean RGB distance (matches original Inky lib).
+const USE_WEIGHTED_RGB = true;
+// ===========================================================================
 
 // 7-color palette constants from Inky library.
 // Colors: BLACK, WHITE, GREEN, BLUE, RED, YELLOW, ORANGE, CLEAN.
@@ -68,7 +76,58 @@ function generatePalette(saturation) {
 }
 
 /**
- * Find the closest color in the palette using Euclidean distance.
+ * Apply brightness and contrast adjustments to image data.
+ *
+ * Brightness shifts all pixel values up or down.
+ * Contrast increases or decreases the difference from middle gray (128).
+ *
+ * Formula:
+ *   adjusted = (pixel - 128) * contrastFactor + 128 + brightness
+ *
+ * @param {ImageData} imageData - Input image data (will be modified in place).
+ * @param {number} brightness - Brightness adjustment (-100 to +100).
+ * @param {number} contrast - Contrast adjustment (-100 to +100).
+ * @returns {ImageData} The modified image data (same object).
+ */
+function applyBrightnessContrast(imageData, brightness = 0, contrast = 0) {
+    // Skip if no adjustment needed.
+    if (brightness === 0 && contrast === 0) {
+        return imageData;
+    }
+
+    const data = imageData.data;
+
+    // Convert contrast from -100..+100 to a multiplier.
+    // At contrast = 0, factor = 1 (no change).
+    // At contrast = 100, factor ≈ 2 (double contrast).
+    // At contrast = -100, factor ≈ 0 (flat gray).
+    const contrastFactor = (100 + contrast) / 100;
+
+    for (let i = 0; i < data.length; i += 4) {
+        // Apply to RGB channels, skip alpha.
+        for (let c = 0; c < 3; c++) {
+            let value = data[i + c];
+
+            // Apply contrast (deviation from middle gray).
+            value = (value - 128) * contrastFactor + 128;
+
+            // Apply brightness.
+            value += brightness;
+
+            // Clamp to valid range.
+            data[i + c] = Math.max(0, Math.min(255, Math.round(value)));
+        }
+    }
+
+    return imageData;
+}
+
+/**
+ * Find the closest color in the palette.
+ *
+ * Uses either weighted RGB distance (when USE_WEIGHTED_RGB is true) or
+ * standard Euclidean RGB distance. Weighted RGB accounts for human
+ * perception being more sensitive to green than red or blue.
  *
  * @param {number} r - Red component (0-255)
  * @param {number} g - Green component (0-255)
@@ -85,12 +144,20 @@ function findClosestPaletteColor(r, g, b, palette) {
         const pg = palette[i][1];
         const pb = palette[i][2];
 
-        // Euclidean distance in RGB color space.
-        const distance = Math.sqrt(
-            (r - pr) * (r - pr) +
-            (g - pg) * (g - pg) +
-            (b - pb) * (b - pb)
-        );
+        const dr = r - pr;
+        const dg = g - pg;
+        const db = b - pb;
+
+        let distance;
+        if (USE_WEIGHTED_RGB) {
+            // Weighted RGB distance: human eye is more sensitive to green.
+            // Weights approximate luminance contribution: R=0.299, G=0.587, B=0.114.
+            // Simplified to integer weights: 2*R² + 4*G² + 3*B².
+            distance = 2 * dr * dr + 4 * dg * dg + 3 * db * db;
+        } else {
+            // Standard Euclidean distance in RGB color space.
+            distance = dr * dr + dg * dg + db * db;
+        }
 
         if (distance < minDistance) {
             minDistance = distance;
@@ -187,28 +254,164 @@ function floydSteinbergDither(imageData, palette) {
 }
 
 /**
+ * Apply Atkinson dithering to an image.
+ *
+ * Atkinson dithering (used on early Macintosh) only diffuses 6/8 (75%) of the
+ * quantization error, which helps preserve contrast and detail in images.
+ * Good for high-contrast images and text on e-ink displays.
+ *
+ * Error distribution pattern:
+ *        X    1/8  1/8
+ *   1/8  1/8  1/8
+ *        1/8
+ *
+ * @param {ImageData} imageData - Input image (600x448 RGBA)
+ * @param {Array<Array<number>>} palette - 8-color palette
+ * @returns {ImageData} Dithered image
+ */
+function atkinsonDither(imageData, palette) {
+    const width = imageData.width;
+    const height = imageData.height;
+    const data = new Uint8ClampedArray(imageData.data);
+
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const idx = (y * width + x) * 4;
+
+            const oldR = data[idx];
+            const oldG = data[idx + 1];
+            const oldB = data[idx + 2];
+
+            const paletteIndex = findClosestPaletteColor(oldR, oldG, oldB, palette);
+            const newR = palette[paletteIndex][0];
+            const newG = palette[paletteIndex][1];
+            const newB = palette[paletteIndex][2];
+
+            data[idx] = newR;
+            data[idx + 1] = newG;
+            data[idx + 2] = newB;
+
+            // Calculate error (only 6/8 = 75% is distributed).
+            const errR = (oldR - newR) / 8;
+            const errG = (oldG - newG) / 8;
+            const errB = (oldB - newB) / 8;
+
+            // Distribute error to 6 neighboring pixels (1/8 each).
+            const offsets = [
+                [1, 0], [2, 0],      // Right and far right.
+                [-1, 1], [0, 1], [1, 1],  // Bottom row.
+                [0, 2]               // Two rows down.
+            ];
+
+            for (const [dx, dy] of offsets) {
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && nx < width && ny < height) {
+                    const nIdx = (ny * width + nx) * 4;
+                    data[nIdx] = data[nIdx] + errR;
+                    data[nIdx + 1] = data[nIdx + 1] + errG;
+                    data[nIdx + 2] = data[nIdx + 2] + errB;
+                }
+            }
+        }
+    }
+
+    return new ImageData(data, width, height);
+}
+
+// 4x4 Bayer threshold matrix for ordered dithering.
+// Values are normalized to 0-15, will be scaled to palette threshold.
+const BAYER_4X4 = [
+    [0, 8, 2, 10],
+    [12, 4, 14, 6],
+    [3, 11, 1, 9],
+    [15, 7, 13, 5]
+];
+
+/**
+ * Apply ordered (Bayer) dithering to an image.
+ *
+ * Ordered dithering uses a threshold matrix to determine color selection.
+ * It produces a distinctive cross-hatch pattern and is very fast.
+ * Unlike error diffusion, it doesn't spread errors to neighboring pixels.
+ *
+ * @param {ImageData} imageData - Input image (600x448 RGBA)
+ * @param {Array<Array<number>>} palette - 8-color palette
+ * @returns {ImageData} Dithered image
+ */
+function orderedDither(imageData, palette) {
+    const width = imageData.width;
+    const height = imageData.height;
+    const data = new Uint8ClampedArray(imageData.data);
+
+    // Threshold spread determines how much the Bayer matrix affects color choice.
+    // Higher values = more visible dithering pattern.
+    const thresholdSpread = 48;
+
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const idx = (y * width + x) * 4;
+
+            // Get threshold from Bayer matrix (tiled across image).
+            const bayerValue = BAYER_4X4[y % 4][x % 4];
+            // Normalize to range [-0.5, 0.5] then scale.
+            const threshold = (bayerValue / 16 - 0.5) * thresholdSpread;
+
+            // Apply threshold to pixel colors.
+            const r = Math.max(0, Math.min(255, data[idx] + threshold));
+            const g = Math.max(0, Math.min(255, data[idx + 1] + threshold));
+            const b = Math.max(0, Math.min(255, data[idx + 2] + threshold));
+
+            // Find closest palette color for adjusted pixel.
+            const paletteIndex = findClosestPaletteColor(r, g, b, palette);
+
+            data[idx] = palette[paletteIndex][0];
+            data[idx + 1] = palette[paletteIndex][1];
+            data[idx + 2] = palette[paletteIndex][2];
+        }
+    }
+
+    return new ImageData(data, width, height);
+}
+
+// Available dithering algorithms.
+const DITHER_ALGORITHMS = {
+    'floyd-steinberg': floydSteinbergDither,
+    'atkinson': atkinsonDither,
+    'ordered': orderedDither
+};
+
+/**
  * High-level function to dither an image for e-ink display.
  *
  * @param {ImageData} imageData - Input image (should be 600x448)
  * @param {number} saturation - Saturation level (0.0 to 1.0, default 0.5)
+ * @param {string} algorithm - Dithering algorithm: 'floyd-steinberg', 'atkinson', or 'ordered'
  * @returns {ImageData} Dithered image ready for e-ink display
  */
-function ditherForEInk(imageData, saturation = 0.5) {
+function ditherForEInk(imageData, saturation = 0.5, algorithm = 'floyd-steinberg') {
     if (imageData.width !== 600 || imageData.height !== 448) {
         console.warn('Image dimensions should be 600x448 for Inky Impression display');
     }
 
     const palette = generatePalette(saturation);
-    return floydSteinbergDither(imageData, palette);
+    const ditherFn = DITHER_ALGORITHMS[algorithm] || floydSteinbergDither;
+    return ditherFn(imageData, palette);
 }
 
 // Export functions for use in other scripts and Web Workers.
 if (typeof module !== 'undefined' && module.exports) {
     // Node.js/CommonJS.
     module.exports = {
-        generatePalette,
+        BAYER_4X4,
+        DITHER_ALGORITHMS,
+        USE_WEIGHTED_RGB,
+        applyBrightnessContrast,
+        atkinsonDither,
+        ditherForEInk,
         findClosestPaletteColor,
         floydSteinbergDither,
-        ditherForEInk
+        generatePalette,
+        orderedDither,
     };
 }
