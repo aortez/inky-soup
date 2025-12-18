@@ -69,7 +69,10 @@ struct GalleryImage {
     filename: String,
     thumb_ready: bool,
     filter: String,
-    saturation: Option<f32>,
+    saturation: f32,
+    brightness: i32,
+    contrast: i32,
+    dither_algorithm: String,
 }
 
 #[derive(Serialize)]
@@ -86,6 +89,84 @@ struct TemplateContext {
 struct ThumbStatus {
     ready: bool,
     thumb_path: String,
+}
+
+/// Response for display configuration API endpoint.
+#[derive(Serialize)]
+#[serde(crate = "rocket::serde")]
+struct DisplayConfig {
+    width: u32,
+    height: u32,
+    thumb_width: u32,
+    thumb_height: u32,
+    model: String,
+    color: String,
+}
+
+/// Read display configuration from /etc/inky-soup/display.conf.
+/// Falls back to 5.7" Inky Impression defaults if file doesn't exist.
+fn get_display_config() -> DisplayConfig {
+    let config_path = "/etc/inky-soup/display.conf";
+
+    // Default values for 5.7" Inky Impression.
+    let mut config = DisplayConfig {
+        width: 600,
+        height: 448,
+        thumb_width: 150,
+        thumb_height: 112,
+        model: "impression-5.7-default".to_string(),
+        color: "multi".to_string(),
+    };
+
+    // Try to read config file.
+    if let Ok(contents) = fs::read_to_string(config_path) {
+        for line in contents.lines() {
+            let line = line.trim();
+            if line.starts_with('#') || line.is_empty() {
+                continue;
+            }
+
+            if let Some((key, value)) = line.split_once('=') {
+                let key = key.trim();
+                let value = value.trim();
+
+                match key {
+                    "DISPLAY_WIDTH" => {
+                        if let Ok(v) = value.parse() {
+                            config.width = v;
+                        }
+                    }
+                    "DISPLAY_HEIGHT" => {
+                        if let Ok(v) = value.parse() {
+                            config.height = v;
+                        }
+                    }
+                    "THUMB_WIDTH" => {
+                        if let Ok(v) = value.parse() {
+                            config.thumb_width = v;
+                        }
+                    }
+                    "THUMB_HEIGHT" => {
+                        if let Ok(v) = value.parse() {
+                            config.thumb_height = v;
+                        }
+                    }
+                    "DISPLAY_MODEL" => {
+                        config.model = value.to_string();
+                    }
+                    "DISPLAY_COLOR" => {
+                        config.color = value.to_string();
+                    }
+                    _ => {}
+                }
+            }
+        }
+        debug!("Loaded display config from {}: {}x{}", config_path, config.width, config.height);
+    } else {
+        debug!("Using default display config ({}x{})", config.width, config.height);
+    }
+
+    config
 }
 
 /// Sanitizes a filename to prevent path traversal attacks.
@@ -112,13 +193,12 @@ fn sanitize_filename(filename: &str) -> Option<String> {
 
 fn get_gallery_images() -> Vec<GalleryImage> {
     let mut images: Vec<GalleryImage> = Vec::new();
-    let mut existing_filenames: Vec<String> = Vec::new();
 
     for entry in glob("static/images/*").expect("Failed to read glob pattern") {
         match entry {
             Ok(path) => {
-                // Skip the cache directory and metadata file.
-                if path.is_dir() || path.extension().map(|e| e == "json").unwrap_or(false) {
+                // Skip directories and non-image files.
+                if path.is_dir() {
                     continue;
                 }
 
@@ -127,42 +207,42 @@ fn get_gallery_images() -> Vec<GalleryImage> {
                     .unwrap_or("unknown")
                     .to_string();
 
+                // Skip metadata files (legacy and backup).
+                if filename.starts_with("metadata.json") {
+                    continue;
+                }
+
                 let image_path = format!("images/{}", filename);
                 let thumb_path = format!("static/images/thumbs/{}.png", filename);
                 let thumb_ready = Path::new(&thumb_path).exists();
-                let filter = metadata::get_filter_for_image(&filename);
-                let saturation = metadata::get_saturation_for_image(&filename);
 
-                existing_filenames.push(filename.clone());
+                // Load all metadata for this image.
+                let meta = metadata::get_all_metadata(&filename);
 
                 images.push(GalleryImage {
                     path: image_path,
                     filename,
                     thumb_ready,
-                    filter,
-                    saturation,
+                    filter: meta.filter,
+                    saturation: meta.saturation,
+                    brightness: meta.brightness,
+                    contrast: meta.contrast,
+                    dither_algorithm: meta.dither_algorithm,
                 });
             },
             Err(e) => warn!("Error reading gallery entry: {:?}", e),
         }
     }
 
-    // Clean up metadata for images that no longer exist.
-    let metadata_filenames = metadata::get_all_filenames();
-    let orphaned: Vec<String> = metadata_filenames
-        .into_iter()
-        .filter(|f| !existing_filenames.contains(f))
-        .collect();
-
-    if !orphaned.is_empty() {
-        let removed = metadata::remove_entries(&orphaned);
-        if removed > 0 {
-            info!("Removed {} orphaned metadata entries", removed);
-        }
-    }
-
     debug!("Found {} images in gallery", images.len());
     images
+}
+
+/// API endpoint to get display configuration.
+/// Returns dimensions for the connected Inky Impression display.
+#[get("/api/display-config")]
+fn display_config() -> Json<DisplayConfig> {
+    Json(get_display_config())
 }
 
 /// API endpoint to check if a gallery thumbnail exists.
@@ -199,7 +279,11 @@ struct UploadDitheredResponse {
 #[derive(Debug, FromForm)]
 struct DitheredUpload<'v> {
     filename: String,
+    filter: String,
     saturation: f32,
+    brightness: i32,
+    contrast: i32,
+    dither_algorithm: String,
     file: TempFile<'v>,
 }
 
@@ -208,6 +292,10 @@ struct DitheredUpload<'v> {
 struct CacheUpload<'v> {
     filename: String,
     filter: Option<String>,
+    saturation: Option<f32>,
+    brightness: Option<i32>,
+    contrast: Option<i32>,
+    dither_algorithm: Option<String>,
     file: TempFile<'v>,
 }
 
@@ -280,16 +368,34 @@ async fn upload_dithered(mut form: Form<DitheredUpload<'_>>) -> Json<UploadDithe
             });
         }
     };
+    let filter = form.filter.clone();
     let saturation = form.saturation;
-    debug!("Saving dithered image: {} (saturation: {})", filename, saturation);
+    let brightness = form.brightness;
+    let contrast = form.contrast;
+    let dither_algorithm = form.dither_algorithm.clone();
+    info!(
+        "Upload dithered: {} (filter: {}, sat: {}, bright: {}, contrast: {}, dither: {})",
+        filename, filter, saturation, brightness, contrast, dither_algorithm
+    );
 
     // Save dithered image to dithered directory (always as PNG).
     let dithered_path = format!("static/images/dithered/{}.png", filename);
 
     match form.file.copy_to(&dithered_path).await {
         Ok(()) => {
-            // Store saturation metadata.
-            metadata::set_dithered_saturation(&filename, saturation);
+            // Store all settings in metadata.
+            info!(
+                "Saving metadata for {}: filter={}, sat={}, bright={}, contrast={}, dither={}",
+                filename, filter, saturation, brightness, contrast, dither_algorithm
+            );
+            metadata::save_all_settings(
+                &filename,
+                &filter,
+                saturation,
+                brightness,
+                contrast,
+                &dither_algorithm,
+            );
             debug!("Saved dithered image: {}", filename);
 
             Json(UploadDitheredResponse {
@@ -324,24 +430,56 @@ async fn upload_cache(mut form: Form<CacheUpload<'_>>) -> Json<UploadCacheRespon
             });
         }
     };
+
+    // Extract all settings.
     let filter = form.filter.clone();
-    debug!("Saving cache image: {} (filter: {:?})", filename, filter);
+    let saturation = form.saturation;
+    let brightness = form.brightness;
+    let contrast = form.contrast;
+    let dither_algorithm = form.dither_algorithm.clone();
+
+    debug!(
+        "Upload cache: {} (filter: {:?}, sat: {:?}, bright: {:?}, contrast: {:?}, dither: {:?})",
+        filename, filter, saturation, brightness, contrast, dither_algorithm
+    );
 
     // Save cache image to cache directory.
     let cache_path = format!("static/images/cache/{}.png", filename);
 
     match form.file.copy_to(&cache_path).await {
         Ok(()) => {
-            // If filter was specified, save preference and clear dithered cache.
-            if let Some(ref filter_name) = filter {
-                metadata::set_filter_for_image(&filename, filter_name);
-                metadata::clear_dithered_saturation(&filename);
+            // Save settings if any are provided.
+            if filter.is_some() || saturation.is_some() || brightness.is_some()
+                || contrast.is_some() || dither_algorithm.is_some() {
 
-                // Remove dithered file if it exists.
+                // Load current metadata to preserve any settings not provided.
+                let current = metadata::get_all_metadata(&filename);
+
+                let final_filter = filter.as_deref().unwrap_or(&current.filter);
+                let final_saturation = saturation.unwrap_or(current.saturation);
+                let final_brightness = brightness.unwrap_or(current.brightness);
+                let final_contrast = contrast.unwrap_or(current.contrast);
+                let final_dither = dither_algorithm.as_deref().unwrap_or(&current.dither_algorithm);
+
+                info!(
+                    "Saving metadata for {}: filter={}, sat={}, bright={}, contrast={}, dither={}",
+                    filename, final_filter, final_saturation, final_brightness, final_contrast, final_dither
+                );
+
+                metadata::save_all_settings(
+                    &filename,
+                    final_filter,
+                    final_saturation,
+                    final_brightness,
+                    final_contrast,
+                    final_dither,
+                );
+
+                // Remove dithered file if it exists since cache changed.
                 let dithered_path = format!("static/images/dithered/{}.png", filename);
                 if Path::new(&dithered_path).exists() {
                     let _ = fs::remove_file(&dithered_path);
-                    debug!("Removed dithered cache due to filter change: {}", filename);
+                    debug!("Removed dithered cache: {}", filename);
                 }
             }
             debug!("Saved cache image: {}", filename);
@@ -464,7 +602,7 @@ async fn submit_delete_image<'r>(mut form: Form<Contextual<'r, SubmitDeleteImage
     }
 
     // Clean up metadata.
-    metadata::remove_image_metadata(filename);
+    metadata::delete_metadata(filename);
 
     info!("Delete completed: {}", filename);
     Ok(Redirect::to(uri!(upload_form)))
@@ -656,11 +794,14 @@ impl Fairing for FlashQueueFairing {
 #[launch]
 fn rocket() -> _ {
     // Ensure image directories exist.
-    for dir in &["static/images", "static/images/cache", "static/images/dithered", "static/images/thumbs"] {
+    for dir in &["static/images", "static/images/cache", "static/images/dithered", "static/images/thumbs", "static/images/metadata"] {
         if let Err(e) = fs::create_dir_all(dir) {
             error!("Failed to create directory {}: {}", dir, e);
         }
     }
+
+    // Run migration from legacy metadata format if needed.
+    metadata::migrate_legacy_metadata();
 
     // Initialize flash queue state.
     let flash_queue_state: FlashQueueState = Arc::new(Mutex::new(FlashQueue::new()));
@@ -668,6 +809,7 @@ fn rocket() -> _ {
     rocket::build()
         .manage(flash_queue_state)
         .mount("/", routes![
+            display_config,
             flash_job_status,
             flash_status,
             submit_delete_image,

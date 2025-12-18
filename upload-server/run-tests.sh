@@ -89,7 +89,7 @@ echo
 # Clean up test artifacts.
 echo -e "${YELLOW}▶ Cleaning up test artifacts...${NC}"
 rm -f static/images/*.png static/images/*.jpg 2>/dev/null || true
-rm -f static/images/cache/* static/images/thumbs/* static/images/dithered/* 2>/dev/null || true
+rm -f static/images/cache/* static/images/thumbs/* static/images/dithered/* static/images/metadata/* 2>/dev/null || true
 rm -f static/images/metadata.json 2>/dev/null || true
 echo -e "  Cleaned up"
 echo

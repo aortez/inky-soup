@@ -68,37 +68,57 @@ test.describe('Pipeline Detail View', () => {
     await expect(page.locator(`.filter-btn[data-filter="${initialActive}"]`)).not.toHaveClass(/active/);
   });
 
-  test('saved filter should persist after navigation', async ({ page }) => {
-    const hasImages = await openDetailView(page);
-    if (!hasImages) {
-      test.skip();
-      return;
+  test('all settings should persist after Save button', async ({ page }) => {
+    await page.goto('/');
+
+    // Upload an image if there are none.
+    let thumbnails = page.locator('.thumbnail-item img');
+    let count = await thumbnails.count();
+
+    if (count === 0) {
+      const fileInput = page.locator('#fileInput');
+      await fileInput.setInputFiles(testImagePath);
+      await expect(page.locator('#uploadModalTitle')).toHaveText('✓ Upload Complete!', { timeout: 30000 });
+      await page.locator('#uploadCloseBtn').click();
+      await page.waitForLoadState('networkidle');
+      thumbnails = page.locator('.thumbnail-item img');
     }
+
+    // Open detail view.
+    await thumbnails.first().click();
+    await expect(page.locator('#detailView')).toBeVisible();
 
     // Get the current filename.
     const filename = await page.locator('#detailFilename').textContent();
 
     // Wait for initial processing to complete.
     await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
 
-    // Get initial active filter.
-    const initialActive = await page.locator('.filter-btn.active').getAttribute('data-filter');
+    // Get initial values.
+    const initialFilter = await page.locator('.filter-btn.active').getAttribute('data-filter');
+    const initialDither = await page.locator('.dither-btn.active').getAttribute('data-dither');
 
-    // Select a different filter.
-    const targetFilter = initialActive === 'lanczos' ? 'mitchell' : 'lanczos';
+    // Change all settings to known values.
+    const targetFilter = initialFilter === 'lanczos' ? 'mitchell' : 'lanczos';
+    const targetDither = initialDither === 'atkinson' ? 'ordered' : 'atkinson';
+
     await page.locator(`.filter-btn[data-filter="${targetFilter}"]`).click();
-    await expect(page.locator(`.filter-btn[data-filter="${targetFilter}"]`)).toHaveClass(/active/);
-
-    // Wait for filter processing to complete.
     await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+
+    await page.locator('#saturationSlider').fill('0.7');
+    await page.locator('#brightnessSlider').fill('15');
+    await page.locator('#contrastSlider').fill('-10');
+    await page.locator(`.dither-btn[data-dither="${targetDither}"]`).click();
+
+    // Wait for dither processing.
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
 
     // Click Save button.
     await page.locator('.apply-filter-btn').click();
-
-    // Wait for save confirmation.
     await expect(page.locator('#filterStatus')).toContainText('saved', { timeout: 10000 });
 
-    // Go back to gallery.
+    // Go back to gallery (without page reload - typical user flow).
     await page.locator('.back-button').click();
     await expect(page.locator('#galleryView')).toBeVisible();
 
@@ -107,11 +127,90 @@ test.describe('Pipeline Detail View', () => {
     await thumbnail.click();
     await expect(page.locator('#detailView')).toBeVisible();
 
-    // The saved filter should still be active.
-    await expect(page.locator(`.filter-btn[data-filter="${targetFilter}"]`)).toHaveClass(/active/);
+    // Wait for processing to complete.
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
 
-    // The old filter should not be active.
-    await expect(page.locator(`.filter-btn[data-filter="${initialActive}"]`)).not.toHaveClass(/active/);
+    // Verify all settings were restored.
+    await expect(page.locator(`.filter-btn[data-filter="${targetFilter}"]`)).toHaveClass(/active/);
+    await expect(page.locator('#saturationValue')).toHaveText('0.7');
+    await expect(page.locator('#brightnessValue')).toHaveText('15');
+    await expect(page.locator('#contrastValue')).toHaveText('-10');
+    await expect(page.locator(`.dither-btn[data-dither="${targetDither}"]`)).toHaveClass(/active/);
+  });
+
+  test('all settings should persist after Flash button', async ({ page }) => {
+    await page.goto('/');
+
+    // Upload an image if there are none.
+    let thumbnails = page.locator('.thumbnail-item img');
+    let count = await thumbnails.count();
+
+    if (count === 0) {
+      const fileInput = page.locator('#fileInput');
+      await fileInput.setInputFiles(testImagePath);
+      await expect(page.locator('#uploadModalTitle')).toHaveText('✓ Upload Complete!', { timeout: 30000 });
+      await page.locator('#uploadCloseBtn').click();
+      await page.waitForLoadState('networkidle');
+      thumbnails = page.locator('.thumbnail-item img');
+    }
+
+    // Open detail view.
+    await thumbnails.first().click();
+    await expect(page.locator('#detailView')).toBeVisible();
+
+    // Get the current filename.
+    const filename = await page.locator('#detailFilename').textContent();
+
+    // Wait for initial processing to complete.
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+
+    // Get initial values.
+    const initialFilter = await page.locator('.filter-btn.active').getAttribute('data-filter');
+    const initialDither = await page.locator('.dither-btn.active').getAttribute('data-dither');
+
+    // Change all settings to different known values.
+    const targetFilter = initialFilter === 'bilinear' ? 'nearest' : 'bilinear';
+    const targetDither = initialDither === 'floyd-steinberg' ? 'ordered' : 'floyd-steinberg';
+
+    await page.locator(`.filter-btn[data-filter="${targetFilter}"]`).click();
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+
+    await page.locator('#saturationSlider').fill('0.9');
+    await page.locator('#brightnessSlider').fill('-20');
+    await page.locator('#contrastSlider').fill('25');
+    await page.locator(`.dither-btn[data-dither="${targetDither}"]`).click();
+
+    // Wait for dither processing.
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+
+    // Click Flash button.
+    const flashBtn = page.locator('#flashBtn');
+    await flashBtn.click();
+
+    // Wait for flash to queue.
+    await expect(page.locator('#flashStatusBar')).toHaveClass(/visible/, { timeout: 10000 });
+
+    // Go back to gallery (without page reload - typical user flow).
+    await page.locator('.back-button').click();
+    await expect(page.locator('#galleryView')).toBeVisible();
+
+    // Re-open the same image.
+    const thumbnail = page.locator(`.thumbnail-item img[data-filename="${filename}"]`);
+    await thumbnail.click();
+    await expect(page.locator('#detailView')).toBeVisible();
+
+    // Wait for processing to complete.
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+
+    // Verify all settings were restored.
+    await expect(page.locator(`.filter-btn[data-filter="${targetFilter}"]`)).toHaveClass(/active/);
+    await expect(page.locator('#saturationValue')).toHaveText('0.9');
+    await expect(page.locator('#brightnessValue')).toHaveText('-20');
+    await expect(page.locator('#contrastValue')).toHaveText('25');
+    await expect(page.locator(`.dither-btn[data-dither="${targetDither}"]`)).toHaveClass(/active/);
   });
 
   test('changing saturation should update dither canvas', async ({ page }) => {
@@ -185,6 +284,15 @@ test.describe('Pipeline Detail View', () => {
       await dialog.dismiss();
     });
 
+    // Track API requests to detect duplicate submissions.
+    const apiRequests = [];
+    page.on('request', request => {
+      const url = request.url();
+      if (url.includes('/api/upload-dithered') || url.includes('/flash')) {
+        apiRequests.push({ url, timestamp: Date.now() });
+      }
+    });
+
     // Click the flash button.
     const flashBtn = page.locator('#flashBtn');
     await flashBtn.click();
@@ -197,6 +305,12 @@ test.describe('Pipeline Detail View', () => {
 
     // No alerts should have been shown.
     expect(alerts).toEqual([]);
+
+    // Should have exactly 1 upload-dithered and 1 flash request (no duplicates).
+    const uploadDitheredRequests = apiRequests.filter(r => r.url.includes('/api/upload-dithered'));
+    const flashRequests = apiRequests.filter(r => r.url.includes('/flash') && !r.url.includes('/status'));
+    expect(uploadDitheredRequests.length).toBe(1);
+    expect(flashRequests.length).toBe(1);
   });
 
   test('delete button should actually delete the image', async ({ page }) => {

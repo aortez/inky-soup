@@ -5,6 +5,7 @@
 
 // Core imports.
 import { initDOMCache } from './core/dom.js';
+import { setDisplayConfig } from './core/state.js';
 
 // UI imports.
 import { initNavigation, showDetailView, showGalleryView } from './ui/navigation.js';
@@ -26,15 +27,64 @@ import {
 // Service imports.
 import { checkGlobalFlashStatus, flashImage } from './services/flash-service.js';
 import { updateSaturation, updateBrightness, updateContrast } from './services/dither-service.js';
+import { getDisplayConfig } from './services/api-client.js';
+
+/**
+ * Load display configuration from server.
+ * Updates canvas sizes and state based on connected display.
+ */
+async function loadDisplayConfig() {
+  try {
+    const config = await getDisplayConfig();
+    console.log('Display config loaded:', config);
+
+    // Store in state (convert snake_case to camelCase).
+    setDisplayConfig({
+      width: config.width,
+      height: config.height,
+      thumbWidth: config.thumb_width,
+      thumbHeight: config.thumb_height,
+      model: config.model,
+      color: config.color,
+    });
+
+    // Update canvas sizes if they exist.
+    const filterCanvas = document.getElementById('filterCanvas');
+    const ditherCanvas = document.getElementById('ditherCanvas');
+
+    if (filterCanvas) {
+      filterCanvas.width = config.width;
+      filterCanvas.height = config.height;
+    }
+    if (ditherCanvas) {
+      ditherCanvas.width = config.width;
+      ditherCanvas.height = config.height;
+    }
+
+    // Update dimension labels.
+    document.querySelectorAll('.pipeline-stage-label').forEach((label) => {
+      if (label.textContent.includes('resized')) {
+        label.textContent = `${config.width} × ${config.height} (resized)`;
+      } else if (label.textContent.includes('colors')) {
+        label.textContent = `${config.width} × ${config.height} (7 colors)`;
+      }
+    });
+  } catch (error) {
+    console.warn('Failed to load display config, using defaults:', error);
+  }
+}
 
 /**
  * Initialize the application.
  */
-function init() {
-  // 1. Cache DOM elements.
+async function init() {
+  // 1. Load display configuration from server first.
+  await loadDisplayConfig();
+
+  // 2. Cache DOM elements.
   initDOMCache();
 
-  // 2. Initialize UI modules.
+  // 3. Initialize UI modules.
   initNavigation();
   initDetailView();
   initGalleryView();
@@ -46,7 +96,7 @@ function init() {
   initUploadUI();
   initDeleteUI();
 
-  // 3. Restore flash status if any job is active.
+  // 4. Restore flash status if any job is active.
   checkGlobalFlashStatus();
 }
 

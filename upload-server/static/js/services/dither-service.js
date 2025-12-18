@@ -3,7 +3,6 @@
  * Handles Floyd-Steinberg dithering for e-ink display.
  */
 
-import { CACHE_WIDTH, CACHE_HEIGHT } from '../core/constants.js';
 import {
   getDitherWorker,
   setDitherWorker,
@@ -15,6 +14,8 @@ import {
   setCurrentBrightness,
   getCurrentContrast,
   setCurrentContrast,
+  getDisplayWidth,
+  getDisplayHeight,
 } from '../core/state.js';
 import { elements } from '../core/dom.js';
 
@@ -123,7 +124,7 @@ export function updateSaturation(value) {
 
   // Re-dither with new saturation.
   const filterCtx = elements.filterCanvas.getContext('2d');
-  const imageData = filterCtx.getImageData(0, 0, CACHE_WIDTH, CACHE_HEIGHT);
+  const imageData = filterCtx.getImageData(0, 0, getDisplayWidth(), getDisplayHeight());
   applyDither(imageData);
 }
 
@@ -141,7 +142,7 @@ export function updateDitherAlgorithm(algorithm) {
 
   // Re-dither with new algorithm.
   const filterCtx = elements.filterCanvas.getContext('2d');
-  const imageData = filterCtx.getImageData(0, 0, CACHE_WIDTH, CACHE_HEIGHT);
+  const imageData = filterCtx.getImageData(0, 0, getDisplayWidth(), getDisplayHeight());
   applyDither(imageData);
 }
 
@@ -156,7 +157,7 @@ export function updateBrightness(value) {
 
   // Re-dither with new brightness.
   const filterCtx = elements.filterCanvas.getContext('2d');
-  const imageData = filterCtx.getImageData(0, 0, CACHE_WIDTH, CACHE_HEIGHT);
+  const imageData = filterCtx.getImageData(0, 0, getDisplayWidth(), getDisplayHeight());
   applyDither(imageData);
 }
 
@@ -171,6 +172,6 @@ export function updateContrast(value) {
 
   // Re-dither with new contrast.
   const filterCtx = elements.filterCanvas.getContext('2d');
-  const imageData = filterCtx.getImageData(0, 0, CACHE_WIDTH, CACHE_HEIGHT);
+  const imageData = filterCtx.getImageData(0, 0, getDisplayWidth(), getDisplayHeight());
   applyDither(imageData);
 }

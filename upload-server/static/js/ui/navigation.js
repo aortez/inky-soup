@@ -9,6 +9,9 @@ import {
   setCurrentPath,
   setCurrentFilter,
   setCurrentSaturation,
+  setCurrentBrightness,
+  setCurrentContrast,
+  setCurrentDitherAlgorithm,
 } from '../core/state.js';
 import { elements, query, queryAll } from '../core/dom.js';
 import { loadImageForProcessing } from '../services/image-loader.js';
@@ -31,8 +34,20 @@ export function showGalleryView() {
  * @param {string} filter - The filter name.
  * @param {boolean} thumbReady - Whether thumbnail is ready.
  * @param {number} [saturation=0.5] - The saturation value.
+ * @param {number} [brightness=0] - The brightness value.
+ * @param {number} [contrast=0] - The contrast value.
+ * @param {string} [ditherAlgorithm='floyd-steinberg'] - The dither algorithm.
  */
-export function showDetailView(filename, path, filter, thumbReady, saturation = 0.5) {
+export function showDetailView(
+  filename,
+  path,
+  filter,
+  thumbReady,
+  saturation = 0.5,
+  brightness = 0,
+  contrast = 0,
+  ditherAlgorithm = 'floyd-steinberg',
+) {
   if (!thumbReady) {
     // Can't view detail for uncached images yet.
     alert('This image is still being processed. Please wait.');
@@ -43,6 +58,9 @@ export function showDetailView(filename, path, filter, thumbReady, saturation = 
   setCurrentPath(path);
   setCurrentFilter(filter || 'bicubic');
   setCurrentSaturation(saturation);
+  setCurrentBrightness(brightness);
+  setCurrentContrast(contrast);
+  setCurrentDitherAlgorithm(ditherAlgorithm);
 
   // Update UI.
   elements.detailFilename.textContent = filename;
@@ -57,6 +75,17 @@ export function showDetailView(filename, path, filter, thumbReady, saturation = 
   const roundedSaturation = Math.round(saturation * 10) / 10;
   elements.saturationSlider.value = roundedSaturation;
   elements.saturationValue.textContent = roundedSaturation.toFixed(1);
+
+  // Restore brightness and contrast from saved values.
+  elements.brightnessSlider.value = brightness;
+  elements.brightnessValue.textContent = brightness.toString();
+  elements.contrastSlider.value = contrast;
+  elements.contrastValue.textContent = contrast.toString();
+
+  // Set active dither button.
+  queryAll('[data-dither]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.dither === ditherAlgorithm);
+  });
 
   // Reset flash twice.
   elements.flashTwiceCheckbox.checked = false;
@@ -102,12 +131,18 @@ export function initNavigation() {
       const thumb = query(`img[data-filename="${e.state.filename}"]`);
       if (thumb) {
         const saturation = parseFloat(thumb.dataset.saturation) || 0.5;
+        const brightness = parseInt(thumb.dataset.brightness, 10) || 0;
+        const contrast = parseInt(thumb.dataset.contrast, 10) || 0;
+        const ditherAlgorithm = thumb.dataset.dither || 'floyd-steinberg';
         showDetailView(
           e.state.filename,
           thumb.dataset.path,
           thumb.dataset.filter,
           true,
           saturation,
+          brightness,
+          contrast,
+          ditherAlgorithm,
         );
       } else {
         showGalleryView();

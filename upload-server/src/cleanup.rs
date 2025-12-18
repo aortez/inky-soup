@@ -6,6 +6,8 @@ use std::path::Path;
 use std::time::Duration;
 use tokio::time;
 
+use crate::metadata;
+
 const CLEANUP_INTERVAL_SECS: u64 = 300; // 5 minutes.
 
 /// Spawns the background cleanup task.
@@ -37,10 +39,14 @@ fn run_cleanup() {
     // Clean up thumbs directory.
     let thumbs_removed = cleanup_derived_directory("static/images/thumbs", &originals);
 
-    if cache_removed > 0 || dithered_removed > 0 || thumbs_removed > 0 {
+    // Clean up metadata directory.
+    let originals_vec: Vec<String> = originals.iter().cloned().collect();
+    let metadata_removed = metadata::cleanup_orphaned_metadata(&originals_vec);
+
+    if cache_removed > 0 || dithered_removed > 0 || thumbs_removed > 0 || metadata_removed > 0 {
         info!(
-            "Cleanup complete: removed {} cache, {} dithered, {} thumbs",
-            cache_removed, dithered_removed, thumbs_removed
+            "Cleanup complete: removed {} cache, {} dithered, {} thumbs, {} metadata",
+            cache_removed, dithered_removed, thumbs_removed, metadata_removed
         );
     } else {
         debug!("Cleanup complete: no orphaned files found");

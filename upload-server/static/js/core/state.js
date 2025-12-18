@@ -3,6 +3,16 @@
  * All state variables are private and accessed via exported getters/setters.
  */
 
+// Display configuration (fetched from server, defaults to 5.7" Inky Impression).
+let displayConfig = {
+  width: 600,
+  height: 448,
+  thumbWidth: 150,
+  thumbHeight: 112,
+  model: 'impression-5.7-default',
+  color: 'multi',
+};
+
 // View and navigation state.
 let currentView = 'gallery';
 let currentFilename = null;
@@ -94,3 +104,13 @@ export const getPendingThumbnails = () => pendingThumbnails;
 export const setPendingThumbnails = (thumbnails) => {
   pendingThumbnails = thumbnails;
 };
+
+// Display configuration getters/setters.
+export const getDisplayConfig = () => displayConfig;
+export const setDisplayConfig = (config) => {
+  displayConfig = { ...displayConfig, ...config };
+};
+export const getDisplayWidth = () => displayConfig.width;
+export const getDisplayHeight = () => displayConfig.height;
+export const getThumbWidth = () => displayConfig.thumbWidth;
+export const getThumbHeight = () => displayConfig.thumbHeight;

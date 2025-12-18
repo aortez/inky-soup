@@ -563,6 +563,20 @@
         max-width: 500px;
         min-width: 320px;
         color: #C9DBBD;
+        position: relative;
+      }
+      .modal-close {
+        position: absolute;
+        top: 10px;
+        right: 15px;
+        font-size: 28px;
+        color: #888;
+        cursor: pointer;
+        line-height: 1;
+        transition: color 0.2s;
+      }
+      .modal-close:hover {
+        color: #C9DBBD;
       }
       .modal-content h2 {
         margin: 0 0 20px 0;
@@ -769,8 +783,21 @@
             <div class="thumbnails">
               {% for img in images %}
               {%- set thumb_path = "images/thumbs/" ~ img.filename ~ ".png" -%}
-              {%- set sat = img.saturation | default(value=0.5) -%}
-              <div class="thumbnail-item" onclick="showDetailView('{{ img.filename }}', '{{ img.path }}', '{{ img.filter }}', {{ img.thumb_ready }}, {{ sat }})">
+              <div class="thumbnail-item" onclick="
+                const img = this.querySelector('img') || this.querySelector('[data-filename]');
+                if (img) {
+                  showDetailView(
+                    img.dataset.filename,
+                    img.dataset.path,
+                    img.dataset.filter,
+                    {{ img.thumb_ready }},
+                    parseFloat(img.dataset.saturation),
+                    parseInt(img.dataset.brightness),
+                    parseInt(img.dataset.contrast),
+                    img.dataset.dither
+                  );
+                }
+              ">
                 {% if img.thumb_ready %}
                 <img
                   src="{{ thumb_path }}"
@@ -779,7 +806,10 @@
                   data-filename="{{ img.filename }}"
                   data-path="{{ img.path }}"
                   data-filter="{{ img.filter }}"
-                  data-saturation="{{ sat }}"
+                  data-saturation="{{ img.saturation }}"
+                  data-brightness="{{ img.brightness }}"
+                  data-contrast="{{ img.contrast }}"
+                  data-dither="{{ img.dither_algorithm }}"
                 />
                 {% else %}
                 <div
@@ -788,7 +818,10 @@
                   data-filename="{{ img.filename }}"
                   data-path="{{ img.path }}"
                   data-filter="{{ img.filter }}"
-                  data-saturation="{{ sat }}"
+                  data-saturation="{{ img.saturation }}"
+                  data-brightness="{{ img.brightness }}"
+                  data-contrast="{{ img.contrast }}"
+                  data-dither="{{ img.dither_algorithm }}"
                 >
                   <div class="spinner"></div>
                   <span class="label">Caching...</span>
@@ -911,6 +944,7 @@
     <!-- Flash Progress Modal (expandable from status bar). -->
     <div id="flashModal" class="modal">
       <div class="modal-content">
+        <span class="modal-close" onclick="closeFlashModal()">&times;</span>
         <h2 id="flashModalTitle">Flashing to Display</h2>
         <img id="flashModalImage" src="" alt=""/>
         <div id="flashModalFilename" class="filename"></div>

@@ -4,17 +4,56 @@
  */
 
 /**
- * Upload a cache image (600x448 PNG) to the server.
+ * Fetch display configuration from the server.
+ * Returns dimensions for the connected Inky Impression display.
+ * @returns {Promise<Object>} Display configuration.
+ */
+export async function getDisplayConfig() {
+  const response = await fetch('/api/display-config');
+
+  if (!response.ok) {
+    console.warn('Failed to fetch display config, using defaults');
+    return {
+      width: 600,
+      height: 448,
+      thumb_width: 150,
+      thumb_height: 112,
+      model: 'impression-5.7-default',
+      color: 'multi',
+    };
+  }
+
+  return response.json();
+}
+
+/**
+ * Upload a cache image (display-sized PNG) to the server.
  * @param {string} filename - Original filename (without .png extension).
  * @param {Blob} blob - PNG blob data.
- * @param {string} [filter] - Optional filter name to save in metadata.
+ * @param {string} filter - Filter name to save in metadata.
+ * @param {number} saturation - Saturation value.
+ * @param {number} brightness - Brightness value.
+ * @param {number} contrast - Contrast value.
+ * @param {string} ditherAlgorithm - Dither algorithm name.
  * @returns {Promise<Object>} Server response.
  */
-export async function uploadCache(filename, blob, filter = null) {
+export async function uploadCache(
+  filename,
+  blob,
+  filter,
+  saturation,
+  brightness,
+  contrast,
+  ditherAlgorithm,
+) {
   const formData = new FormData();
   formData.append('filename', filename);
   if (filter) {
     formData.append('filter', filter);
+    formData.append('saturation', saturation.toString());
+    formData.append('brightness', brightness.toString());
+    formData.append('contrast', contrast.toString());
+    formData.append('dither_algorithm', ditherAlgorithm);
   }
   formData.append('file', blob, `${filename}.png`);
 
@@ -57,13 +96,29 @@ export async function uploadThumb(filename, blob) {
  * Upload a dithered image (7-color PNG) to the server.
  * @param {string} filename - Original filename (without .png extension).
  * @param {Blob} blob - PNG blob data.
+ * @param {string} filter - Filter name used for the cached image.
  * @param {number} saturation - Saturation value used for dithering.
+ * @param {number} brightness - Brightness value used for dithering.
+ * @param {number} contrast - Contrast value used for dithering.
+ * @param {string} ditherAlgorithm - Dither algorithm name.
  * @returns {Promise<Object>} Server response.
  */
-export async function uploadDithered(filename, blob, saturation) {
+export async function uploadDithered(
+  filename,
+  blob,
+  filter,
+  saturation,
+  brightness,
+  contrast,
+  ditherAlgorithm,
+) {
   const formData = new FormData();
   formData.append('filename', filename);
+  formData.append('filter', filter);
   formData.append('saturation', saturation.toString());
+  formData.append('brightness', brightness.toString());
+  formData.append('contrast', contrast.toString());
+  formData.append('dither_algorithm', ditherAlgorithm);
   formData.append('file', blob, `${filename}.png`);
 
   const response = await fetch('/api/upload-dithered', {

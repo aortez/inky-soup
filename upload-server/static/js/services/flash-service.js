@@ -7,7 +7,11 @@ import { FLASH_DURATION_MS } from '../core/constants.js';
 import {
   getCurrentFilename,
   setCurrentFilename,
+  getCurrentFilter,
   getCurrentSaturation,
+  getCurrentBrightness,
+  getCurrentContrast,
+  getCurrentDitherAlgorithm,
   setCurrentJobId,
   getPollInterval,
   setPollInterval,
@@ -26,7 +30,11 @@ export async function flashImage() {
 
   const flashTwice = elements.flashTwiceCheckbox.checked;
   const filename = getCurrentFilename();
+  const filter = getCurrentFilter();
   const saturation = getCurrentSaturation();
+  const brightness = getCurrentBrightness();
+  const contrast = getCurrentContrast();
+  const ditherAlgorithm = getCurrentDitherAlgorithm();
 
   try {
     // Convert dithered canvas to blob.
@@ -34,13 +42,31 @@ export async function flashImage() {
       elements.ditherCanvas.toBlob(resolve, 'image/png');
     });
 
-    // Upload dithered image.
-    const uploadData = await uploadDithered(filename, blob, saturation);
+    // Upload dithered image with all settings.
+    const uploadData = await uploadDithered(
+      filename,
+      blob,
+      filter,
+      saturation,
+      brightness,
+      contrast,
+      ditherAlgorithm,
+    );
 
     if (!uploadData.success) {
       alert(`Failed to upload dithered image: ${uploadData.message}`);
       flashBtn.disabled = false;
       return;
+    }
+
+    // Update gallery thumbnail data attributes (so reopening restores settings).
+    const galleryThumb = query(`img[data-filename="${filename}"]`);
+    if (galleryThumb) {
+      galleryThumb.dataset.filter = filter;
+      galleryThumb.dataset.saturation = saturation.toString();
+      galleryThumb.dataset.brightness = brightness.toString();
+      galleryThumb.dataset.contrast = contrast.toString();
+      galleryThumb.dataset.dither = ditherAlgorithm;
     }
 
     // Submit flash job.
@@ -55,7 +81,7 @@ export async function flashImage() {
     // Start tracking the job.
     setCurrentJobId(flashData.job_id);
     startFlashTracking(flashData.job_id, flashTwice);
-    flashBtn.disabled = false;
+    // Button stays disabled until flash completes.
   } catch (err) {
     alert(`Error: ${err.message}`);
     flashBtn.disabled = false;
@@ -188,6 +214,9 @@ export function updateFlashStatus(job, flashTwice) {
       elements.flashModalNote.textContent = 'Image sent to display.';
       elements.flashModalClose.style.display = 'block';
 
+      // Re-enable flash button.
+      elements.flashBtn.disabled = false;
+
       // Hide status bar after 5 seconds.
       setTimeout(() => {
         elements.flashStatusBar.classList.remove('visible');
@@ -203,6 +232,9 @@ export function updateFlashStatus(job, flashTwice) {
       elements.flashModalTitle.style.color = '#ff6b6b';
       elements.flashModalNote.textContent = job.error_message || 'Unknown error';
       elements.flashModalClose.style.display = 'block';
+
+      // Re-enable flash button.
+      elements.flashBtn.disabled = false;
       break;
 
     default:

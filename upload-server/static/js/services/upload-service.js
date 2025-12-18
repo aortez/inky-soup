@@ -3,10 +3,11 @@
  * Manages the upload modal and thumbnail processing.
  */
 
+import { DEFAULT_FILTER } from '../core/constants.js';
 import {
-  CACHE_WIDTH, CACHE_HEIGHT, THUMB_WIDTH, THUMB_HEIGHT, DEFAULT_FILTER,
-} from '../core/constants.js';
-import { getPendingThumbnails, setPendingThumbnails } from '../core/state.js';
+  getPendingThumbnails, setPendingThumbnails,
+  getDisplayWidth, getDisplayHeight, getThumbWidth, getThumbHeight,
+} from '../core/state.js';
 import { elements } from '../core/dom.js';
 import { formatSize, formatSpeed, formatTime } from '../utils/formatters.js';
 import { uploadCache, uploadThumb, uploadOriginalImage } from './api-client.js';
@@ -187,19 +188,25 @@ export function generateThumbnails(dataUrl, filename) {
     srcCtx.drawImage(img, 0, 0);
     const srcImageData = srcCtx.getImageData(0, 0, img.width, img.height);
 
-    // Generate cache (600x448) using filter worker with default filter.
+    // Get current display dimensions from state.
+    const cacheWidth = getDisplayWidth();
+    const cacheHeight = getDisplayHeight();
+    const thumbWidth = getThumbWidth();
+    const thumbHeight = getThumbHeight();
+
+    // Generate cache using filter worker with default filter.
     try {
       const filteredData = await filterImage(
         srcImageData,
-        CACHE_WIDTH,
-        CACHE_HEIGHT,
+        cacheWidth,
+        cacheHeight,
         DEFAULT_FILTER,
       );
 
       // Convert filtered ImageData to blob.
       const cacheCanvas = document.createElement('canvas');
-      cacheCanvas.width = CACHE_WIDTH;
-      cacheCanvas.height = CACHE_HEIGHT;
+      cacheCanvas.width = cacheWidth;
+      cacheCanvas.height = cacheHeight;
       const cacheCtx = cacheCanvas.getContext('2d');
       cacheCtx.putImageData(filteredData, 0, 0);
 
@@ -215,10 +222,10 @@ export function generateThumbnails(dataUrl, filename) {
       console.error('Filter worker error during upload:', err);
       // Fall back to simple resize on error.
       const cacheCanvas = document.createElement('canvas');
-      cacheCanvas.width = CACHE_WIDTH;
-      cacheCanvas.height = CACHE_HEIGHT;
+      cacheCanvas.width = cacheWidth;
+      cacheCanvas.height = cacheHeight;
       const cacheCtx = cacheCanvas.getContext('2d');
-      cacheCtx.drawImage(img, 0, 0, CACHE_WIDTH, CACHE_HEIGHT);
+      cacheCtx.drawImage(img, 0, 0, cacheWidth, cacheHeight);
 
       cacheCanvas.toBlob((cacheBlob) => {
         const pending = getPendingThumbnails();
@@ -230,12 +237,12 @@ export function generateThumbnails(dataUrl, filename) {
       }, 'image/png');
     }
 
-    // Generate thumb (150x112) using simple resize (fast, just for gallery).
+    // Generate thumbnail using simple resize (fast, just for gallery).
     const thumbCanvas = document.createElement('canvas');
-    thumbCanvas.width = THUMB_WIDTH;
-    thumbCanvas.height = THUMB_HEIGHT;
+    thumbCanvas.width = thumbWidth;
+    thumbCanvas.height = thumbHeight;
     const thumbCtx = thumbCanvas.getContext('2d');
-    thumbCtx.drawImage(img, 0, 0, THUMB_WIDTH, THUMB_HEIGHT);
+    thumbCtx.drawImage(img, 0, 0, thumbWidth, thumbHeight);
 
     thumbCanvas.toBlob((thumbBlob) => {
       const pending = getPendingThumbnails();
@@ -262,8 +269,16 @@ export async function uploadPendingThumbnails(filename) {
   if (pending.cache.filename !== filename || pending.thumb.filename !== filename) return;
 
   try {
-    // Upload cache with filter metadata.
-    const cacheData = await uploadCache(filename, pending.cache.blob, pending.cache.filter);
+    // Upload cache with filter metadata (use defaults for dither settings on upload).
+    const cacheData = await uploadCache(
+      filename,
+      pending.cache.blob,
+      pending.cache.filter,
+      0.5, // default saturation
+      0, // default brightness
+      0, // default contrast
+      'floyd-steinberg', // default dither algorithm
+    );
     if (!cacheData.success) {
       console.error('Cache upload failed:', cacheData.message);
     }

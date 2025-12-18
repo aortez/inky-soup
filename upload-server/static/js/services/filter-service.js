@@ -4,15 +4,20 @@
  */
 
 import {
-  CACHE_WIDTH, CACHE_HEIGHT, THUMB_WIDTH, THUMB_HEIGHT,
-} from '../core/constants.js';
-import {
   getFilterWorker,
   setFilterWorker,
   getCurrentFilter,
   setCurrentFilter,
   getCurrentFilename,
+  getCurrentSaturation,
+  getCurrentBrightness,
+  getCurrentContrast,
+  getCurrentDitherAlgorithm,
   getOriginalImageCache,
+  getDisplayWidth,
+  getDisplayHeight,
+  getThumbWidth,
+  getThumbHeight,
 } from '../core/state.js';
 import { elements, query } from '../core/dom.js';
 import { applyDither } from './dither-service.js';
@@ -63,7 +68,7 @@ export function initFilterWorker() {
     elements.filterProcessing.textContent = '';
 
     // Trigger dithering - get fresh ImageData from canvas (imageData is now neutered).
-    const freshImageData = filterCtx.getImageData(0, 0, CACHE_WIDTH, CACHE_HEIGHT);
+    const freshImageData = filterCtx.getImageData(0, 0, getDisplayWidth(), getDisplayHeight());
     applyDither(freshImageData);
   };
 
@@ -87,22 +92,25 @@ export function applyFilterToCanvas(imageData) {
 
   const filter = getCurrentFilter();
 
+  const targetWidth = getDisplayWidth();
+  const targetHeight = getDisplayHeight();
+
   // Capture start time and params for logging.
   filterStartTime = performance.now();
   filterParams = {
     filter,
     srcWidth: imageData.width,
     srcHeight: imageData.height,
-    targetWidth: CACHE_WIDTH,
-    targetHeight: CACHE_HEIGHT,
+    targetWidth,
+    targetHeight,
   };
 
   worker.postMessage({
     data: imageData.data.buffer,
     width: imageData.width,
     height: imageData.height,
-    targetWidth: CACHE_WIDTH,
-    targetHeight: CACHE_HEIGHT,
+    targetWidth,
+    targetHeight,
     filter,
   }, [imageData.data.buffer]);
 }
@@ -151,6 +159,10 @@ export async function applyFilter() {
   const statusEl = elements.filterStatus;
   const filename = getCurrentFilename();
   const filter = getCurrentFilter();
+  const saturation = getCurrentSaturation();
+  const brightness = getCurrentBrightness();
+  const contrast = getCurrentContrast();
+  const ditherAlgorithm = getCurrentDitherAlgorithm();
 
   statusEl.textContent = 'Saving...';
 
@@ -160,8 +172,16 @@ export async function applyFilter() {
       elements.filterCanvas.toBlob(resolve, 'image/png');
     });
 
-    // Upload cache image with filter metadata.
-    const data = await uploadCache(filename, cacheBlob, filter);
+    // Upload cache image with all current settings.
+    const data = await uploadCache(
+      filename,
+      cacheBlob,
+      filter,
+      saturation,
+      brightness,
+      contrast,
+      ditherAlgorithm,
+    );
 
     if (!data.success) {
       statusEl.textContent = `Error: ${data.message}`;
@@ -170,11 +190,13 @@ export async function applyFilter() {
     }
 
     // Also regenerate thumbnail.
+    const thumbW = getThumbWidth();
+    const thumbH = getThumbHeight();
     const thumbCanvas = document.createElement('canvas');
-    thumbCanvas.width = THUMB_WIDTH;
-    thumbCanvas.height = THUMB_HEIGHT;
+    thumbCanvas.width = thumbW;
+    thumbCanvas.height = thumbH;
     const thumbCtx = thumbCanvas.getContext('2d');
-    thumbCtx.drawImage(elements.filterCanvas, 0, 0, THUMB_WIDTH, THUMB_HEIGHT);
+    thumbCtx.drawImage(elements.filterCanvas, 0, 0, thumbW, thumbH);
 
     const thumbBlob = await new Promise((resolve) => {
       thumbCanvas.toBlob(resolve, 'image/png');
@@ -185,11 +207,15 @@ export async function applyFilter() {
     statusEl.textContent = '✓ Filter saved';
     statusEl.style.color = '#6B8E4E';
 
-    // Update gallery thumbnail if visible.
+    // Update gallery thumbnail if visible (update all data attributes so reopening restores settings).
     const galleryThumb = query(`img[data-filename="${filename}"]`);
     if (galleryThumb) {
       galleryThumb.src = `${thumbData.path}?t=${Date.now()}`;
       galleryThumb.dataset.filter = filter;
+      galleryThumb.dataset.saturation = saturation.toString();
+      galleryThumb.dataset.brightness = brightness.toString();
+      galleryThumb.dataset.contrast = contrast.toString();
+      galleryThumb.dataset.dither = ditherAlgorithm;
     }
   } catch (err) {
     statusEl.textContent = `Error: ${err.message}`;
