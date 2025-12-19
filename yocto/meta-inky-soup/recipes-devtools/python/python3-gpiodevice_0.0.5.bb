@@ -20,4 +20,11 @@ RDEPENDS:${PN} += " \
     python3-ctypes \
 "
 
+# Exclude duplicate metadata files that conflict with python3-inky.
+do_install:append() {
+    rm -f ${D}${PYTHON_SITEPACKAGES_DIR}/CHANGELOG.md
+    rm -f ${D}${PYTHON_SITEPACKAGES_DIR}/LICENSE
+    rm -f ${D}${PYTHON_SITEPACKAGES_DIR}/README.md
+}
+
 BBCLASSEXTEND = "native nativesdk"

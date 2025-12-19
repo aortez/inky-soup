@@ -36,10 +36,10 @@ repos:
       meta-oe:
       meta-python:
 
-  # Rust/Cargo support for building the server.
-  meta-rust:
-    url: "https://github.com/meta-rust/meta-rust.git"
-    branch: scarthgap
+  # Rust/Cargo support using prebuilt binaries (much faster than building from source).
+  meta-rust-bin:
+    url: "https://github.com/rust-embedded/meta-rust-bin.git"
+    branch: master
 
   # Our custom layer for Inky Soup.
   meta-inky-soup:
@@ -50,17 +50,6 @@ local_conf_header:
   base: |
     # Accept restricted licenses (Pi WiFi firmware).
     LICENSE_FLAGS_ACCEPTED = "commercial synaptics-killswitch"
-
-    # Rust version for meta-rust layer.
-    # 1.86.0 is needed for current crate ecosystem (tera, pest, time, etc.).
-    RUST_VERSION = "1.86.0"
-    PREFERRED_VERSION_rust = "${RUST_VERSION}"
-    PREFERRED_VERSION_rust-native = "${RUST_VERSION}"
-    PREFERRED_VERSION_rust-llvm = "${RUST_VERSION}"
-    PREFERRED_VERSION_rust-llvm-native = "${RUST_VERSION}"
-    PREFERRED_VERSION_cargo = "${RUST_VERSION}"
-    PREFERRED_VERSION_cargo-native = "${RUST_VERSION}"
-    PREFERRED_VERSION_libstd-rs = "${RUST_VERSION}"
 
     # Use systemd as init system.
     INIT_MANAGER = "systemd"

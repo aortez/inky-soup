@@ -9,7 +9,7 @@ HOMEPAGE = "https://github.com/user/inky-soup"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
-inherit cargo systemd externalsrc
+inherit cargo_bin systemd externalsrc
 
 # Point at the upload-server source tree.
 EXTERNALSRC = "${THISDIR}/../../../../upload-server"
@@ -17,26 +17,20 @@ EXTERNALSRC = "${THISDIR}/../../../../upload-server"
 # Set EXTERNALSRC_BUILD to enable out-of-tree builds (cargo needs Cargo.toml here).
 EXTERNALSRC_BUILD = "${EXTERNALSRC}"
 
-# Explicit dependency on cargo-native since externalsrc can interfere.
-DEPENDS += "cargo-native"
-
-# Service file from our files/ directory.
-SRC_URI = "file://inky-soup-server.service"
+# Point cargo_bin to the manifest in the external source.
+CARGO_MANIFEST_PATH = "${EXTERNALSRC}/Cargo.toml"
 
 # Allow network access during compile to fetch crates.
 # For production, you'd pin all crates in SRC_URI instead.
 do_compile[network] = "1"
 
-# Build in release mode.
-CARGO_BUILD_FLAGS = "--release"
-
-# The binary name from Cargo.toml.
-CARGO_BIN_NAME = "upload-server"
+# Build in release mode (cargo_bin default).
+CARGO_BUILD_PROFILE = "release"
 
 do_install() {
-    # Install the server binary (built by cargo class).
+    # Install the server binary (built by cargo_bin class).
     install -d ${D}${bindir}
-    install -m 0755 ${B}/target/${CARGO_TARGET_SUBDIR}/upload-server ${D}${bindir}/inky-soup-server
+    install -m 0755 ${CARGO_BINDIR}/upload-server ${D}${bindir}/inky-soup-server
 
     # Install assets to /usr/share/inky-soup/.
     install -d ${D}${datadir}/inky-soup
@@ -47,9 +41,9 @@ do_install() {
     # Create working directory for runtime data.
     install -d ${D}/home/inky/inky-soup
 
-    # Install systemd service.
+    # Install systemd service (from recipe's files/ directory).
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/inky-soup-server.service ${D}${systemd_system_unitdir}/
+    install -m 0644 ${THISDIR}/files/inky-soup-server.service ${D}${systemd_system_unitdir}/
 }
 
 # Enable the systemd service.
