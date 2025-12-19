@@ -1,0 +1,24 @@
+[Unit]
+Description=Inky Soup Web Server
+After=network-online.target avahi-daemon.service inky-soup-detect-display.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=inky
+Group=inky
+WorkingDirectory=/home/inky/inky-soup
+ExecStart=/usr/bin/inky-soup-server
+Restart=always
+RestartSec=5
+
+# Read display configuration if available.
+EnvironmentFile=-/etc/inky-soup/display.conf
+
+# Logging.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=inky-soup-server
+
+[Install]
+WantedBy=multi-user.target

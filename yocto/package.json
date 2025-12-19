@@ -1,0 +1,17 @@
+{
+  "name": "inky-soup-yocto",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Yocto build and flash tools for Inky Soup",
+  "scripts": {
+    "build": "kas build kas-inky-soup.yml",
+    "clean-all": "rm -rf build/tmp",
+    "deploy": "node scripts/deploy.mjs",
+    "flash": "node scripts/flash.mjs",
+    "yolo": "node scripts/yolo-update.mjs"
+  },
+  "dependencies": {
+    "consola": "^3.4.2"
+  }
+}

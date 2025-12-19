@@ -1,7 +1,7 @@
 [default]
 address = "::"
 keep_alive = 5
-limits = { file = "10 MiB", data-form = "11 MiB" }
+limits = { file = "20 MiB", data-form = "21 MiB" }
 template_dir = "templates"
 
 [debug]

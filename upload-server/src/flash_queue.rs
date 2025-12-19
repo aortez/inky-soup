@@ -223,8 +223,8 @@ pub fn spawn_flash_worker(queue_state: FlashQueueState) {
 async fn execute_flash(dithered_path: &str, flash_twice: bool) -> Result<(), String> {
     debug!("Executing flash script for {}", dithered_path);
 
-    let output = Command::new("python3")
-        .arg("./update-image.py")
+    // TODO: Port e2e tests to Docker environment mimicking production.
+    let output = Command::new("/usr/bin/inky-soup-update-display")
         .arg(dithered_path)
         .arg("--skip-dither")
         .output()
@@ -245,8 +245,7 @@ async fn execute_flash(dithered_path: &str, flash_twice: bool) -> Result<(), Str
     if flash_twice {
         debug!("Executing second flash for {}", dithered_path);
 
-        let output2 = Command::new("python3")
-            .arg("./update-image.py")
+        let output2 = Command::new("/usr/bin/inky-soup-update-display")
             .arg(dithered_path)
             .arg("--skip-dither")
             .output()

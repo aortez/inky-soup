@@ -1,0 +1,112 @@
+# KAS configuration for Inky Soup Yocto build.
+#
+# Build with:
+#   kas build kas-inky-soup.yml
+#
+# Or enter the shell:
+#   kas shell kas-inky-soup.yml
+
+header:
+  version: 14
+
+machine: raspberrypi-inky-soup
+
+distro: poky
+
+repos:
+  # Core Yocto layers.
+  poky:
+    url: "https://git.yoctoproject.org/poky"
+    branch: scarthgap
+    layers:
+      meta:
+      meta-poky:
+
+  # Raspberry Pi BSP.
+  meta-raspberrypi:
+    url: "https://git.yoctoproject.org/meta-raspberrypi"
+    branch: scarthgap
+
+  # OpenEmbedded layers for NetworkManager, Python extras, etc.
+  meta-openembedded:
+    url: "https://git.openembedded.org/meta-openembedded"
+    branch: scarthgap
+    layers:
+      meta-oe:
+      meta-networking:
+      meta-python:
+      meta-multimedia:
+
+  # Our custom layer.
+  meta-inky-soup:
+    path: meta-inky-soup
+
+local_conf_header:
+  # Build configuration.
+  build: |
+    # Parallel build settings.
+    BB_NUMBER_THREADS = "8"
+    PARALLEL_MAKE = "-j 8"
+
+    # Accept restricted licenses for WiFi firmware.
+    LICENSE_FLAGS_ACCEPTED = "synaptics-killswitch"
+
+    # Set hostname (shows up as inky-soup.local on the network).
+    hostname:pn-base-files = "inky-soup"
+
+    # Shared download and sstate directories (speeds up rebuilds).
+    DL_DIR = "${TOPDIR}/../downloads"
+    SSTATE_DIR = "${TOPDIR}/../sstate-cache"
+
+    # Image output formats.
+    IMAGE_FSTYPES = "wic.gz wic.bmap"
+
+    # Use A/B partition layout.
+    WKS_FILE = "sdimage-ab.wks"
+
+    # Enable systemd.
+    INIT_MANAGER = "systemd"
+    DISTRO_FEATURES:append = " systemd"
+    DISTRO_FEATURES:remove = "sysvinit"
+    VIRTUAL-RUNTIME_init_manager = "systemd"
+    VIRTUAL-RUNTIME_initscripts = "systemd-compat-units"
+
+    # Enable WiFi and Bluetooth.
+    DISTRO_FEATURES:append = " wifi bluetooth"
+
+    # Remove unnecessary features for minimal image.
+    DISTRO_FEATURES:remove = "x11 wayland vulkan opengl"
+
+  # Raspberry Pi configuration.
+  rpi: |
+    # Enable UART for debugging.
+    ENABLE_UART = "1"
+
+    # Enable SPI for Inky Impression display.
+    ENABLE_SPI_BUS = "1"
+
+    # Enable I2C for display detection.
+    ENABLE_I2C = "1"
+
+    # GPU memory (minimal - no display compositor).
+    GPU_MEM = "16"
+
+    # Add console=tty1 for boot messages on screen (append to default CMDLINE).
+    CMDLINE:append = " console=tty1"
+
+    # Extra config.txt settings.
+    RPI_EXTRA_CONFIG = " \
+        # Enable SPI for Inky Impression. \n\
+        dtparam=spi=on \n\
+        # Enable I2C for display detection. \n\
+        dtparam=i2c_arm=on \n\
+        # Disable audio (not needed). \n\
+        dtparam=audio=off \n\
+        # Disable camera (not needed). \n\
+        start_x=0 \n\
+        # Disable Bluetooth UART (frees up serial). \n\
+        dtoverlay=disable-bt \n\
+    "
+
+target:
+  - inky-soup-image

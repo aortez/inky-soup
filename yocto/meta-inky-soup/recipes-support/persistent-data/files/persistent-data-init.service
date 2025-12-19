@@ -1,0 +1,13 @@
+[Unit]
+Description=Initialize persistent data directories
+After=data.mount
+Before=persistent-data-bind.service
+Requires=data.mount
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/persistent-data-init
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

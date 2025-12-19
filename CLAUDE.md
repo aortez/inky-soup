@@ -295,8 +295,8 @@ npm run lint:fix     # Auto-fix formatting issues
 Rocket configuration in `upload-server/Rocket.toml`:
 - Listens on `::` (all interfaces, IPv4 and IPv6).
 - Port 8000 in both debug and release modes.
-- File upload limit: 10 MiB (`file` limit).
-- Form data limit: 11 MiB (`data-form` limit, must exceed file limit for multipart uploads).
+- File upload limit: 20 MiB (`file` limit).
+- Form data limit: 21 MiB (`data-form` limit, must exceed file limit for multipart uploads).
 - Template directory: `templates/`.
 
 ## Debugging
@@ -320,3 +320,54 @@ python3 update-image.py <image-path> [saturation] [--skip-dither]
 ```
 
 The `--skip-dither` flag is always used now since dithering happens client-side.
+
+## Yocto Build System
+
+Inky Soup includes a Yocto-based build system for producing Pi Zero W/Zero 2 W images with A/B partitioning.
+
+### Quick Start
+
+```bash
+cd yocto
+npm install           # First time only
+npm run build         # Build full image (takes a little while first time)
+npm run flash         # Flash to SD card with SSH key injection
+npm run deploy        # Quick app-only deploy to running Pi
+npm run yolo          # A/B partition update over network
+npm run clean-all     # Nuclear clean (removes build/tmp)
+```
+
+### Key Design Decisions
+
+**Unified ARMv6 Image for Zero W and Zero 2 W**
+- Builds with hard-float ARMv6 (arm1176jzfshf) for compatibility with both boards.
+- Zero 2 W (ARMv8) runs ARMv6 code natively with minimal performance loss.
+- Performance is great on both platforms, since all the real work is done client-side.
+- We could make two images, but then we'd have a slightly more complex update/distribution
+process, and if performance is already good - then what's the point?
+
+**Python Library Packaging**
+- Uses pre-built wheels for `inky` and `gpiodevice` libraries.
+- Avoids hatch build system complexity and slow on-device pip installs.
+- Wheels are bundled in `meta-inky-soup/recipes-devtools/python/`.
+- Is this something that we should revisit - did we take a shortcut here, or is this approach fine?
+
+**Persistent Data**
+- `/data` partition (partition 4) survives all updates.
+- Bind mounts:
+  - `/data/NetworkManager/system-connections` → WiFi credentials
+  - `/data/inky-soup/images/` → Uploaded images and cache
+- Flash script automatically backs up and restores `/data`.
+
+**Display Script Path**
+- Installed to `/usr/bin/inky-soup-update-display` (system path).
+- Server code calls this absolute path (not relative `./update-image.py`).
+- Deploy script updates both server binary and display script.
+
+## TODO
+
+### Yocto Build System
+* Port e2e tests to Docker environment mimicking production layout.
+* Test on actual Pi Zero 2 W hardware.
+* Test with 7.3" and 13.3" Inky Impression displays.
+* Remove debug-tweaks and return to SSH-key-only auth.
