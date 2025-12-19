@@ -12,7 +12,7 @@
  */
 
 import { execSync } from 'child_process';
-import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdtempSync, rmdirSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdtempSync } from 'fs';
 import { dirname, join, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { createInterface } from 'readline';
@@ -152,7 +152,7 @@ function backupDataPartition(device) {
     const files = readdirSync(backupDir).filter((f) => f !== 'lost+found');
     if (files.length === 0) {
       consola.info('Data partition is empty (nothing to backup)');
-      rmdirSync(backupDir, { recursive: true });
+      execSync(`rm -rf ${backupDir}`, { stdio: 'pipe' });
       return null;
     }
 
@@ -162,7 +162,7 @@ function backupDataPartition(device) {
   } catch (err) {
     consola.warn(`Backup failed: ${err.message}`);
     try {
-      rmdirSync(backupDir, { recursive: true });
+      execSync(`rm -rf ${backupDir}`, { stdio: 'pipe' });
     } catch {
       // Ignore cleanup errors.
     }
@@ -172,7 +172,7 @@ function backupDataPartition(device) {
     // Always unmount.
     try {
       execSync(`sudo umount ${mountPoint} 2>/dev/null || true`, { stdio: 'pipe' });
-      rmdirSync(mountPoint);
+      execSync(`rm -rf ${mountPoint}`, { stdio: 'pipe' });
     } catch {
       // Ignore cleanup errors.
     }
@@ -209,7 +209,7 @@ function restoreDataPartition(device, backupDir) {
     try {
       consola.info('Unmounting data partition...');
       execSync(`sudo umount ${mountPoint}`, { stdio: 'pipe' });
-      rmdirSync(mountPoint);
+      execSync(`rm -rf ${mountPoint}`, { stdio: 'pipe' });
     } catch (err) {
       consola.warn(`Cleanup warning: ${err.message}`);
     }
@@ -222,7 +222,7 @@ function restoreDataPartition(device, backupDir) {
 function cleanupBackup(backupDir) {
   if (backupDir) {
     try {
-      execSync(`sudo rm -rf ${backupDir}`, { stdio: 'pipe' });
+      execSync(`rm -rf ${backupDir}`, { stdio: 'pipe' });
     } catch {
       // Ignore cleanup errors.
     }
@@ -270,7 +270,7 @@ function injectSSHKey(device, sshKeyPath) {
     try {
       consola.info('Unmounting...');
       execSync(`sudo umount ${mountPoint}`, { stdio: 'pipe' });
-      rmdirSync(mountPoint);
+      execSync(`rm -rf ${mountPoint}`, { stdio: 'pipe' });
     } catch (err) {
       consola.warn(`Cleanup warning: ${err.message}`);
     }
@@ -404,19 +404,24 @@ async function main() {
     process.exit(0);
   }
 
-  // Flash.
-  consola.start('Flashing image...');
+  // Unmount any partitions on the device.
   try {
-    execSync(`sudo bmaptool copy ${image.path} ${device}`, { stdio: 'inherit' });
-    consola.success('Flash complete!');
+    consola.info('Unmounting any mounted partitions...');
+    execSync(`sudo umount ${device}* 2>/dev/null || true`, { stdio: 'inherit' });
   } catch {
-    consola.warn('bmaptool failed, falling back to dd...');
-    execSync(`gunzip -c ${image.path} | sudo dd of=${device} bs=4M status=progress`, {
-      stdio: 'inherit',
-    });
-    execSync('sync');
-    consola.success('Flash complete!');
+    // Ignore unmount errors.
   }
+
+  // Flash with bmaptool.
+  consola.start('Flashing image...');
+  execSync(`sudo bmaptool copy ${image.path} ${device}`, { stdio: 'inherit' });
+  consola.success('Flash complete!');
+
+  // Wait for kernel to settle after flash.
+  consola.info('Waiting for kernel to recognize partitions...');
+  execSync('sleep 2');
+  execSync(`sudo partprobe ${device} 2>/dev/null || true`);
+  execSync('sleep 1');
 
   // Inject SSH key after flashing.
   try {

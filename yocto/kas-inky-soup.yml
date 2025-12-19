@@ -102,8 +102,6 @@ local_conf_header:
         dtparam=i2c_arm=on \n\
         # Disable audio (not needed). \n\
         dtparam=audio=off \n\
-        # Disable camera (not needed). \n\
-        start_x=0 \n\
         # Disable Bluetooth UART (frees up serial). \n\
         dtoverlay=disable-bt \n\
     "

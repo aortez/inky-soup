@@ -54,10 +54,14 @@ ROOTFS_POSTPROCESS_COMMAND:append = " setup_inky_home;"
 # A/B Boot Initialization
 # ============================================================================
 # On first boot, mark that we're running from slot A.
+# Also create /rescue mount point for the inactive rootfs.
 setup_ab_boot() {
     # Create initial boot_slot marker.
     install -d ${IMAGE_ROOTFS}/boot
     echo "a" > ${IMAGE_ROOTFS}/boot/boot_slot
+
+    # Create /rescue mount point for inactive partition.
+    install -d ${IMAGE_ROOTFS}/rescue
 }
 ROOTFS_POSTPROCESS_COMMAND:append = " setup_ab_boot;"
 
