@@ -1,36 +1,30 @@
+# Python library for Pimoroni Inky e-ink displays.
+# Provides drivers for Inky Impression and other Inky displays.
+
 SUMMARY = "Python library for Pimoroni Inky e-ink displays"
 HOMEPAGE = "https://github.com/pimoroni/inky"
 LICENSE = "MIT"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
+LIC_FILES_CHKSUM = "file://PKG-INFO;beginline=9;endline=9;md5=a53cbc7cb75660694e138ba973c148df"
 
-# Use pre-built wheel bundled with the layer.
-SRC_URI = "file://inky-${PV}-py3-none-any.whl"
+inherit pypi python_hatchling
 
-inherit python3-dir
+PYPI_PACKAGE = "inky"
 
-DEPENDS = "unzip-native"
-RDEPENDS:${PN} = " \
+SRC_URI[sha256sum] = "4333f1e9bacf0f5d087cbfd21d74b082dd9434b7c8540d625076c8f6750599dc"
+
+# Build dependencies for hatchling.
+DEPENDS += " \
+    python3-hatch-fancy-pypi-readme-native \
+    python3-hatch-requirements-txt-native \
+"
+
+# Runtime dependencies.
+RDEPENDS:${PN} += " \
     python3-gpiodevice \
     python3-numpy \
     python3-pillow \
-    python3-smbus2 \
+    python3-smbus \
     python3-spidev \
-    python3-core \
 "
 
-# No compilation needed - just install the wheel.
-do_configure[noexec] = "1"
-do_compile[noexec] = "1"
-
-do_install() {
-    install -d ${D}${PYTHON_SITEPACKAGES_DIR}
-
-    # Unzip the wheel and install only the Python package (not metadata files).
-    unzip -q ${WORKDIR}/inky-${PV}-py3-none-any.whl -d ${WORKDIR}/wheel-contents
-    cp -r ${WORKDIR}/wheel-contents/inky ${D}${PYTHON_SITEPACKAGES_DIR}/
-
-    # Install dist-info for package metadata.
-    cp -r ${WORKDIR}/wheel-contents/inky-${PV}.dist-info ${D}${PYTHON_SITEPACKAGES_DIR}/
-}
-
-FILES:${PN} += "${PYTHON_SITEPACKAGES_DIR}/*"
+BBCLASSEXTEND = "native nativesdk"

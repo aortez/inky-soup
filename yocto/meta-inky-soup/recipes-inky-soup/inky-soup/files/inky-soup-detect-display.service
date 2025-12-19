@@ -1,15 +1,13 @@
 [Unit]
-Description=Detect Inky Impression display
+Description=Detect Inky Impression display type
 DefaultDependencies=no
-After=local-fs.target
 Before=inky-soup-server.service
+After=local-fs.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/inky-soup-detect-display
+ExecStart=/usr/bin/inky-soup-detect-display.sh
 RemainAfterExit=yes
-StandardOutput=journal
-StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

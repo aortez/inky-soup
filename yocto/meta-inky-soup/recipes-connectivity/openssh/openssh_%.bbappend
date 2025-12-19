@@ -1,4 +1,4 @@
-# Harden SSH configuration for inky-soup.
+# Harden SSH configuration for Inky Soup.
 # Disables password auth, requires SSH keys, no root login.
 
 FILESEXTRAPATHS:prepend := "${THISDIR}/openssh:"

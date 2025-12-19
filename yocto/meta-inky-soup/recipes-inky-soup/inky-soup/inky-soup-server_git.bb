@@ -1,89 +1,70 @@
-SUMMARY = "Inky Soup Web Server"
-DESCRIPTION = "Rocket-based web server for uploading and managing images on Inky Impression e-ink displays."
+# Inky Soup Server - Rocket-based web server for image upload and display control.
+#
+# Built from local source using Cargo/Rust.
+# Uses externalsrc to reference the upload-server directory.
+
+SUMMARY = "Inky Soup web server"
+DESCRIPTION = "Rocket-based web server for the Inky Soup e-ink display project."
+HOMEPAGE = "https://github.com/user/inky-soup"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
-# Use externalsrc to build from the local source tree.
-inherit externalsrc systemd
+inherit cargo systemd externalsrc
 
-# Point to the upload-server directory relative to this layer.
-# Assumes the yocto directory is at inky-soup/yocto/.
+# Point at the upload-server source tree.
 EXTERNALSRC = "${THISDIR}/../../../../upload-server"
 
-# Build directory (out-of-tree builds).
-EXTERNALSRC_BUILD = "${WORKDIR}/build"
+# Set EXTERNALSRC_BUILD to enable out-of-tree builds (cargo needs Cargo.toml here).
+EXTERNALSRC_BUILD = "${EXTERNALSRC}"
 
-SRC_URI = " \
-    file://inky-soup-server.service \
-"
+# Explicit dependency on cargo-native since externalsrc can interfere.
+DEPENDS += "cargo-native"
 
-# Runtime dependencies.
-RDEPENDS:${PN} = " \
-    inky-soup-display \
-"
+# Service file from our files/ directory.
+SRC_URI = "file://inky-soup-server.service"
 
-# Systemd service.
-SYSTEMD_SERVICE:${PN} = "inky-soup-server.service"
-SYSTEMD_AUTO_ENABLE = "enable"
+# Allow network access during compile to fetch crates.
+# For production, you'd pin all crates in SRC_URI instead.
+do_compile[network] = "1"
 
-# For now, we use a pre-built binary approach.
-# TODO: Integrate with meta-rust for native Yocto cargo builds.
-# The deploy.sh script builds using 'cross' which provides proper ARMv6 support.
+# Build in release mode.
+CARGO_BUILD_FLAGS = "--release"
 
-do_compile() {
-    # Build using cargo with cross-compilation.
-    # This requires the Rust toolchain to be set up in the Yocto build.
-    # For initial setup, we use the existing cross-compiled binary.
-    bbnote "Building Rust server with cargo..."
-
-    cd ${EXTERNALSRC}
-
-    # If cargo is available, build. Otherwise, expect pre-built binary.
-    if command -v cargo > /dev/null 2>&1; then
-        cargo build --release --target arm-unknown-linux-gnueabihf
-    else
-        bbwarn "Cargo not available - expecting pre-built binary"
-    fi
-}
+# The binary name from Cargo.toml.
+CARGO_BIN_NAME = "upload-server"
 
 do_install() {
-    # Install the binary.
+    # Install the server binary (built by cargo class).
     install -d ${D}${bindir}
+    install -m 0755 ${B}/target/${CARGO_TARGET_SUBDIR}/upload-server ${D}${bindir}/inky-soup-server
 
-    # Try to find the binary in expected locations.
-    if [ -f "${EXTERNALSRC}/target/arm-unknown-linux-gnueabihf/release/upload-server" ]; then
-        install -m 0755 ${EXTERNALSRC}/target/arm-unknown-linux-gnueabihf/release/upload-server \
-            ${D}${bindir}/inky-soup-server
-    else
-        bbfatal "upload-server binary not found. Run './deploy.sh' first to build it."
-    fi
+    # Install assets to /usr/share/inky-soup/.
+    install -d ${D}${datadir}/inky-soup
+    cp -r ${EXTERNALSRC}/static ${D}${datadir}/inky-soup/
+    cp -r ${EXTERNALSRC}/templates ${D}${datadir}/inky-soup/
+    install -m 0644 ${EXTERNALSRC}/Rocket.toml ${D}${datadir}/inky-soup/
 
-    # Install static files.
-    install -d ${D}/home/inky/inky-soup/static
-    cp -r ${EXTERNALSRC}/static/* ${D}/home/inky/inky-soup/static/
-
-    # Install templates.
-    install -d ${D}/home/inky/inky-soup/templates
-    cp -r ${EXTERNALSRC}/templates/* ${D}/home/inky/inky-soup/templates/
-
-    # Install Rocket configuration.
-    install -m 0644 ${EXTERNALSRC}/Rocket.toml ${D}/home/inky/inky-soup/
+    # Create working directory for runtime data.
+    install -d ${D}/home/inky/inky-soup
 
     # Install systemd service.
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/inky-soup-server.service ${D}${systemd_system_unitdir}/
 }
 
+# Enable the systemd service.
+SYSTEMD_SERVICE:${PN} = "inky-soup-server.service"
+SYSTEMD_AUTO_ENABLE = "enable"
+
+# Package contents.
 FILES:${PN} = " \
     ${bindir}/inky-soup-server \
+    ${datadir}/inky-soup \
     /home/inky/inky-soup \
     ${systemd_system_unitdir}/inky-soup-server.service \
 "
 
-# The home directory should be owned by the inky user.
-pkg_postinst:${PN}() {
-    chown -R 1000:1000 $D/home/inky/inky-soup
-}
-
-# Suppress 32-bit time API warnings - acceptable for this embedded application.
-INSANE_SKIP:${PN} = "32bit-time"
+# Runtime dependencies.
+RDEPENDS:${PN} = " \
+    avahi-daemon \
+"

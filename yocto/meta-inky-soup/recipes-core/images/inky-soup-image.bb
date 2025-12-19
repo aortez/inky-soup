@@ -1,6 +1,6 @@
-SUMMARY = "Inky Soup image for Raspberry Pi Zero"
-DESCRIPTION = "A minimal console image with NetworkManager, SSH, web server, \
-and e-ink display support for the Inky Soup image display project."
+SUMMARY = "Inky Soup base image for Raspberry Pi"
+DESCRIPTION = "A minimal console image with NetworkManager, SSH, and \
+development tools for the Inky Soup e-ink display project."
 LICENSE = "MIT"
 
 inherit core-image
@@ -9,20 +9,17 @@ inherit core-image
 # Image Features
 # ============================================================================
 # ssh-server-openssh: OpenSSH server for remote access.
-# debug-tweaks: Enables passwordless root login for debugging.
-# TODO: Remove debug-tweaks for production images.
+# NOTE: debug-tweaks removed for security - we use SSH keys instead.
 IMAGE_FEATURES += " \
     ssh-server-openssh \
-    debug-tweaks \
 "
 
 # ============================================================================
 # User Configuration
 # ============================================================================
-# Create 'inky' user with sudo access. SSH key is injected at flash time.
+# Create 'inky' user with sudo access.  SSH key is injected at flash time.
 inherit extrausers
 
-# Note: spi/gpio/video groups don't exist by default. User has sudo anyway.
 EXTRA_USERS_PARAMS = " \
     useradd -m -s /bin/bash -G sudo inky; \
     usermod -p '*' inky; \
@@ -38,14 +35,12 @@ setup_inky_home() {
     touch ${IMAGE_ROOTFS}/home/inky/.ssh/authorized_keys
     chmod 600 ${IMAGE_ROOTFS}/home/inky/.ssh/authorized_keys
 
-    # Inky Soup application directory.
-    # Note: static/images/ is bind-mounted from /data/inky-soup/images by persistent-data.
+    # Inky Soup application directory (logs, config, etc.).
     install -d -m 755 ${IMAGE_ROOTFS}/home/inky/inky-soup
-    install -d -m 755 ${IMAGE_ROOTFS}/home/inky/inky-soup/static
-    install -d -m 755 ${IMAGE_ROOTFS}/home/inky/inky-soup/static/images
-    install -d -m 755 ${IMAGE_ROOTFS}/home/inky/inky-soup/templates
+    install -d -m 755 ${IMAGE_ROOTFS}/home/inky/inky-soup/logs
+    install -d -m 755 ${IMAGE_ROOTFS}/home/inky/inky-soup/config
 
-    # Fix ownership of entire home directory.
+    # Fix ownership of entire home directory (including .profile from base-files).
     chown -R 1000:1000 ${IMAGE_ROOTFS}/home/inky
 }
 ROOTFS_POSTPROCESS_COMMAND:append = " setup_inky_home;"
@@ -54,25 +49,13 @@ ROOTFS_POSTPROCESS_COMMAND:append = " setup_inky_home;"
 # A/B Boot Initialization
 # ============================================================================
 # On first boot, mark that we're running from slot A.
-# Also create /rescue mount point for the inactive rootfs.
 setup_ab_boot() {
-    # Create initial boot_slot marker.
+    # Create initial boot_slot marker (will be on boot partition after flash).
+    # This gets copied to /boot when the boot partition is mounted.
     install -d ${IMAGE_ROOTFS}/boot
     echo "a" > ${IMAGE_ROOTFS}/boot/boot_slot
-
-    # Create /rescue mount point for inactive partition.
-    install -d ${IMAGE_ROOTFS}/rescue
 }
 ROOTFS_POSTPROCESS_COMMAND:append = " setup_ab_boot;"
-
-# ============================================================================
-# Display Configuration Directory
-# ============================================================================
-# Create directory for display configuration (populated at runtime).
-setup_display_config() {
-    install -d ${IMAGE_ROOTFS}/etc/inky-soup
-}
-ROOTFS_POSTPROCESS_COMMAND:append = " setup_display_config;"
 
 # ============================================================================
 # Network Management
@@ -114,43 +97,38 @@ IMAGE_INSTALL:append = " \
     jq \
     less \
     nano \
+    nmon \
     rsync \
     screen \
     strace \
     tree \
     util-linux-agetty \
-    vim \
-"
-
-# ============================================================================
-# Python Support
-# ============================================================================
-# Python packages are now pulled in as dependencies of inky-soup-display.
-# No need to list them here explicitly.
-
-# ============================================================================
-# SPI and GPIO Access
-# ============================================================================
-# Tools for hardware access (Inky Impression uses SPI).
-IMAGE_INSTALL:append = " \
-    rpi-gpio \
-    spidev-test \
+    vim-tiny \
 "
 
 # ============================================================================
 # WiFi Support
 # ============================================================================
-# Firmware for the Pi Zero's onboard WiFi.
+# Firmware for Pi Zero W and Zero 2 W onboard WiFi.
+# Zero W uses BCM43430, Zero 2 W uses BCM43436.
 IMAGE_INSTALL:append = " \
     linux-firmware-rpidistro-bcm43430 \
     linux-firmware-rpidistro-bcm43436 \
+    linux-firmware-rpidistro-bcm43436s \
 "
 
 # ============================================================================
-# Inky Soup Application
+# Inky Soup Server
 # ============================================================================
-# Web server and display driver for e-ink display.
+# Rocket-based web server for image upload and display control.
 IMAGE_INSTALL:append = " \
     inky-soup-server \
+"
+
+# ============================================================================
+# Inky Soup Display
+# ============================================================================
+# Python script for controlling the Inky Impression e-ink display.
+IMAGE_INSTALL:append = " \
     inky-soup-display \
 "

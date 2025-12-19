@@ -1,29 +1,23 @@
-SUMMARY = "Python library for GPIO device abstraction"
-HOMEPAGE = "https://github.com/pimoroni/gpiodevice-python"
+# Python library for GPIO device access on Raspberry Pi.
+# Used by the inky library for display communication.
+
+SUMMARY = "Python library for GPIO device access"
+HOMEPAGE = "https://github.com/pimoroni/gpiodevice"
 LICENSE = "MIT"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
+LIC_FILES_CHKSUM = "file://PKG-INFO;beginline=9;endline=9;md5=a53cbc7cb75660694e138ba973c148df"
 
-# Use pre-built wheel bundled with the layer.
-SRC_URI = "file://gpiodevice-${PV}-py3-none-any.whl"
+inherit pypi python_hatchling
 
-inherit python3-dir
+PYPI_PACKAGE = "gpiodevice"
 
-DEPENDS = "unzip-native"
-RDEPENDS:${PN} = "python3-gpiod python3-core"
+SRC_URI[sha256sum] = "cca01ff4319e0ba906ff46dcb8113d8d532b3f5ee03d683d8a11037c8e89140c"
 
-# No compilation needed - just install the wheel.
-do_configure[noexec] = "1"
-do_compile[noexec] = "1"
+# Build dependencies for hatchling.
+DEPENDS += "python3-hatch-fancy-pypi-readme-native"
 
-do_install() {
-    install -d ${D}${PYTHON_SITEPACKAGES_DIR}
+# Runtime dependencies.
+RDEPENDS:${PN} += " \
+    python3-ctypes \
+"
 
-    # Unzip the wheel and install only the Python package (not metadata files).
-    unzip -q ${WORKDIR}/gpiodevice-${PV}-py3-none-any.whl -d ${WORKDIR}/wheel-contents
-    cp -r ${WORKDIR}/wheel-contents/gpiodevice ${D}${PYTHON_SITEPACKAGES_DIR}/
-
-    # Install dist-info for package metadata.
-    cp -r ${WORKDIR}/wheel-contents/gpiodevice-${PV}.dist-info ${D}${PYTHON_SITEPACKAGES_DIR}/
-}
-
-FILES:${PN} += "${PYTHON_SITEPACKAGES_DIR}/*"
+BBCLASSEXTEND = "native nativesdk"

@@ -1,24 +1,18 @@
 [Unit]
 Description=Inky Soup Web Server
-After=network-online.target avahi-daemon.service inky-soup-detect-display.service
+After=network-online.target avahi-daemon.service
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=inky
-Group=inky
-WorkingDirectory=/home/inky/inky-soup
+# Server runs from /usr/share/inky-soup where templates/static are installed.
+WorkingDirectory=/usr/share/inky-soup
+# Images are stored in /home/inky/inky-soup (bind-mounted from /data).
+Environment=ROCKET_CLI_COLORS=off
 ExecStart=/usr/bin/inky-soup-server
 Restart=always
 RestartSec=5
-
-# Read display configuration if available.
-EnvironmentFile=-/etc/inky-soup/display.conf
-
-# Logging.
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=inky-soup-server
 
 [Install]
 WantedBy=multi-user.target

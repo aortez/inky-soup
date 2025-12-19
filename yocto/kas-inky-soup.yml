@@ -1,20 +1,20 @@
-# KAS configuration for Inky Soup Yocto build.
+# KAS configuration for Inky Soup Yocto build
+# E-ink display system for Raspberry Pi Zero W / Zero 2 W
 #
-# Build with:
+# Usage:
 #   kas build kas-inky-soup.yml
-#
-# Or enter the shell:
-#   kas shell kas-inky-soup.yml
 
 header:
   version: 14
 
-machine: raspberrypi-inky-soup
-
 distro: poky
 
+# Unified machine supporting both Pi Zero W and Pi Zero 2 W.
+# Uses ARMv6 for compatibility with both boards.
+machine: raspberrypi-inky-soup
+
 repos:
-  # Core Yocto layers.
+  # Core Yocto - the foundation.
   poky:
     url: "https://git.yoctoproject.org/poky"
     branch: scarthgap
@@ -27,84 +27,84 @@ repos:
     url: "https://git.yoctoproject.org/meta-raspberrypi"
     branch: scarthgap
 
-  # OpenEmbedded layers for NetworkManager, Python extras, etc.
+  # OpenEmbedded layers for NetworkManager and other goodies.
   meta-openembedded:
     url: "https://git.openembedded.org/meta-openembedded"
     branch: scarthgap
     layers:
-      meta-oe:
       meta-networking:
+      meta-oe:
       meta-python:
-      meta-multimedia:
 
-  # Our custom layer.
+  # Rust/Cargo support for building the server.
+  meta-rust:
+    url: "https://github.com/meta-rust/meta-rust.git"
+    branch: scarthgap
+
+  # Our custom layer for Inky Soup.
   meta-inky-soup:
     path: meta-inky-soup
 
 local_conf_header:
-  # Build configuration.
-  build: |
-    # Parallel build settings.
+  # Machine and build configuration.
+  base: |
+    # Accept restricted licenses (Pi WiFi firmware).
+    LICENSE_FLAGS_ACCEPTED = "commercial synaptics-killswitch"
+
+    # Rust version for meta-rust layer.
+    # 1.86.0 is needed for current crate ecosystem (tera, pest, time, etc.).
+    RUST_VERSION = "1.86.0"
+    PREFERRED_VERSION_rust = "${RUST_VERSION}"
+    PREFERRED_VERSION_rust-native = "${RUST_VERSION}"
+    PREFERRED_VERSION_rust-llvm = "${RUST_VERSION}"
+    PREFERRED_VERSION_rust-llvm-native = "${RUST_VERSION}"
+    PREFERRED_VERSION_cargo = "${RUST_VERSION}"
+    PREFERRED_VERSION_cargo-native = "${RUST_VERSION}"
+    PREFERRED_VERSION_libstd-rs = "${RUST_VERSION}"
+
+    # Use systemd as init system.
+    INIT_MANAGER = "systemd"
+
+    # Set hostname (can be overridden by /boot/hostname.txt at boot).
+    hostname:pn-base-files = "inky-soup"
+
+    # Use wic for SD card image with A/B partitions.
+    IMAGE_FSTYPES = "wic.gz wic.bmap"
+    WKS_FILE = "sdimage-ab.wks"
+
+    # Faster builds - adjust to your CPU cores.
     BB_NUMBER_THREADS = "8"
     PARALLEL_MAKE = "-j 8"
 
-    # Accept restricted licenses for WiFi firmware.
-    LICENSE_FLAGS_ACCEPTED = "synaptics-killswitch"
-
-    # Set hostname (shows up as inky-soup.local on the network).
-    hostname:pn-base-files = "inky-soup"
-
-    # Shared download and sstate directories (speeds up rebuilds).
+    # Download directory (shared across builds).
     DL_DIR = "${TOPDIR}/../downloads"
+
+    # Shared state cache (speeds up rebuilds).
     SSTATE_DIR = "${TOPDIR}/../sstate-cache"
 
-    # Image output formats.
-    IMAGE_FSTYPES = "wic.gz wic.bmap"
+    # Disable SPDX generation (requires user namespaces which may not be available).
+    INHERIT:remove = "create-spdx"
 
-    # Use A/B partition layout.
-    WKS_FILE = "sdimage-ab.wks"
-
-    # Enable systemd.
-    INIT_MANAGER = "systemd"
-    DISTRO_FEATURES:append = " systemd"
-    DISTRO_FEATURES:remove = "sysvinit"
-    VIRTUAL-RUNTIME_init_manager = "systemd"
-    VIRTUAL-RUNTIME_initscripts = "systemd-compat-units"
-
-    # Enable WiFi and Bluetooth.
-    DISTRO_FEATURES:append = " wifi bluetooth"
-
-    # Remove unnecessary features for minimal image.
-    DISTRO_FEATURES:remove = "x11 wayland vulkan opengl"
-
-  # Raspberry Pi configuration.
+  # Raspberry Pi specific configuration.
   rpi: |
-    # Enable UART for debugging.
-    ENABLE_UART = "1"
+    # Disable rainbow splash for cleaner boot.
+    DISABLE_SPLASH = "1"
 
-    # Enable SPI for Inky Impression display.
+    # Boot from SD card (A/B partitions on mmcblk0).
+    # Partition 2 = rootfs_a, Partition 3 = rootfs_b.
+    CMDLINE_ROOT_PARTITION = "/dev/mmcblk0p2"
+
+  # Hardware configuration for Inky Impression e-ink display.
+  display: |
+    # Enable SPI bus for e-ink display communication.
+    # The Inky Impression uses SPI0 with manual chip select via GPIO.
     ENABLE_SPI_BUS = "1"
 
-    # Enable I2C for display detection.
+    # Enable I2C for display EEPROM (used to detect display model).
     ENABLE_I2C = "1"
 
-    # GPU memory (minimal - no display compositor).
-    GPU_MEM = "16"
+    # Extra config.txt settings (SPI, I2C, HDMI debug, minimal GPU).
+    RPI_EXTRA_CONFIG = "\ndtparam=spi=on\ndtparam=i2c_arm=on\nhdmi_force_hotplug=1\nhdmi_group=2\nhdmi_mode=87\nhdmi_cvt=640 480 60 1 0 0 0\ngpu_mem=16\n"
 
-    # Add console=tty1 for boot messages on screen (append to default CMDLINE).
-    CMDLINE:append = " console=tty1"
-
-    # Extra config.txt settings.
-    RPI_EXTRA_CONFIG = " \
-        # Enable SPI for Inky Impression. \n\
-        dtparam=spi=on \n\
-        # Enable I2C for display detection. \n\
-        dtparam=i2c_arm=on \n\
-        # Disable audio (not needed). \n\
-        dtparam=audio=off \n\
-        # Disable Bluetooth UART (frees up serial). \n\
-        dtoverlay=disable-bt \n\
-    "
-
-target:
-  - inky-soup-image
+# Target image to build - our custom image recipe.
+target: inky-soup-image

@@ -1,125 +1,256 @@
 #!/usr/bin/env node
 /**
- * Flash script for writing Inky Soup image to SD card.
+ * Flash script for Inky Soup Yocto images.
  *
- * This script helps flash a Yocto-built image to an SD card,
- * with SSH key injection for secure access.
+ * Features:
+ * - Flashes Yocto image to USB/SD card.
+ * - Injects your SSH public key for passwordless login.
+ * - Backs up and restores /data partition from the disk (WiFi credentials, logs, config).
+ * - Remembers your key preference in .flash-config.json.
  *
  * Usage:
- *   npm run flash                    # Interactive mode
- *   npm run flash -- --device /dev/sdb  # Specify device
- *   npm run flash -- --list          # List available devices
+ *   npm run flash                       # Interactive device selection
+ *   npm run flash -- --device /dev/sdb  # Direct flash (still confirms)
+ *   npm run flash -- --list             # Just list devices
+ *   npm run flash -- --dry-run          # Show what would happen without flashing
+ *   npm run flash -- --reconfigure      # Re-select SSH key
  */
 
-import { execSync } from 'child_process';
-import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdtempSync } from 'fs';
-import { dirname, join, basename } from 'path';
+import { execSync, spawn } from 'child_process';
+import { existsSync, readdirSync, statSync, readFileSync, writeFileSync, mkdtempSync, rmdirSync } from 'fs';
+import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { createInterface } from 'readline';
-import { createRequire } from 'module';
-import { tmpdir } from 'os';
+import { homedir, tmpdir } from 'os';
 
-const require = createRequire(import.meta.url);
-const consola = require('consola');
+// Colors for terminal output.
+const colors = {
+  reset: '\x1b[0m',
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  cyan: '\x1b[36m',
+  bold: '\x1b[1m',
+};
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+function log(msg) { console.log(msg); }
+function info(msg) { console.log(`${colors.blue}ℹ${colors.reset} ${msg}`); }
+function success(msg) { console.log(`${colors.green}✓${colors.reset} ${msg}`); }
+function warn(msg) { console.log(`${colors.yellow}⚠${colors.reset} ${msg}`); }
+function error(msg) { console.log(`${colors.red}✗${colors.reset} ${msg}`); }
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 const YOCTO_DIR = dirname(__dirname);
 const IMAGE_DIR = join(YOCTO_DIR, 'build/tmp/deploy/images/raspberrypi-inky-soup');
 const CONFIG_FILE = join(YOCTO_DIR, '.flash-config.json');
 
-async function prompt(question) {
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
+// ============================================================================
+// Configuration Management
+// ============================================================================
 
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
+/**
+ * Load flash configuration from .flash-config.json.
+ * Returns null if file doesn't exist or is invalid.
+ */
+function loadConfig() {
+  try {
+    if (!existsSync(CONFIG_FILE)) {
+      return null;
+    }
+    const content = readFileSync(CONFIG_FILE, 'utf-8');
+    const config = JSON.parse(content);
+    // Validate required fields.
+    if (!config.ssh_key_path || typeof config.ssh_key_path !== 'string') {
+      return null;
+    }
+    // Check that the key file still exists.
+    if (!existsSync(config.ssh_key_path)) {
+      warn(`Configured SSH key no longer exists: ${config.ssh_key_path}`);
+      return null;
+    }
+    return config;
+  } catch {
+    return null;
+  }
 }
 
+/**
+ * Save flash configuration to .flash-config.json.
+ */
+function saveConfig(config) {
+  try {
+    writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2) + '\n');
+    return true;
+  } catch (err) {
+    warn(`Failed to save config: ${err.message}`);
+    return false;
+  }
+}
+
+/**
+ * Find available SSH public keys in ~/.ssh/.
+ */
+function findSshKeys() {
+  const sshDir = join(homedir(), '.ssh');
+  if (!existsSync(sshDir)) {
+    return [];
+  }
+
+  try {
+    return readdirSync(sshDir)
+      .filter(f => f.endsWith('.pub'))
+      .map(f => ({
+        name: f,
+        path: join(sshDir, f),
+      }))
+      .filter(k => existsSync(k.path));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Read the contents of an SSH public key file.
+ */
+function readSshKey(keyPath) {
+  try {
+    return readFileSync(keyPath, 'utf-8').trim();
+  } catch (err) {
+    error(`Failed to read SSH key: ${err.message}`);
+    return null;
+  }
+}
+
+// ============================================================================
+// Image and Device Discovery
+// ============================================================================
+
+/**
+ * Find the latest .wic.gz image file.
+ */
 function findLatestImage() {
   if (!existsSync(IMAGE_DIR)) {
     return null;
   }
 
   const files = readdirSync(IMAGE_DIR)
-    .filter((f) => f.endsWith('.wic.gz') && !f.includes('->'))
-    .map((f) => ({
+    .filter(f => f.endsWith('.wic.gz') && !f.includes('->'))
+    .map(f => ({
       name: f,
       path: join(IMAGE_DIR, f),
+      // Follow symlinks to get real file for mtime.
       stat: statSync(join(IMAGE_DIR, f)),
     }))
     .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
 
-  // Prefer our custom image.
-  const inkySoupImage = files.find((f) => f.name.includes('inky-soup-image'));
+  // Prefer our custom image, fall back to core-image-base.
+  const inkySoupImage = files.find(f => f.name === 'inky-soup-image-raspberrypi-inky-soup.rootfs.wic.gz');
   if (inkySoupImage) {
     return inkySoupImage;
+  }
+  const coreImage = files.find(f => f.name === 'core-image-base-raspberrypi-inky-soup.rootfs.wic.gz');
+  if (coreImage) {
+    return coreImage;
   }
 
   return files[0] || null;
 }
 
-function listBlockDevices() {
+/**
+ * Get list of block devices suitable for flashing.
+ * Returns removable devices and excludes the system disk.
+ */
+function getBlockDevices() {
   try {
-    const output = execSync('lsblk -d -o NAME,SIZE,MODEL -n', { encoding: 'utf-8' });
-    return output
-      .trim()
-      .split('\n')
-      .map((line) => {
-        const parts = line.trim().split(/\s+/);
-        return {
-          name: parts[0],
-          size: parts[1],
-          model: parts.slice(2).join(' ') || 'Unknown',
-        };
+    const output = execSync('lsblk -d -o NAME,SIZE,TYPE,RM,TRAN,MODEL -J', {
+      encoding: 'utf-8',
+    });
+    const data = JSON.parse(output);
+
+    return data.blockdevices
+      .filter(dev => {
+        // Only disk types.
+        if (dev.type !== 'disk') return false;
+        // Skip loop devices.
+        if (dev.name.startsWith('loop')) return false;
+        // Skip nvme (usually system disk).
+        if (dev.name.startsWith('nvme')) return false;
+        // Prefer removable (RM=1) or USB transport.
+        return dev.rm === true || dev.rm === '1' || dev.tran === 'usb';
       })
-      .filter((d) => d.name.startsWith('sd') || d.name.startsWith('mmcblk'));
-  } catch {
+      .map(dev => ({
+        device: `/dev/${dev.name}`,
+        size: dev.size,
+        model: dev.model || 'Unknown',
+        transport: dev.tran || 'unknown',
+        removable: dev.rm === true || dev.rm === '1',
+      }));
+  } catch (err) {
+    error(`Failed to list block devices: ${err.message}`);
     return [];
   }
-}
-
-function findSSHKeys() {
-  const sshDir = join(process.env.HOME, '.ssh');
-  if (!existsSync(sshDir)) {
-    return [];
-  }
-
-  return readdirSync(sshDir)
-    .filter((f) => f.endsWith('.pub'))
-    .map((f) => join(sshDir, f));
-}
-
-function loadConfig() {
-  try {
-    if (!existsSync(CONFIG_FILE)) {
-      return null;
-    }
-    return JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'));
-  } catch {
-    return null;
-  }
-}
-
-function saveConfig(config) {
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
 }
 
 // ============================================================================
-// Data Partition Backup/Restore
+// Utilities
+// ============================================================================
+
+/**
+ * Format bytes to human readable string.
+ */
+function formatBytes(bytes) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  while (bytes >= 1024 && i < units.length - 1) {
+    bytes /= 1024;
+    i++;
+  }
+  return `${bytes.toFixed(1)} ${units[i]}`;
+}
+
+/**
+ * Prompt user for input.
+ */
+async function prompt(question) {
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise(resolve => {
+    rl.question(question, answer => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+/**
+ * Check if bmaptool is available.
+ */
+function hasBmaptool() {
+  try {
+    execSync('which bmaptool', { encoding: 'utf-8', stdio: 'pipe' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ============================================================================
+// Local Data Partition Backup/Restore
 // ============================================================================
 
 /**
  * Check if the device has a data partition (partition 4) with content.
+ * Returns true if data partition exists and has files.
  */
 function hasDataPartition(device) {
   const dataPartition = `${device}4`;
   try {
+    // Check if partition exists.
     execSync(`test -b ${dataPartition}`, { stdio: 'pipe' });
     return true;
   } catch {
@@ -137,32 +268,33 @@ function backupDataPartition(device) {
   const mountPoint = mkdtempSync(join(tmpdir(), 'inky-soup-data-mount-'));
 
   try {
-    consola.info(`Backing up data partition from ${dataPartition}...`);
+    info(`Backing up data partition from ${dataPartition}...`);
 
     // Mount the data partition.
     execSync(`sudo mount ${dataPartition} ${mountPoint}`, { stdio: 'pipe' });
 
     // Copy contents to backup dir, preserving ownership info in extended attributes.
+    // We use --fake-super to store ownership as xattrs since we're not root.
     execSync(`sudo rsync -a --fake-super ${mountPoint}/ ${backupDir}/`, { stdio: 'pipe' });
 
     // Fix ownership of backup dir itself so we can list it.
     execSync(`sudo chown $(id -u):$(id -g) ${backupDir}`, { stdio: 'pipe' });
 
     // Verify we got something useful (more than just lost+found).
-    const files = readdirSync(backupDir).filter((f) => f !== 'lost+found');
+    const files = readdirSync(backupDir).filter(f => f !== 'lost+found');
     if (files.length === 0) {
-      consola.info('Data partition is empty (nothing to backup)');
-      execSync(`rm -rf ${backupDir}`, { stdio: 'pipe' });
+      info('Data partition is empty (nothing to backup)');
+      rmdirSync(backupDir, { recursive: true });
       return null;
     }
 
-    consola.success(`Backed up ${files.length} items from data partition`);
+    success(`Backed up ${files.length} items from data partition`);
     return backupDir;
 
   } catch (err) {
-    consola.warn(`Backup failed: ${err.message}`);
+    warn(`Backup failed: ${err.message}`);
     try {
-      execSync(`rm -rf ${backupDir}`, { stdio: 'pipe' });
+      rmdirSync(backupDir, { recursive: true });
     } catch {
       // Ignore cleanup errors.
     }
@@ -172,7 +304,7 @@ function backupDataPartition(device) {
     // Always unmount.
     try {
       execSync(`sudo umount ${mountPoint} 2>/dev/null || true`, { stdio: 'pipe' });
-      execSync(`rm -rf ${mountPoint}`, { stdio: 'pipe' });
+      rmdirSync(mountPoint);
     } catch {
       // Ignore cleanup errors.
     }
@@ -182,36 +314,45 @@ function backupDataPartition(device) {
 /**
  * Restore backed up data to the data partition on the flashed device.
  */
-function restoreDataPartition(device, backupDir) {
+function restoreDataPartition(device, backupDir, dryRun = false) {
   const dataPartition = `${device}4`;
+
+  log('');
+  info('Restoring data to new image...');
+
+  if (dryRun) {
+    log(`  Would mount ${dataPartition}`);
+    log(`  Would restore data from ${backupDir}`);
+    log(`  Would unmount`);
+    return true;
+  }
+
   const mountPoint = mkdtempSync(join(tmpdir(), 'inky-soup-data-restore-'));
 
   try {
-    consola.info('Restoring data to new image...');
-
     // Mount the data partition.
-    consola.info(`Mounting ${dataPartition}...`);
+    info(`Mounting ${dataPartition}...`);
     execSync(`sudo mount ${dataPartition} ${mountPoint}`, { stdio: 'pipe' });
 
     // Restore the backup, using --fake-super to restore ownership from xattrs.
-    consola.info('Copying backed up data...');
+    info('Copying backed up data...');
     execSync(`sudo rsync -a --fake-super ${backupDir}/ ${mountPoint}/`, { stdio: 'pipe' });
 
-    consola.success('Data restored!');
+    success('Data restored!');
     return true;
 
   } catch (err) {
-    consola.error(`Restore failed: ${err.message}`);
+    error(`Restore failed: ${err.message}`);
     return false;
 
   } finally {
     // Always try to unmount and clean up.
     try {
-      consola.info('Unmounting data partition...');
+      info('Unmounting data partition...');
       execSync(`sudo umount ${mountPoint}`, { stdio: 'pipe' });
-      execSync(`rm -rf ${mountPoint}`, { stdio: 'pipe' });
+      rmdirSync(mountPoint);
     } catch (err) {
-      consola.warn(`Cleanup warning: ${err.message}`);
+      warn(`Cleanup warning: ${err.message}`);
     }
   }
 }
@@ -230,6 +371,73 @@ function cleanupBackup(backupDir) {
 }
 
 // ============================================================================
+// SSH Key Configuration
+// ============================================================================
+
+/**
+ * Interactively select an SSH key and save to config.
+ */
+async function configureSSHKey() {
+  log('');
+  log(`${colors.bold}${colors.cyan}SSH Key Configuration${colors.reset}`);
+  log('');
+  info('The image uses SSH key authentication (no passwords).');
+  info('Select which public key to install on the device.');
+  log('');
+
+  const keys = findSshKeys();
+
+  if (keys.length === 0) {
+    error('No SSH public keys found in ~/.ssh/');
+    error('Generate one with: ssh-keygen -t ed25519');
+    process.exit(1);
+  }
+
+  log(`${colors.bold}Available SSH keys:${colors.reset}`);
+  log('');
+  keys.forEach((key, i) => {
+    log(`  ${colors.cyan}${i + 1})${colors.reset} ${key.name}`);
+  });
+  log('');
+
+  const choice = await prompt(`Select key (1-${keys.length}): `);
+  const index = parseInt(choice, 10) - 1;
+
+  if (isNaN(index) || index < 0 || index >= keys.length) {
+    error('Invalid selection.');
+    process.exit(1);
+  }
+
+  const selectedKey = keys[index];
+  const config = { ssh_key_path: selectedKey.path };
+
+  if (saveConfig(config)) {
+    success(`SSH key configured: ${selectedKey.name}`);
+    info(`Config saved to: ${basename(CONFIG_FILE)}`);
+  }
+
+  return config;
+}
+
+/**
+ * Get or create SSH key configuration.
+ */
+async function ensureSSHKeyConfig(forceReconfigure = false) {
+  if (forceReconfigure) {
+    return await configureSSHKey();
+  }
+
+  const config = loadConfig();
+  if (config) {
+    info(`Using SSH key: ${basename(config.ssh_key_path)}`);
+    return config;
+  }
+
+  info('No SSH key configured yet.');
+  return await configureSSHKey();
+}
+
+// ============================================================================
 // SSH Key Injection
 // ============================================================================
 
@@ -237,211 +445,411 @@ function cleanupBackup(backupDir) {
  * Inject SSH key into the flashed device's rootfs.
  * Mounts partition 2 (rootfs), writes authorized_keys, unmounts.
  */
-function injectSSHKey(device, sshKeyPath) {
+async function injectSSHKey(device, sshKeyPath, dryRun = false) {
   const rootfsPartition = `${device}2`;
+  const sshKey = readSshKey(sshKeyPath);
 
-  // Read the SSH public key.
-  const sshKey = readFileSync(sshKeyPath, 'utf-8').trim();
   if (!sshKey) {
     throw new Error('Failed to read SSH key');
   }
 
-  consola.start('Injecting SSH key into image...');
+  log('');
+  info('Injecting SSH key into image...');
+
+  if (dryRun) {
+    log(`  Would mount ${rootfsPartition}`);
+    log(`  Would write key to /home/inky/.ssh/authorized_keys`);
+    log(`  Would unmount`);
+    return;
+  }
 
   // Create temporary mount point.
   const mountPoint = mkdtempSync(join(tmpdir(), 'inky-soup-rootfs-'));
 
   try {
     // Mount the rootfs partition.
-    consola.info(`Mounting ${rootfsPartition}...`);
+    info(`Mounting ${rootfsPartition}...`);
     execSync(`sudo mount ${rootfsPartition} ${mountPoint}`, { stdio: 'pipe' });
 
     // Write the SSH key.
     const authorizedKeysPath = join(mountPoint, 'home/inky/.ssh/authorized_keys');
-    consola.info('Writing SSH key to authorized_keys...');
+    info(`Writing SSH key to authorized_keys...`);
     execSync(`echo '${sshKey}' | sudo tee ${authorizedKeysPath} > /dev/null`, { stdio: 'pipe' });
     execSync(`sudo chmod 600 ${authorizedKeysPath}`, { stdio: 'pipe' });
     execSync(`sudo chown 1000:1000 ${authorizedKeysPath}`, { stdio: 'pipe' });
 
-    consola.success('SSH key injected!');
+    success('SSH key injected!');
 
   } finally {
     // Always try to unmount and clean up.
     try {
-      consola.info('Unmounting...');
+      info('Unmounting...');
       execSync(`sudo umount ${mountPoint}`, { stdio: 'pipe' });
-      execSync(`rm -rf ${mountPoint}`, { stdio: 'pipe' });
+      rmdirSync(mountPoint);
     } catch (err) {
-      consola.warn(`Cleanup warning: ${err.message}`);
+      warn(`Cleanup warning: ${err.message}`);
     }
   }
 }
 
+/**
+ * Set hostname for the device by writing to boot partition.
+ * Mounts partition 1 (boot), writes hostname.txt, unmounts.
+ */
+async function setHostname(device, hostname, dryRun = false) {
+  const bootPartition = `${device}1`;
+
+  log('');
+  info('Setting device hostname...');
+
+  if (dryRun) {
+    log(`  Would mount ${bootPartition}`);
+    log(`  Would write hostname "${hostname}" to /boot/hostname.txt`);
+    log(`  Would unmount`);
+    return;
+  }
+
+  // Create temporary mount point.
+  const mountPoint = mkdtempSync(join(tmpdir(), 'inky-soup-boot-'));
+
+  try {
+    // Mount the boot partition.
+    info(`Mounting ${bootPartition}...`);
+    execSync(`sudo mount ${bootPartition} ${mountPoint}`, { stdio: 'pipe' });
+
+    // Write the hostname.
+    const hostnameFilePath = join(mountPoint, 'hostname.txt');
+    info(`Writing hostname "${hostname}" to hostname.txt...`);
+    execSync(`echo '${hostname}' | sudo tee ${hostnameFilePath} > /dev/null`, { stdio: 'pipe' });
+    execSync(`sudo chmod 644 ${hostnameFilePath}`, { stdio: 'pipe' });
+
+    success(`Hostname set to: ${hostname}`);
+
+  } finally {
+    // Always try to unmount and clean up.
+    try {
+      info('Unmounting...');
+      execSync(`sudo umount ${mountPoint}`, { stdio: 'pipe' });
+      rmdirSync(mountPoint);
+    } catch (err) {
+      warn(`Cleanup warning: ${err.message}`);
+    }
+  }
+}
+
+// ============================================================================
+// Flash Operation
+// ============================================================================
+
+/**
+ * Flash the image to the device.
+ */
+async function flashImage(imagePath, bmapPath, device, dryRun = false) {
+  const useBmap = hasBmaptool() && existsSync(bmapPath);
+
+  log('');
+  if (dryRun) {
+    log(`${colors.bold}${colors.yellow}═══════════════════════════════════════════════════${colors.reset}`);
+    log(`${colors.bold}${colors.yellow}  DRY RUN - No changes will be made${colors.reset}`);
+    log(`${colors.bold}${colors.yellow}═══════════════════════════════════════════════════${colors.reset}`);
+  } else {
+    log(`${colors.bold}${colors.red}═══════════════════════════════════════════════════${colors.reset}`);
+    log(`${colors.bold}${colors.red}  WARNING: This will ERASE ALL DATA on ${device}${colors.reset}`);
+    log(`${colors.bold}${colors.red}═══════════════════════════════════════════════════${colors.reset}`);
+  }
+  log('');
+
+  info(`Image: ${imagePath}`);
+  info(`Target: ${device}`);
+  info(`Method: ${useBmap ? 'bmaptool (fast)' : 'dd (slower)'}`);
+  log('');
+
+  if (dryRun) {
+    info('Dry run complete. Would execute:');
+    log('');
+    if (useBmap) {
+      log(`  sudo umount ${device}* 2>/dev/null || true`);
+      log(`  sudo bmaptool copy --bmap "${bmapPath}" "${imagePath}" "${device}"`);
+    } else {
+      log(`  sudo umount ${device}* 2>/dev/null || true`);
+      log(`  gunzip -c "${imagePath}" | sudo dd of="${device}" bs=4M status=progress conv=fsync`);
+    }
+    log(`  sync`);
+    log('');
+    return;
+  }
+
+  const confirm = await prompt(`Type "${device}" to confirm: `);
+  if (confirm !== device) {
+    error('Confirmation failed. Aborting.');
+    process.exit(1);
+  }
+
+  log('');
+
+  // Unmount any partitions on the device.
+  try {
+    info('Unmounting any mounted partitions...');
+    execSync(`sudo umount ${device}* 2>/dev/null || true`, { stdio: 'inherit' });
+  } catch {
+    // Ignore unmount errors.
+  }
+
+  if (useBmap) {
+    // Use bmaptool for faster flashing.
+    const cmd = `sudo bmaptool copy --bmap "${bmapPath}" "${imagePath}" "${device}"`;
+    info(`Running: ${cmd}`);
+    log('');
+
+    const proc = spawn('sudo', [
+      'bmaptool', 'copy',
+      '--bmap', bmapPath,
+      imagePath,
+      device,
+    ], { stdio: 'inherit' });
+
+    await new Promise((resolve, reject) => {
+      proc.on('close', code => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`bmaptool exited with code ${code}`));
+        }
+      });
+    });
+  } else {
+    // Fall back to dd.
+    const cmd = `gunzip -c "${imagePath}" | sudo dd of="${device}" bs=4M status=progress conv=fsync`;
+    info(`Running: ${cmd}`);
+    log('');
+
+    const proc = spawn('sh', ['-c', cmd], { stdio: 'inherit' });
+
+    await new Promise((resolve, reject) => {
+      proc.on('close', code => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`dd exited with code ${code}`));
+        }
+      });
+    });
+  }
+
+  // Final sync to ensure all writes are flushed.
+  info('Syncing...');
+  execSync('sync', { stdio: 'inherit' });
+}
+
+// ============================================================================
+// Main Entry Point
+// ============================================================================
+
 function showHelp() {
   console.log(`
-Inky Soup Flash Tool
+Inky Soup Yocto Flash Tool
+
+Flash Yocto images to USB/SD cards with SSH key injection.
 
 Usage:
   npm run flash [options]
 
 Options:
-  --device <dev>    Target device (e.g., /dev/sdb)
-  --list            List available block devices
-  --reconfigure     Re-select SSH key
-  -h, --help        Show this help
+  --device <dev>   Flash directly to device (still confirms)
+  --list           List available devices and exit
+  --dry-run        Show what would happen without flashing
+  --reconfigure    Re-select SSH key
+  -h, --help       Show this help
 
 Examples:
-  npm run flash                       # Interactive mode
-  npm run flash -- --list             # List devices
-  npm run flash -- --device /dev/sdb  # Flash to specific device
+  npm run flash                       # Interactive device selection
+  npm run flash -- --device /dev/sdb  # Direct flash (still confirms)
+  npm run flash -- --list             # Just list devices
+  npm run flash -- --dry-run          # Preview without flashing
+
+Features:
+  - Injects your SSH public key for passwordless login
+  - Backs up and restores /data partition (WiFi credentials, logs)
+  - Remembers your key preference in .flash-config.json
 `);
 }
 
 async function main() {
   const args = process.argv.slice(2);
 
+  // Handle help.
   if (args.includes('-h') || args.includes('--help')) {
     showHelp();
     process.exit(0);
   }
 
-  if (args.includes('--list')) {
-    const devices = listBlockDevices();
-    console.log('Available block devices:');
-    devices.forEach((d) => {
-      console.log(`  /dev/${d.name}  ${d.size}  ${d.model}`);
-    });
-    process.exit(0);
-  }
+  // Parse simple args.
+  const listOnly = args.includes('--list');
+  const dryRun = args.includes('--dry-run');
+  const reconfigure = args.includes('--reconfigure');
+  const deviceIndex = args.indexOf('--device');
+  const specifiedDevice = deviceIndex !== -1 ? args[deviceIndex + 1] : null;
 
-  consola.box('Inky Soup Flash Tool');
+  log('');
+  log(`${colors.bold}${colors.cyan}Inky Soup Yocto Flash Tool${colors.reset}`);
+  if (dryRun) {
+    log(`${colors.yellow}(dry-run mode - no changes will be made)${colors.reset}`);
+  }
+  log('');
+
+  // Ensure we have an SSH key configured.
+  const config = await ensureSSHKeyConfig(reconfigure);
 
   // Find image.
   const image = findLatestImage();
   if (!image) {
-    consola.error('No image found. Run "kas build kas-inky-soup.yml" first.');
+    error('No image found. Run "kas build kas-inky-soup.yml" first.');
     process.exit(1);
   }
 
-  consola.info(`Image: ${image.name}`);
-  consola.info(`Size: ${(image.stat.size / 1024 / 1024).toFixed(1)} MB`);
-  consola.info(`Built: ${image.stat.mtime.toLocaleString()}`);
+  log('');
+  info(`Image: ${image.name}`);
+  info(`Size: ${formatBytes(image.stat.size)}`);
+  info(`Built: ${image.stat.mtime.toLocaleString()}`);
 
-  // Load or select SSH key.
-  let config = loadConfig();
-  if (!config || args.includes('--reconfigure')) {
-    const sshKeys = findSSHKeys();
-    if (sshKeys.length === 0) {
-      consola.error('No SSH public keys found in ~/.ssh/');
-      process.exit(1);
-    }
-
-    console.log('\nAvailable SSH keys:');
-    sshKeys.forEach((k, i) => {
-      console.log(`  ${i + 1}. ${basename(k)}`);
-    });
-
-    const choice = await prompt('Select key (1): ');
-    const keyIndex = parseInt(choice || '1', 10) - 1;
-    if (keyIndex < 0 || keyIndex >= sshKeys.length) {
-      consola.error('Invalid selection');
-      process.exit(1);
-    }
-
-    config = { ssh_key_path: sshKeys[keyIndex] };
-    saveConfig(config);
-    consola.success(`SSH key saved: ${basename(config.ssh_key_path)}`);
-  } else {
-    consola.info(`Using SSH key: ${basename(config.ssh_key_path)}`);
+  // Check for bmap file.
+  const bmapPath = image.path.replace('.wic.gz', '.wic.bmap');
+  if (existsSync(bmapPath)) {
+    info(`Bmap: available (faster flashing)`);
   }
 
-  // Get target device.
-  let device = null;
-  const deviceIndex = args.indexOf('--device');
-  if (deviceIndex !== -1 && deviceIndex + 1 < args.length) {
-    device = args[deviceIndex + 1];
-  } else {
-    const devices = listBlockDevices();
-    console.log('\nAvailable devices:');
-    devices.forEach((d, i) => {
-      console.log(`  ${i + 1}. /dev/${d.name}  ${d.size}  ${d.model}`);
-    });
+  log('');
 
-    const choice = await prompt('Select device number: ');
-    const devIndex = parseInt(choice, 10) - 1;
-    if (devIndex < 0 || devIndex >= devices.length) {
-      consola.error('Invalid selection');
+  // List devices.
+  const devices = getBlockDevices();
+
+  if (devices.length === 0) {
+    warn('No suitable devices found.');
+    warn('Insert an SD card or USB drive and try again.');
+    process.exit(1);
+  }
+
+  log(`${colors.bold}Available devices:${colors.reset}`);
+  log('');
+  devices.forEach((dev, i) => {
+    const rmBadge = dev.removable ? `${colors.green}[removable]${colors.reset}` : '';
+    log(`  ${colors.cyan}${i + 1})${colors.reset} ${dev.device}  ${dev.size}  ${dev.model}  ${rmBadge}`);
+  });
+  log('');
+
+  if (listOnly) {
+    process.exit(0);
+  }
+
+  // Select device.
+  let targetDevice;
+
+  if (specifiedDevice) {
+    // Verify specified device is in our list.
+    const found = devices.find(d => d.device === specifiedDevice);
+    if (!found) {
+      error(`Device ${specifiedDevice} not found or not suitable for flashing.`);
       process.exit(1);
     }
-    device = `/dev/${devices[devIndex].name}`;
+    targetDevice = specifiedDevice;
+  } else {
+    // Interactive selection.
+    const choice = await prompt(`Select device (1-${devices.length}) or 'q' to quit: `);
+
+    if (choice.toLowerCase() === 'q') {
+      info('Aborted.');
+      process.exit(0);
+    }
+
+    const index = parseInt(choice, 10) - 1;
+    if (isNaN(index) || index < 0 || index >= devices.length) {
+      error('Invalid selection.');
+      process.exit(1);
+    }
+
+    targetDevice = devices[index].device;
+  }
+
+  // Prompt for hostname (interactive mode only).
+  let hostname = 'inky-soup';
+  if (!specifiedDevice && !dryRun) {
+    log('');
+    const hostnameInput = await prompt(`Device hostname (default: ${hostname}): `);
+    if (hostnameInput && hostnameInput.trim()) {
+      // Validate hostname.
+      const cleaned = hostnameInput.trim();
+      if (/^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(cleaned)) {
+        hostname = cleaned;
+      } else {
+        warn(`Invalid hostname "${cleaned}", using default: ${hostname}`);
+      }
+    }
+
+    // Save hostname to config for use by update.mjs verification.
+    config.hostname = hostname;
+    saveConfig(config);
   }
 
   // Check if we can backup /data from the disk before flashing.
   let backupDir = null;
-  if (hasDataPartition(device)) {
-    console.log('');
-    consola.info(`Found existing data partition on ${device}4`);
+  if (!dryRun && hasDataPartition(targetDevice)) {
+    log('');
+    info(`Found existing data partition on ${targetDevice}4`);
     const doBackup = await prompt('Backup /data before flashing? (Y/n): ');
     if (doBackup.toLowerCase() !== 'n') {
-      backupDir = backupDataPartition(device);
+      backupDir = backupDataPartition(targetDevice);
       if (!backupDir) {
         const continueAnyway = await prompt('Continue without backup? (y/N): ');
         if (continueAnyway.toLowerCase() !== 'y') {
-          consola.info('Aborted.');
+          info('Aborted.');
           process.exit(0);
         }
       }
     }
   }
 
-  // Confirm.
-  console.log('');
-  consola.warn(`THIS WILL ERASE ALL DATA ON ${device}`);
-  const confirm = await prompt('Type "yes" to continue: ');
-  if (confirm.toLowerCase() !== 'yes') {
-    cleanupBackup(backupDir);
-    consola.info('Aborted.');
-    process.exit(0);
-  }
-
-  // Unmount any partitions on the device.
+  // Flash!
   try {
-    consola.info('Unmounting any mounted partitions...');
-    execSync(`sudo umount ${device}* 2>/dev/null || true`, { stdio: 'inherit' });
-  } catch {
-    // Ignore unmount errors.
-  }
+    await flashImage(image.path, bmapPath, targetDevice, dryRun);
 
-  // Flash with bmaptool.
-  consola.start('Flashing image...');
-  execSync(`sudo bmaptool copy ${image.path} ${device}`, { stdio: 'inherit' });
-  consola.success('Flash complete!');
+    // Inject SSH key after flashing.
+    await injectSSHKey(targetDevice, config.ssh_key_path, dryRun);
 
-  // Wait for kernel to settle after flash.
-  consola.info('Waiting for kernel to recognize partitions...');
-  execSync('sleep 2');
-  execSync(`sudo partprobe ${device} 2>/dev/null || true`);
-  execSync('sleep 1');
+    // Set hostname.
+    await setHostname(targetDevice, hostname, dryRun);
 
-  // Inject SSH key after flashing.
-  try {
-    injectSSHKey(device, config.ssh_key_path);
+    // Restore /data if we have a backup.
+    if (backupDir) {
+      restoreDataPartition(targetDevice, backupDir, dryRun);
+      cleanupBackup(backupDir);
+    }
+
+    log('');
+    if (dryRun) {
+      success('Dry run complete!');
+      info('Run without --dry-run to actually flash.');
+    } else {
+      log(`${colors.bold}${colors.green}═══════════════════════════════════════════════════${colors.reset}`);
+      success('Flash complete!');
+      if (backupDir) {
+        success('/data restored - WiFi credentials preserved!');
+      }
+      log(`${colors.bold}${colors.green}═══════════════════════════════════════════════════${colors.reset}`);
+      log('');
+      info('You can now eject the drive and boot your Raspberry Pi.');
+      info(`Login: ssh inky@${hostname}.local`);
+      info(`SSH key: ${basename(config.ssh_key_path)}`);
+    }
   } catch (err) {
-    consola.error(`SSH key injection failed: ${err.message}`);
-    consola.info('You may need to manually add your SSH key after first boot.');
-  }
-
-  // Restore /data if we have a backup.
-  if (backupDir) {
-    restoreDataPartition(device, backupDir);
+    // Clean up backup on failure.
     cleanupBackup(backupDir);
-    consola.success('/data restored - WiFi credentials preserved!');
+    log('');
+    error(`Flash failed: ${err.message}`);
+    process.exit(1);
   }
-
-  consola.box('Done! Insert the SD card and boot your Pi.\nSSH: ssh inky@inky-soup.local');
 }
 
-main().catch((err) => {
-  consola.error(err);
+main().catch(err => {
+  error(err.message);
   process.exit(1);
 });

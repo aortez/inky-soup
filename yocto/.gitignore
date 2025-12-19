@@ -1,0 +1,31 @@
+# Yocto build artifacts and large directories.
+# These are generated or downloaded - not source controlled.
+
+# Build output (huge).
+build/
+rpi-build/
+
+# Downloaded sources (can be 10s of GB).
+downloads/
+
+# Shared state cache (speeds rebuilds, also huge).
+sstate-cache/
+
+# Yocto layers cloned by kas (fetched from upstream).
+poky/
+meta-raspberrypi/
+meta-openembedded/
+meta-mender-community/
+
+# Old/unused directories.
+sources/
+
+# Temporary mount points for SD card inspection.
+sda/
+sda1/
+
+# Node.js dependencies.
+node_modules/
+
+# User-specific flash configuration (SSH key path).
+.flash-config.json

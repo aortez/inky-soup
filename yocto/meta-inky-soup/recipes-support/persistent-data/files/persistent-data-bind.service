@@ -1,17 +1,12 @@
 [Unit]
-Description=Bind mount persistent data (NetworkManager and Inky Soup images)
+Description=Bind mount persistent NetworkManager connections
 After=persistent-data-init.service data.mount
-Before=NetworkManager.service inky-soup-server.service
+Before=NetworkManager.service
 Requires=persistent-data-init.service data.mount
 
 [Service]
 Type=oneshot
-# Bind mount NetworkManager connections.
 ExecStart=/bin/mount --bind /data/NetworkManager/system-connections /etc/NetworkManager/system-connections
-# Bind mount Inky Soup image storage.
-ExecStart=/bin/mount --bind /data/inky-soup/images /home/inky/inky-soup/static/images
-# Unmount in reverse order.
-ExecStop=/bin/umount /home/inky/inky-soup/static/images
 ExecStop=/bin/umount /etc/NetworkManager/system-connections
 RemainAfterExit=yes
 

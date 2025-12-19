@@ -13,15 +13,6 @@ mkdir -p "$DATA_DIR/NetworkManager/system-connections"
 mkdir -p "$DATA_DIR/logs"
 mkdir -p "$DATA_DIR/config"
 
-# Create inky-soup image storage structure.
-mkdir -p "$DATA_DIR/inky-soup/images"
-mkdir -p "$DATA_DIR/inky-soup/images/cache"
-mkdir -p "$DATA_DIR/inky-soup/images/thumbs"
-mkdir -p "$DATA_DIR/inky-soup/images/dithered"
-
-# Set ownership for inky user (uid:gid 1000:1000).
-chown -R 1000:1000 "$DATA_DIR/inky-soup"
-
 # Set proper ownership for NetworkManager directory.
 # NetworkManager runs as root and needs these permissions.
 chmod 755 "$DATA_DIR/NetworkManager"

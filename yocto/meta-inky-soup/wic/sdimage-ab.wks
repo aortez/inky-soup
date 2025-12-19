@@ -1,25 +1,14 @@
-# A/B partition layout for safe remote updates.
+# A/B partition layout for safe remote updates on SD card.
+# Each rootfs gets its own partition - system updates the inactive one.
+# Data partition persists across updates (WiFi credentials, images, config).
 #
 # Partition layout:
-#   /dev/mmcblk0p1 - /boot (FAT32, 100MB) - Shared boot partition.
-#   /dev/mmcblk0p2 - rootfs_a (ext4, 600MB) - Primary rootfs.
-#   /dev/mmcblk0p3 - rootfs_b (ext4, 600MB) - Secondary rootfs for updates.
-#   /dev/mmcblk0p4 - /data (ext4, 100MB) - Persistent data (WiFi, config).
-#
-# Update process:
-#   1. Flash new rootfs to inactive partition (e.g., rootfs_b).
-#   2. Update boot config to point to new partition.
-#   3. Reboot - system runs from new rootfs.
-#   4. If boot fails, switch back to previous partition.
+#   1: boot    - FAT32, kernel + bootloader (150MB)
+#   2: rootfs_a - ext4, primary rootfs (800MB)
+#   3: rootfs_b - ext4, backup rootfs for A/B updates (800MB)
+#   4: data    - ext4, persistent data (rest of card)
 
-# Boot partition (shared between A and B).
-part /boot --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label boot --active --align 4096 --size 100
-
-# Primary rootfs (A slot).
-part / --source rootfs --ondisk mmcblk0 --fstype=ext4 --label rootfs_a --align 4096 --size 600
-
-# Secondary rootfs (B slot) - initially a copy of A.
-part /rescue --source rootfs --ondisk mmcblk0 --fstype=ext4 --label rootfs_b --align 4096 --size 600
-
-# Persistent data partition - survives updates.
+part /boot --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label boot --active --align 4096 --size 150
+part / --source rootfs --ondisk mmcblk0 --fstype=ext4 --label rootfs_a --align 4096 --size 800
+part --ondisk mmcblk0 --fstype=ext4 --label rootfs_b --align 4096 --size 800
 part /data --ondisk mmcblk0 --fstype=ext4 --label data --align 4096 --size 100

@@ -1,0 +1,2 @@
+# Set TERM for ncurses apps (vim, nmon, etc.) to work properly over SSH.
+export TERM=xterm-256color
