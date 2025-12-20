@@ -1,5 +1,5 @@
 SUMMARY = "Persistent data partition support"
-DESCRIPTION = "Mounts and initializes the persistent /data partition for WiFi credentials, logs, and config that survive reflashes and A/B updates."
+DESCRIPTION = "Mounts and initializes the persistent /data partition for WiFi credentials, logs, and config that survive reflashes and A/B updates. Also sets hostname from /boot/hostname.txt."
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
@@ -8,6 +8,8 @@ SRC_URI = " \
     file://persistent-data-init \
     file://persistent-data-init.service \
     file://persistent-data-bind.service \
+    file://set-hostname.sh \
+    file://set-hostname.service \
 "
 
 S = "${WORKDIR}"
@@ -17,18 +19,21 @@ inherit systemd
 SYSTEMD_SERVICE:${PN} = " \
     persistent-data-init.service \
     persistent-data-bind.service \
+    set-hostname.service \
 "
 SYSTEMD_AUTO_ENABLE = "enable"
 
 do_install() {
-    # Install the init script.
+    # Install scripts.
     install -d ${D}${sbindir}
     install -m 0755 ${WORKDIR}/persistent-data-init ${D}${sbindir}/persistent-data-init
+    install -m 0755 ${WORKDIR}/set-hostname.sh ${D}${sbindir}/set-hostname.sh
 
     # Install systemd units.
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/persistent-data-init.service ${D}${systemd_system_unitdir}/persistent-data-init.service
     install -m 0644 ${WORKDIR}/persistent-data-bind.service ${D}${systemd_system_unitdir}/persistent-data-bind.service
+    install -m 0644 ${WORKDIR}/set-hostname.service ${D}${systemd_system_unitdir}/set-hostname.service
 
     # Create the mount point.
     install -d ${D}/data
@@ -40,8 +45,10 @@ do_install() {
 
 FILES:${PN} = " \
     ${sbindir}/persistent-data-init \
+    ${sbindir}/set-hostname.sh \
     ${systemd_system_unitdir}/persistent-data-init.service \
     ${systemd_system_unitdir}/persistent-data-bind.service \
+    ${systemd_system_unitdir}/set-hostname.service \
     /data \
     ${sysconfdir}/NetworkManager/system-connections \
 "

@@ -1031,7 +1031,7 @@ async function main() {
       log(`${colors.bold}${colors.green}═══════════════════════════════════════════════════${colors.reset}`);
       log('');
       info('You can now eject the drive and boot your Raspberry Pi.');
-      info(`Login: ssh inky@${hostname}.local`);
+      info(`Login: ssh root@${hostname}.local`);
       info(`SSH key: ${basename(config.ssh_key_path)}`);
     }
   } catch (err) {

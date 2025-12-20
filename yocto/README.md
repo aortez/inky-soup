@@ -85,6 +85,7 @@ The data partition survives all updates. WiFi credentials configured via `nmcli`
 - NetworkManager (nmcli, nmtui)
 - WiFi firmware (linux-firmware-rpidistro-bcm43436)
 - SSH server (openssh-sshd, openssh-sftp-server)
+- avahi-daemon (mDNS for `hostname.local` discovery)
 
 **System:**
 - systemd (init system, required for persistent-data services)
@@ -377,7 +378,7 @@ Adjust based on your CPU cores and RAM.
 - [x] WiFi credential injection at flash time
 - [x] Persistent `/data` partition for WiFi credentials across updates
 - [x] A/B partition support for atomic updates
-- [ ] Hostname advertising (avahi/mDNS) - `<hostname>.local`
+- [x] Hostname advertising (avahi/mDNS) - `<hostname>.local`
 - [ ] Migrate back to KAS-based build system for better reproducibility
 
 ### Future

@@ -1,7 +1,7 @@
 [Unit]
 Description=Initialize persistent data directories
 After=data.mount
-Before=persistent-data-bind.service sshd.service
+Before=persistent-data-bind.service
 Requires=data.mount
 
 [Service]

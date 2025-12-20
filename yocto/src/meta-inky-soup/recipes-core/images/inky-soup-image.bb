@@ -20,6 +20,9 @@ IMAGE_INSTALL:append = " \
 # SSH access.
 IMAGE_INSTALL:append = " openssh-sshd openssh-sftp-server"
 
+# mDNS/DNS-SD for hostname.local discovery.
+IMAGE_INSTALL:append = " avahi-daemon"
+
 # Console/terminal utilities.
 IMAGE_INSTALL:append = " kbd"
 

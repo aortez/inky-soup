@@ -7,12 +7,9 @@ set -e
 DATA_DIR="/data"
 NM_PERSISTENT="$DATA_DIR/NetworkManager/system-connections"
 NM_SYSTEM="/etc/NetworkManager/system-connections"
-SSH_PERSISTENT="$DATA_DIR/ssh"
-SSH_SYSTEM="/etc/ssh"
 
 # Ensure base directories exist.
 mkdir -p "$DATA_DIR/NetworkManager/system-connections"
-mkdir -p "$DATA_DIR/ssh"
 mkdir -p "$DATA_DIR/logs"
 mkdir -p "$DATA_DIR/config"
 
@@ -20,20 +17,6 @@ mkdir -p "$DATA_DIR/config"
 # NetworkManager runs as root and needs these permissions.
 chmod 755 "$DATA_DIR/NetworkManager"
 chmod 700 "$DATA_DIR/NetworkManager/system-connections"
-chmod 700 "$DATA_DIR/ssh"
-
-# SSH host key persistence.
-# If we have persisted keys, restore them (keeps host identity across reflashes).
-# If not, save the current keys for next time.
-if [ -f "$SSH_PERSISTENT/ssh_host_ed25519_key" ]; then
-    echo "Restoring SSH host keys from persistent storage"
-    cp -p "$SSH_PERSISTENT"/ssh_host_*_key* "$SSH_SYSTEM/"
-    chmod 600 "$SSH_SYSTEM"/ssh_host_*_key
-    chmod 644 "$SSH_SYSTEM"/ssh_host_*_key.pub
-else
-    echo "Saving SSH host keys to persistent storage"
-    cp -p "$SSH_SYSTEM"/ssh_host_*_key* "$SSH_PERSISTENT/"
-fi
 
 # If there are connections in the rootfs that aren't in /data, copy them.
 # This handles first boot after a fresh flash with injected credentials.
