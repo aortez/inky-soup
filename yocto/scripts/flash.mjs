@@ -5,6 +5,7 @@
  * Features:
  * - Flashes Yocto image to USB/SD card.
  * - Injects your SSH public key for passwordless login.
+ * - Prompts for WiFi credentials and injects them for first-boot connectivity.
  * - Backs up and restores /data partition from the disk (WiFi credentials, logs, config).
  * - Remembers your key preference in .flash-config.json.
  *
@@ -435,6 +436,174 @@ async function ensureSSHKeyConfig(forceReconfigure = false) {
 }
 
 // ============================================================================
+// WiFi Credential Injection
+// ============================================================================
+
+/**
+ * Generate a NetworkManager connection file for WiFi.
+ * Returns the file content as a string.
+ */
+function generateWifiConnection(ssid, password) {
+  // Generate a UUID for the connection.
+  const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+
+  return `[connection]
+id=${ssid}
+uuid=${uuid}
+type=wifi
+autoconnect=true
+
+[wifi]
+mode=infrastructure
+ssid=${ssid}
+
+[wifi-security]
+key-mgmt=wpa-psk
+psk=${password}
+
+[ipv4]
+method=auto
+
+[ipv6]
+method=auto
+`;
+}
+
+/**
+ * Load WiFi credentials from wifi-creds.local file.
+ * Returns { ssid, password } or null if file doesn't exist or is invalid.
+ */
+function loadWifiCredsFile() {
+  const credsFile = join(YOCTO_DIR, 'wifi-creds.local');
+  try {
+    if (!existsSync(credsFile)) {
+      return null;
+    }
+    const content = readFileSync(credsFile, 'utf-8');
+    const creds = JSON.parse(content);
+
+    if (!creds.ssid || typeof creds.ssid !== 'string') {
+      warn('wifi-creds.local: missing or invalid "ssid" field');
+      return null;
+    }
+    if (!creds.password || typeof creds.password !== 'string') {
+      warn('wifi-creds.local: missing or invalid "password" field');
+      return null;
+    }
+
+    return { ssid: creds.ssid, password: creds.password };
+  } catch (err) {
+    if (err instanceof SyntaxError) {
+      warn(`wifi-creds.local: invalid JSON - ${err.message}`);
+    } else {
+      warn(`wifi-creds.local: ${err.message}`);
+    }
+    return null;
+  }
+}
+
+/**
+ * Get WiFi credentials from file or prompt.
+ * Returns { ssid, password } or null if user skips.
+ */
+async function getWifiCredentials() {
+  // First, try to load from wifi-creds.local file.
+  const fileCreds = loadWifiCredsFile();
+  if (fileCreds) {
+    log('');
+    log(`${colors.bold}${colors.cyan}WiFi Configuration${colors.reset}`);
+    log('');
+    success(`Loaded credentials from wifi-creds.local`);
+    info(`Network: ${fileCreds.ssid}`);
+    return fileCreds;
+  }
+
+  // Otherwise, prompt interactively.
+  log('');
+  log(`${colors.bold}${colors.cyan}WiFi Configuration${colors.reset}`);
+  log('');
+  info('Configure WiFi now so the device can connect on first boot.');
+  info('Press Enter to skip (you can configure later with nmtui).');
+  info(`Tip: Create wifi-creds.local to avoid typing credentials.`);
+  log('');
+
+  const ssid = await prompt('WiFi network name (SSID): ');
+  if (!ssid || !ssid.trim()) {
+    info('Skipping WiFi configuration.');
+    return null;
+  }
+
+  const password = await prompt('WiFi password: ');
+  if (!password) {
+    warn('No password provided - skipping WiFi configuration.');
+    return null;
+  }
+
+  return { ssid: ssid.trim(), password };
+}
+
+/**
+ * Inject WiFi credentials into the data partition.
+ * Creates a NetworkManager connection file.
+ */
+async function injectWifiCredentials(device, ssid, password, dryRun = false) {
+  const dataPartition = `${device}4`;
+  const connectionContent = generateWifiConnection(ssid, password);
+  // NetworkManager connection files use the SSID as filename.
+  const filename = `${ssid}.nmconnection`;
+
+  log('');
+  info('Injecting WiFi credentials...');
+
+  if (dryRun) {
+    log(`  Would mount ${dataPartition}`);
+    log(`  Would write ${filename} to /data/NetworkManager/system-connections/`);
+    log(`  Would unmount`);
+    return;
+  }
+
+  const mountPoint = mkdtempSync(join(tmpdir(), 'inky-soup-data-wifi-'));
+
+  try {
+    // Mount the data partition.
+    info(`Mounting ${dataPartition}...`);
+    execSync(`sudo mount ${dataPartition} ${mountPoint}`, { stdio: 'pipe' });
+
+    // Create NetworkManager directories.
+    const nmDir = join(mountPoint, 'NetworkManager/system-connections');
+    execSync(`sudo mkdir -p ${nmDir}`, { stdio: 'pipe' });
+    execSync(`sudo chmod 755 ${join(mountPoint, 'NetworkManager')}`, { stdio: 'pipe' });
+    execSync(`sudo chmod 700 ${nmDir}`, { stdio: 'pipe' });
+
+    // Write the connection file.
+    const connPath = join(nmDir, filename);
+    info(`Writing ${filename}...`);
+    // Use a temp file to avoid shell escaping issues with the password.
+    const tempFile = join(tmpdir(), `nm-conn-${Date.now()}`);
+    writeFileSync(tempFile, connectionContent, { mode: 0o600 });
+    execSync(`sudo cp ${tempFile} ${connPath}`, { stdio: 'pipe' });
+    execSync(`sudo chmod 600 ${connPath}`, { stdio: 'pipe' });
+    rmSync(tempFile, { force: true });
+
+    success(`WiFi "${ssid}" configured!`);
+
+  } finally {
+    // Always try to unmount and clean up.
+    try {
+      info('Unmounting...');
+      execSync(`sudo umount ${mountPoint}`, { stdio: 'pipe' });
+      rmSync(mountPoint, { recursive: true, force: true });
+    } catch (err) {
+      warn(`Cleanup warning: ${err.message}`);
+    }
+  }
+}
+
+// ============================================================================
 // SSH Key Injection
 // ============================================================================
 
@@ -673,6 +842,7 @@ Examples:
 
 Features:
   - Injects your SSH public key for passwordless login
+  - Prompts for WiFi credentials for first-boot connectivity
   - Backs up and restores /data partition (WiFi credentials, logs)
   - Remembers your key preference in .flash-config.json
 `);
@@ -796,6 +966,12 @@ async function main() {
     saveConfig(config);
   }
 
+  // Get WiFi credentials (from file or prompt, skip if restoring backup).
+  let wifiCredentials = null;
+  if (!dryRun && !hasDataPartition(targetDevice)) {
+    wifiCredentials = await getWifiCredentials();
+  }
+
   // Check if we can backup /data from the disk before flashing.
   let backupDir = null;
   if (!dryRun && hasDataPartition(targetDevice)) {
@@ -824,6 +1000,16 @@ async function main() {
     // Set hostname.
     await setHostname(targetDevice, hostname, dryRun);
 
+    // Inject WiFi credentials if provided (and not restoring a backup).
+    if (wifiCredentials && !backupDir) {
+      await injectWifiCredentials(
+        targetDevice,
+        wifiCredentials.ssid,
+        wifiCredentials.password,
+        dryRun
+      );
+    }
+
     // Restore /data if we have a backup.
     if (backupDir) {
       restoreDataPartition(targetDevice, backupDir, dryRun);
@@ -839,6 +1025,8 @@ async function main() {
       success('Flash complete!');
       if (backupDir) {
         success('/data restored - WiFi credentials preserved!');
+      } else if (wifiCredentials) {
+        success(`WiFi "${wifiCredentials.ssid}" configured!`);
       }
       log(`${colors.bold}${colors.green}═══════════════════════════════════════════════════${colors.reset}`);
       log('');

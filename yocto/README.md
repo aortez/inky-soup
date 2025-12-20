@@ -50,6 +50,8 @@ Our custom layer contains:
 - **recipes-core/images/inky-soup-image.bb** - Main image recipe
 - **recipes-connectivity/networkmanager/** - NetworkManager config (enables nmtui)
 - **recipes-core/init-ifupdown/** - Minimal interfaces file (lets NM manage devices)
+- **recipes-support/persistent-data/** - Persistent /data partition support
+- **wic/sdimage-inky-soup.wks** - A/B partition layout
 
 ## Build Configuration
 
@@ -62,8 +64,20 @@ Our custom layer contains:
 ### Image Format
 
 - **Type**: `wic.gz` with `wic.bmap` for fast flashing
-- **Partitions**: Standard Raspberry Pi layout (boot + rootfs)
 - **Root filesystem**: ext4
+
+### Partition Layout (A/B)
+
+The image uses an A/B partition scheme for safe updates:
+
+| Partition | Size   | Label    | Purpose                                    |
+|-----------|--------|----------|--------------------------------------------|
+| 1         | 150 MB | boot     | Kernel, device tree, config.txt           |
+| 2         | 800 MB | rootfs_a | Primary system (active on first boot)     |
+| 3         | 800 MB | rootfs_b | Secondary system (for OTA updates)        |
+| 4         | 100 MB | data     | Persistent storage (WiFi creds, logs)     |
+
+The data partition survives all updates. WiFi credentials configured via `nmcli`/`nmtui` are stored in `/data/NetworkManager/system-connections/` and bind-mounted into place on boot.
 
 ### Included Packages
 
@@ -72,7 +86,9 @@ Our custom layer contains:
 - WiFi firmware (linux-firmware-rpidistro-bcm43436)
 - SSH server (openssh-sshd, openssh-sftp-server)
 
-**Console:**
+**System:**
+- systemd (init system, required for persistent-data services)
+- persistent-data (bind mounts WiFi credentials from /data)
 - kbd (keyboard utilities)
 
 **Security:**
@@ -108,10 +124,6 @@ bitbake inky-soup-image
 
 Build output: `build/poky/tmp/deploy/images/raspberrypi0-2w/`
 
-**Build times:**
-- First build: ~1-2 hours (downloads and compiles everything)
-- Incremental: ~5-15 minutes (with sstate-cache)
-
 ### Flashing
 
 ```bash
@@ -128,9 +140,10 @@ npm run flash -- --dry-run
 **Flash script features:**
 - Detects and lists available SD cards/USB drives
 - SSH key injection (uses your ~/.ssh/*.pub key)
+- WiFi credential injection (prompts for SSID/password)
 - Hostname configuration
 - Data partition backup/restore (preserves WiFi credentials across reflashes)
-- Uses bmaptool if available (much faster)
+- Uses bmaptool if available
 
 **First-time flash script setup:**
 
@@ -155,27 +168,60 @@ Your SSH key was injected during flash, so no password needed.
 
 ## Network Configuration
 
-### Current State (Manual Setup Required)
+### WiFi Setup at Flash Time (Recommended)
 
-After first boot:
+**Option 1: Credentials file (recommended for repeated flashing)**
 
-1. Login as root (empty password)
-2. Edit `/etc/network/interfaces` to remove eth0/wlan0 (or we fix this in the image)
-3. Restart NetworkManager: `killall NetworkManager && NetworkManager &`
-4. Configure WiFi with nmtui:
-   ```bash
-   nmtui
-   # Select "Activate a connection"
-   # Choose your WiFi network
-   # Enter password
-   ```
+Create `wifi-creds.local` in the yocto directory:
 
-### Planned: WiFi Injection at Flash Time
+```json
+{
+  "ssid": "MyNetworkName",
+  "password": "MySecretPassword"
+}
+```
 
-**TODO**: Flash script should inject NetworkManager connection file:
-- Prompt for SSID/password during flash
-- Write to `/etc/NetworkManager/system-connections/`
-- Or use persistent `/data` partition (like sparkle-duck)
+The flash script will automatically use these credentials. This file is gitignored.
+
+**Option 2: Interactive prompt**
+
+If no credentials file exists, the script prompts during flash:
+
+```
+WiFi Configuration
+
+ℹ Configure WiFi now so the device can connect on first boot.
+ℹ Press Enter to skip (you can configure later with nmtui).
+
+WiFi network name (SSID): MyNetwork
+WiFi password: ********
+```
+
+The credentials are written to the data partition and automatically used on boot.
+
+### Manual WiFi Setup (Alternative)
+
+If you skipped WiFi during flash, or need to connect to a different network:
+
+```bash
+# Login via serial console or HDMI
+# Username: root, Password: (empty)
+
+nmtui
+# Select "Activate a connection"
+# Choose your WiFi network
+# Enter password
+```
+
+Credentials are stored in `/data/NetworkManager/system-connections/` and persist across reflashes.
+
+### Credential Persistence
+
+The `/data` partition is preserved during both:
+- Full reflashes (the flash script backs up and restores)
+- A/B updates (the partition is never touched)
+
+This means WiFi credentials configured once will survive all updates.
 
 ## Package Management
 
@@ -328,13 +374,14 @@ Adjust based on your CPU cores and RAM.
 ## TODO
 
 ### Immediate
-- [ ] WiFi credential injection at flash time
+- [x] WiFi credential injection at flash time
+- [x] Persistent `/data` partition for WiFi credentials across updates
+- [x] A/B partition support for atomic updates
 - [ ] Hostname advertising (avahi/mDNS) - `<hostname>.local`
 - [ ] Migrate back to KAS-based build system for better reproducibility
 
 ### Future
-- [ ] Persistent `/data` partition for WiFi credentials across updates
-- [ ] A/B partition support for atomic updates
+- [ ] A/B update script (yolo-update.mjs) for OTA updates
 - [ ] Inky-soup server package and service
 - [ ] Python display script integration
 - [ ] Pre-dithered image pipeline

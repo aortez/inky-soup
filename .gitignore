@@ -143,3 +143,15 @@ upload-server/static/images/cache/*
 upload-server/static/images/thumbs/*
 upload-server/static/images/dithered/*
 upload-server/static/images/metadata.json
+
+# Yocto build artifacts
+yocto/build/
+yocto/downloads/
+yocto/sstate-cache/
+
+# Yocto layer sources (cloned by init.sh) - except our custom layer
+yocto/src/*
+!yocto/src/meta-inky-soup/
+
+# WiFi credentials (contains secrets)
+yocto/wifi-creds.local
