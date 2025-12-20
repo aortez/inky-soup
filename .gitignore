@@ -144,6 +144,16 @@ upload-server/static/images/thumbs/*
 upload-server/static/images/dithered/*
 upload-server/static/images/metadata.json
 
+# Rust/Cargo build artifacts
+upload-server/target/
+upload-server/.rustc_info.json
+upload-server/arm-unknown-linux-gnueabihf/
+upload-server/release/
+
+# Yocto externalsrc symlinks (created during build)
+upload-server/oe-logs
+upload-server/oe-workdir
+
 # Yocto build artifacts
 yocto/build/
 yocto/downloads/

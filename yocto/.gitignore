@@ -11,9 +11,10 @@ downloads/
 sstate-cache/
 
 # Yocto layers cloned by kas (fetched from upstream).
-poky/
-meta-raspberrypi/
 meta-openembedded/
+meta-raspberrypi/
+meta-rust-bin/
+poky/
 
 # Old init.sh structure (deprecated, will be removed).
 src/poky/

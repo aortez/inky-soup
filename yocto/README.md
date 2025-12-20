@@ -57,20 +57,21 @@ Our custom layer contains:
 
 ### Image Format
 
-- **Type**: `rpi-sdimg` (standard Pi SD card image)
+- **Type**: `wic.gz` with `wic.bmap` for fast flashing
 - **Root filesystem**: ext4
 
 ### Partition Layout
 
-Current simple layout:
+A/B partition scheme for safe OTA updates:
 
-| Partition | Size   | Purpose                                    |
-|-----------|--------|--------------------------------------------|
-| 1         | ~50 MB | boot (kernel, device tree, config.txt)    |
-| 2         | ~2 GB  | rootfs                                     |
-| 4         | ~100 MB| data (persistent storage, WiFi creds)     |
+| Partition | Size    | Label    | Purpose                                    |
+|-----------|---------|----------|--------------------------------------------|
+| 1         | 150 MB  | boot     | Kernel, device tree, config.txt           |
+| 2         | 800 MB  | rootfs_a | Primary system (active on first boot)     |
+| 3         | 800 MB  | rootfs_b | Secondary system (for OTA updates)        |
+| 4         | 100 MB  | data     | Persistent storage (WiFi creds, logs)     |
 
-Future A/B layout is defined in `wic/sdimage-inky-soup.wks` but not yet enabled.
+The data partition survives all updates. WiFi credentials configured via `nmcli`/`nmtui` are stored in `/data/NetworkManager/system-connections/` and bind-mounted into place on boot.
 
 ### Included Packages
 
@@ -82,12 +83,16 @@ Future A/B layout is defined in `wic/sdimage-inky-soup.wks` but not yet enabled.
 
 **System:**
 - systemd (init system, required for persistent-data services)
-- persistent-data (bind mounts WiFi credentials from /data)
+- persistent-data (bind mounts WiFi credentials from /data, from pi-base)
+- hostname-setup (sets hostname from /boot/hostname.txt, from pi-base)
+- ab-boot-manager (A/B boot slot management, from pi-base)
 - kbd (keyboard utilities)
+- sudo (for administrative tasks)
 
 **Security:**
 - SSH key authentication (injected at flash time)
-- Root with empty password (debug-tweaks enabled)
+- User 'inky' (UID 1000) with passwordless sudo
+- No password login (SSH key only)
 
 ## Development Workflow
 
@@ -132,18 +137,12 @@ To reconfigure: `npm run flash -- --reconfigure`
 
 ### Accessing the Device
 
-**Serial console** (if HDMI connected):
-```
-Login: root
-Password: (just press Enter)
-```
-
 **SSH** (after connecting to network):
 ```bash
-ssh root@inky-soup.local
+ssh inky@inky-soup.local
 ```
 
-Your SSH key was injected during flash, so no password needed.
+Your SSH key was injected during flash, so no password needed. The `inky` user has passwordless sudo for administrative tasks.
 
 ## Network Configuration
 
@@ -329,19 +328,28 @@ local_conf_header:
 
 Adjust based on your CPU cores and RAM.
 
+## Shared Infrastructure
+
+This project uses [sparkle-duck-shared](https://github.com/aortez/sparkle-duck-shared) (pi-base) for common Yocto infrastructure. The pi-base layer provides:
+- A/B partition layout for safe OTA updates
+- Persistent data partition management
+- Hostname setup from `/boot/hostname.txt`
+- Flash script utilities (JavaScript library)
+
 ## TODO
 
-### Immediate
+### Completed
 - [x] WiFi credential injection at flash time
 - [x] Persistent `/data` partition for WiFi credentials across updates
 - [x] Hostname advertising (avahi/mDNS) - `<hostname>.local`
 - [x] Migrate to KAS-based build system
+- [x] A/B partition support for atomic updates
+- [x] Integrate sparkle-duck-shared (pi-base)
 
-### Future
-- [ ] A/B partition support for atomic updates
-- [ ] A/B update script (yolo-update.mjs) for OTA updates
+### Next
 - [ ] Inky-soup server package and service
 - [ ] Python display script integration
+- [ ] A/B update script (yolo-update.mjs) for OTA updates
 - [ ] Pre-dithered image pipeline
 - [ ] Test on actual Pi Zero 2 W with e-ink display
 

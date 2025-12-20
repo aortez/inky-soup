@@ -36,6 +36,11 @@ repos:
       meta-oe:
       meta-python:
 
+  # Prebuilt Rust toolchain (faster than compiling from source).
+  meta-rust-bin:
+    url: "https://github.com/rust-embedded/meta-rust-bin.git"
+    branch: master
+
   # Shared infrastructure layer (submodule).
   meta-pi-base:
     path: pi-base/yocto/meta-pi-base
@@ -78,6 +83,10 @@ local_conf_header:
 
     # Disable SPDX generation (requires user namespaces which may not be available).
     INHERIT:remove = "create-spdx"
+
+    # Pin Rust version - 1.92.0 changed tarball format and breaks meta-rust-bin.
+    PREFERRED_VERSION_rust-bin-cross-arm = "1.85.0"
+    PREFERRED_VERSION_cargo-bin-cross-arm = "1.85.0"
 
   # Raspberry Pi specific configuration.
   rpi: |

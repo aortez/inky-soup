@@ -60,3 +60,8 @@ IMAGE_INSTALL:append = " \
     hostname-setup \
     ab-boot-manager \
 "
+
+# Application packages.
+IMAGE_INSTALL:append = " \
+    inky-soup-server \
+"
