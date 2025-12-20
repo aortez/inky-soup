@@ -333,32 +333,29 @@ Inky Soup includes a Yocto-based build system for Raspberry Pi Zero 2 W.
 
 ```bash
 cd yocto
-
-# First time only
-source init.sh       # Clone Yocto layers
-npm install          # Install node dependencies
+npm install          # First time only
 
 # Build and flash
-npm run build        # Build image (~1-2 hours first time)
+npm run build        # Build image (~20 min with cache, ~2 hours first time)
 npm run flash        # Flash to SD card with SSH key injection
 ```
 
 ### Current Features
 
-- **Target**: Raspberry Pi Zero 2 W (ARMv8, compiled for ARMv6 compatibility)
+- **Target**: Raspberry Pi Zero 2 W (ARMv7, cortex-a7)
 - **Networking**: NetworkManager with nmtui/nmcli, WiFi firmware (BCM43436)
 - **Access**: SSH with key-based auth, root user with empty password (debug-tweaks)
-- **Image format**: wic.gz with bmap for fast flashing
+- **Image format**: rpi-sdimg (standard Pi SD card image)
 - **Flash script**: Interactive SD card flasher with SSH key injection
+- **WiFi**: Credential injection at flash time, persistent across reflashes
+- **mDNS**: Avahi for `<hostname>.local` discovery
 
 ### Architecture
 
-Currently using a simplified xyron-style setup with direct git clones. **Plan to migrate back to KAS** for better reproducibility once the basic image is stable.
+Uses [KAS](https://kas.readthedocs.io/) for reproducible Yocto builds. All configuration in `kas-inky-soup.yml`.
 
 ### Next Steps
 
-1. WiFi credential injection at flash time
-2. Hostname advertising (avahi/mDNS for `<hostname>.local`)
-3. Migrate to KAS-based build system
-4. Add persistent `/data` partition for WiFi credentials
-5. Integrate inky-soup server and display script
+1. A/B partition support for atomic updates
+2. A/B update script (yolo-update.mjs) for OTA updates
+3. Integrate inky-soup server and display script

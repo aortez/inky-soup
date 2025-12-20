@@ -1,0 +1,96 @@
+# KAS configuration for Inky Soup Yocto build.
+#
+# Usage:
+#   kas build kas-inky-soup.yml
+#
+# This replaces init.sh + manual bitbake invocation.
+
+header:
+  version: 14
+
+distro: poky
+
+# Raspberry Pi Zero 2 W - stock machine from meta-raspberrypi.
+machine: raspberrypi0-2w
+
+repos:
+  # Core Yocto - the foundation.
+  poky:
+    url: "https://git.yoctoproject.org/poky"
+    branch: scarthgap
+    layers:
+      meta:
+      meta-poky:
+
+  # Raspberry Pi BSP.
+  meta-raspberrypi:
+    url: "https://git.yoctoproject.org/meta-raspberrypi"
+    branch: scarthgap
+
+  # OpenEmbedded layers for NetworkManager and Python.
+  meta-openembedded:
+    url: "https://git.openembedded.org/meta-openembedded"
+    branch: scarthgap
+    layers:
+      meta-networking:
+      meta-oe:
+      meta-python:
+
+  # Our custom layer.
+  meta-inky-soup:
+    path: meta-inky-soup
+
+local_conf_header:
+  # Base build configuration.
+  base: |
+    # Accept restricted licenses (Pi WiFi firmware).
+    LICENSE_FLAGS_ACCEPTED = "commercial synaptics-killswitch"
+
+    # Use systemd as init system.
+    INIT_MANAGER = "systemd"
+
+    # Set hostname (can be overridden by /boot/hostname.txt at boot).
+    hostname:pn-base-files = "inky-soup"
+
+    # Use rpi-sdimg format (proven to work on Pi Zero).
+    IMAGE_FSTYPES = "rpi-sdimg"
+
+    # Faster builds - adjust to your CPU cores.
+    BB_NUMBER_THREADS = "8"
+    PARALLEL_MAKE = "-j 8"
+
+    # Download directory (shared across builds).
+    DL_DIR = "${TOPDIR}/../downloads"
+
+    # Shared state cache (speeds up rebuilds).
+    SSTATE_DIR = "${TOPDIR}/../sstate-cache"
+
+    # Disable SPDX generation (requires user namespaces which may not be available).
+    INHERIT:remove = "create-spdx"
+
+  # Raspberry Pi specific configuration.
+  rpi: |
+    # Disable rainbow splash for cleaner boot.
+    DISABLE_SPLASH = "1"
+
+    # Boot from SD card.
+    CMDLINE_ROOT_PARTITION = "/dev/mmcblk0p2"
+
+    # Enable HDMI console output for boot messages and kernel logs.
+    CMDLINE:append = " console=tty1"
+
+  # Display configuration for e-ink.
+  display: |
+    # Enable SPI bus for e-ink display communication.
+    # The Inky Impression uses SPI0 with manual chip select via GPIO.
+    ENABLE_SPI_BUS = "1"
+
+    # Enable I2C for display EEPROM (used to detect display model).
+    ENABLE_I2C = "1"
+
+    # Extra config.txt settings.
+    # Critical: disable_fw_kms_setup=1 is required when using VC4 graphics.
+    RPI_EXTRA_CONFIG = "\ndisable_fw_kms_setup=1\n"
+
+# Target image to build.
+target: inky-soup-image
