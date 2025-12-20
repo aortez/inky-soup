@@ -1,0 +1,3 @@
+[submodule "yocto/pi-base"]
+	path = yocto/pi-base
+	url = ../sparkle-duck-shared

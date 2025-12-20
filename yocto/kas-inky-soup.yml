@@ -36,6 +36,10 @@ repos:
       meta-oe:
       meta-python:
 
+  # Shared infrastructure layer (submodule).
+  meta-pi-base:
+    path: pi-base/yocto/meta-pi-base
+
   # Our custom layer.
   meta-inky-soup:
     path: meta-inky-soup
@@ -52,8 +56,15 @@ local_conf_header:
     # Set hostname (can be overridden by /boot/hostname.txt at boot).
     hostname:pn-base-files = "inky-soup"
 
-    # Use rpi-sdimg format (proven to work on Pi Zero).
-    IMAGE_FSTYPES = "rpi-sdimg"
+    # Use WIC format with A/B partitions for safe updates.
+    IMAGE_FSTYPES = "wic.gz wic.bmap"
+    WKS_FILE = "sdimage-ab.wks.in"
+
+    # A/B partition layout configuration.
+    BOOT_DEVICE = "mmcblk0"
+    BOOT_SIZE = "150"
+    ROOTFS_SIZE = "800"
+    DATA_SIZE = "100"
 
     # Faster builds - adjust to your CPU cores.
     BB_NUMBER_THREADS = "8"
