@@ -5,8 +5,7 @@
   "type": "module",
   "description": "Yocto build and flash tools for Inky Soup",
   "scripts": {
-    "build": "kas build kas-inky-soup.yml",
-    "deploy": "node scripts/deploy.mjs",
+    "build": "bash -c 'cd src/poky && source ./oe-init-build-env && bitbake inky-soup-image'",
     "flash": "node scripts/flash.mjs",
     "yolo": "node scripts/yolo-update.mjs"
   },

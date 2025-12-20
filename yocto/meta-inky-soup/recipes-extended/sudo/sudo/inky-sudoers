@@ -1,2 +1,0 @@
-# Allow inky user to run sudo without password.
-inky ALL=(ALL) NOPASSWD: ALL

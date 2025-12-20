@@ -17,7 +17,7 @@
  */
 
 import { execSync, spawn } from 'child_process';
-import { existsSync, readdirSync, statSync, readFileSync, writeFileSync, mkdtempSync, rmdirSync } from 'fs';
+import { existsSync, readdirSync, statSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { createInterface } from 'readline';
@@ -43,7 +43,7 @@ function error(msg) { console.log(`${colors.red}✗${colors.reset} ${msg}`); }
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const YOCTO_DIR = dirname(__dirname);
-const IMAGE_DIR = join(YOCTO_DIR, 'build/tmp/deploy/images/raspberrypi-inky-soup');
+const IMAGE_DIR = join(YOCTO_DIR, 'build/poky/tmp/deploy/images/raspberrypi0-2w');
 const CONFIG_FILE = join(YOCTO_DIR, '.flash-config.json');
 
 // ============================================================================
@@ -128,7 +128,7 @@ function readSshKey(keyPath) {
 // ============================================================================
 
 /**
- * Find the latest .wic.gz image file.
+ * Find the latest flashable image file (.wic.gz or .rpi-sdimg).
  */
 function findLatestImage() {
   if (!existsSync(IMAGE_DIR)) {
@@ -136,26 +136,23 @@ function findLatestImage() {
   }
 
   const files = readdirSync(IMAGE_DIR)
-    .filter(f => f.endsWith('.wic.gz') && !f.includes('->'))
+    .filter(f => (f.endsWith('.wic.gz') || f.endsWith('.rpi-sdimg')) && !f.includes('->'))
     .map(f => ({
       name: f,
       path: join(IMAGE_DIR, f),
       // Follow symlinks to get real file for mtime.
       stat: statSync(join(IMAGE_DIR, f)),
+      isCompressed: f.endsWith('.wic.gz'),
     }))
     .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
 
-  // Prefer our custom image, fall back to core-image-base.
-  const inkySoupImage = files.find(f => f.name === 'inky-soup-image-raspberrypi-inky-soup.rootfs.wic.gz');
-  if (inkySoupImage) {
-    return inkySoupImage;
-  }
-  const coreImage = files.find(f => f.name === 'core-image-base-raspberrypi-inky-soup.rootfs.wic.gz');
-  if (coreImage) {
-    return coreImage;
-  }
+  // Look for inky-soup-image.
+  const image = files.find(f =>
+    f.name === 'inky-soup-image-raspberrypi0-2w.rootfs.wic.gz' ||
+    f.name === 'inky-soup-image-raspberrypi0-2w.rootfs.rpi-sdimg'
+  );
 
-  return files[0] || null;
+  return image || null;
 }
 
 /**
@@ -284,7 +281,7 @@ function backupDataPartition(device) {
     const files = readdirSync(backupDir).filter(f => f !== 'lost+found');
     if (files.length === 0) {
       info('Data partition is empty (nothing to backup)');
-      rmdirSync(backupDir, { recursive: true });
+      execSync(`sudo rm -rf ${backupDir}`, { stdio: 'pipe' });
       return null;
     }
 
@@ -294,7 +291,7 @@ function backupDataPartition(device) {
   } catch (err) {
     warn(`Backup failed: ${err.message}`);
     try {
-      rmdirSync(backupDir, { recursive: true });
+      execSync(`sudo rm -rf ${backupDir}`, { stdio: 'pipe' });
     } catch {
       // Ignore cleanup errors.
     }
@@ -304,7 +301,7 @@ function backupDataPartition(device) {
     // Always unmount.
     try {
       execSync(`sudo umount ${mountPoint} 2>/dev/null || true`, { stdio: 'pipe' });
-      rmdirSync(mountPoint);
+      rmSync(mountPoint, { recursive: true, force: true });
     } catch {
       // Ignore cleanup errors.
     }
@@ -350,7 +347,7 @@ function restoreDataPartition(device, backupDir, dryRun = false) {
     try {
       info('Unmounting data partition...');
       execSync(`sudo umount ${mountPoint}`, { stdio: 'pipe' });
-      rmdirSync(mountPoint);
+      rmSync(mountPoint, { recursive: true, force: true });
     } catch (err) {
       warn(`Cleanup warning: ${err.message}`);
     }
@@ -443,7 +440,7 @@ async function ensureSSHKeyConfig(forceReconfigure = false) {
 
 /**
  * Inject SSH key into the flashed device's rootfs.
- * Mounts partition 2 (rootfs), writes authorized_keys, unmounts.
+ * Mounts partition 2 (rootfs), writes authorized_keys for root, unmounts.
  */
 async function injectSSHKey(device, sshKeyPath, dryRun = false) {
   const rootfsPartition = `${device}2`;
@@ -458,7 +455,7 @@ async function injectSSHKey(device, sshKeyPath, dryRun = false) {
 
   if (dryRun) {
     log(`  Would mount ${rootfsPartition}`);
-    log(`  Would write key to /home/inky/.ssh/authorized_keys`);
+    log(`  Would write key to /root/.ssh/authorized_keys`);
     log(`  Would unmount`);
     return;
   }
@@ -471,12 +468,16 @@ async function injectSSHKey(device, sshKeyPath, dryRun = false) {
     info(`Mounting ${rootfsPartition}...`);
     execSync(`sudo mount ${rootfsPartition} ${mountPoint}`, { stdio: 'pipe' });
 
+    // Create .ssh directory if needed.
+    const sshDir = join(mountPoint, 'root/.ssh');
+    execSync(`sudo mkdir -p ${sshDir}`, { stdio: 'pipe' });
+    execSync(`sudo chmod 700 ${sshDir}`, { stdio: 'pipe' });
+
     // Write the SSH key.
-    const authorizedKeysPath = join(mountPoint, 'home/inky/.ssh/authorized_keys');
-    info(`Writing SSH key to authorized_keys...`);
+    const authorizedKeysPath = join(sshDir, 'authorized_keys');
+    info('Writing SSH key to authorized_keys...');
     execSync(`echo '${sshKey}' | sudo tee ${authorizedKeysPath} > /dev/null`, { stdio: 'pipe' });
     execSync(`sudo chmod 600 ${authorizedKeysPath}`, { stdio: 'pipe' });
-    execSync(`sudo chown 1000:1000 ${authorizedKeysPath}`, { stdio: 'pipe' });
 
     success('SSH key injected!');
 
@@ -485,7 +486,7 @@ async function injectSSHKey(device, sshKeyPath, dryRun = false) {
     try {
       info('Unmounting...');
       execSync(`sudo umount ${mountPoint}`, { stdio: 'pipe' });
-      rmdirSync(mountPoint);
+      rmSync(mountPoint, { recursive: true, force: true });
     } catch (err) {
       warn(`Cleanup warning: ${err.message}`);
     }
@@ -530,7 +531,7 @@ async function setHostname(device, hostname, dryRun = false) {
     try {
       info('Unmounting...');
       execSync(`sudo umount ${mountPoint}`, { stdio: 'pipe' });
-      rmdirSync(mountPoint);
+      rmSync(mountPoint, { recursive: true, force: true });
     } catch (err) {
       warn(`Cleanup warning: ${err.message}`);
     }
@@ -544,7 +545,7 @@ async function setHostname(device, hostname, dryRun = false) {
 /**
  * Flash the image to the device.
  */
-async function flashImage(imagePath, bmapPath, device, dryRun = false) {
+async function flashImage(imagePath, bmapPath, device, isCompressed = true, dryRun = false) {
   const useBmap = hasBmaptool() && existsSync(bmapPath);
 
   log('');
@@ -567,12 +568,13 @@ async function flashImage(imagePath, bmapPath, device, dryRun = false) {
   if (dryRun) {
     info('Dry run complete. Would execute:');
     log('');
+    log(`  sudo umount ${device}* 2>/dev/null || true`);
     if (useBmap) {
-      log(`  sudo umount ${device}* 2>/dev/null || true`);
       log(`  sudo bmaptool copy --bmap "${bmapPath}" "${imagePath}" "${device}"`);
-    } else {
-      log(`  sudo umount ${device}* 2>/dev/null || true`);
+    } else if (isCompressed) {
       log(`  gunzip -c "${imagePath}" | sudo dd of="${device}" bs=4M status=progress conv=fsync`);
+    } else {
+      log(`  sudo dd if="${imagePath}" of="${device}" bs=4M status=progress conv=fsync`);
     }
     log(`  sync`);
     log('');
@@ -619,7 +621,9 @@ async function flashImage(imagePath, bmapPath, device, dryRun = false) {
     });
   } else {
     // Fall back to dd.
-    const cmd = `gunzip -c "${imagePath}" | sudo dd of="${device}" bs=4M status=progress conv=fsync`;
+    const cmd = isCompressed
+      ? `gunzip -c "${imagePath}" | sudo dd of="${device}" bs=4M status=progress conv=fsync`
+      : `sudo dd if="${imagePath}" of="${device}" bs=4M status=progress conv=fsync`;
     info(`Running: ${cmd}`);
     log('');
 
@@ -712,8 +716,10 @@ async function main() {
   info(`Size: ${formatBytes(image.stat.size)}`);
   info(`Built: ${image.stat.mtime.toLocaleString()}`);
 
-  // Check for bmap file.
-  const bmapPath = image.path.replace('.wic.gz', '.wic.bmap');
+  // Check for bmap file (only exists for wic images).
+  const bmapPath = image.isCompressed
+    ? image.path.replace('.wic.gz', '.wic.bmap')
+    : image.path.replace('.rpi-sdimg', '.bmap');
   if (existsSync(bmapPath)) {
     info(`Bmap: available (faster flashing)`);
   }
@@ -810,7 +816,7 @@ async function main() {
 
   // Flash!
   try {
-    await flashImage(image.path, bmapPath, targetDevice, dryRun);
+    await flashImage(image.path, bmapPath, targetDevice, image.isCompressed, dryRun);
 
     // Inject SSH key after flashing.
     await injectSSHKey(targetDevice, config.ssh_key_path, dryRun);

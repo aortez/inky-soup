@@ -1,31 +1,20 @@
-# Yocto build artifacts and large directories.
-# These are generated or downloaded - not source controlled.
+# Yocto upstream sources (cloned by init.sh).
+# Commit our custom meta-inky-soup layer, ignore the rest.
+src/poky/
+src/meta-raspberrypi/
+src/meta-openembedded/
+src/openembedded-core/
 
-# Build output (huge).
-build/
-rpi-build/
+# Build directory - commit conf/, ignore artifacts.
+build/poky/*
+!build/poky/conf/
 
-# Downloaded sources (can be 10s of GB).
+# Shared download and sstate caches.
 downloads/
-
-# Shared state cache (speeds rebuilds, also huge).
 sstate-cache/
 
-# Yocto layers cloned by kas (fetched from upstream).
-poky/
-meta-raspberrypi/
-meta-openembedded/
-meta-mender-community/
-
-# Old/unused directories.
-sources/
-
-# Temporary mount points for SD card inspection.
-sda/
-sda1/
-
-# Node.js dependencies.
+# Node modules.
 node_modules/
 
-# User-specific flash configuration (SSH key path).
+# Flash config (contains SSH key path - user-specific).
 .flash-config.json

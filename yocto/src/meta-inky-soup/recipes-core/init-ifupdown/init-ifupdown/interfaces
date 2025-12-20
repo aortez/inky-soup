@@ -1,0 +1,3 @@
+# Loopback only - NetworkManager handles the rest.
+auto lo
+iface lo inet loopback

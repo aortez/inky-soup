@@ -16,7 +16,7 @@
  */
 
 import { execSync, spawn } from 'child_process';
-import { existsSync, statSync, readFileSync, readdirSync, createReadStream, mkdtempSync, unlinkSync, rmdirSync } from 'fs';
+import { existsSync, statSync, readFileSync, readdirSync, createReadStream, mkdtempSync, unlinkSync, rmSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { createInterface } from 'readline';
@@ -367,7 +367,7 @@ async function prepareRootfs(imagePath, config) {
     // Clean up.
     unlinkSync(wicPath);
     unlinkSync(rootfsRaw);
-    rmdirSync(mountPoint);
+    rmSync(mountPoint, { recursive: true, force: true });
 
     success('Rootfs prepared!');
     return { preparedRootfsPath, workDir };
@@ -379,8 +379,8 @@ async function prepareRootfs(imagePath, config) {
       execSync(`sudo losetup -D 2>/dev/null || true`, { stdio: 'pipe' });
       if (existsSync(wicPath)) unlinkSync(wicPath);
       if (existsSync(rootfsRaw)) unlinkSync(rootfsRaw);
-      if (existsSync(mountPoint)) rmdirSync(mountPoint);
-      if (existsSync(workDir)) rmdirSync(workDir);
+      if (existsSync(mountPoint)) rmSync(mountPoint, { recursive: true, force: true });
+      if (existsSync(workDir)) rmSync(workDir, { recursive: true, force: true });
     } catch {
       // Ignore cleanup errors.
     }

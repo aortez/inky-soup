@@ -26,6 +26,8 @@ The project consists of two components:
 for all the web stuff.
 1. A python script for flashing the images to the screen.
 
+**New:** We're building a complete Yocto Linux image for turnkey deployment. See `yocto/README.md` for the integrated build system (currently in development).
+
 ## Prerequisites
 
 **On your development machine:**

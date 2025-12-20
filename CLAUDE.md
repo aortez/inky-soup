@@ -323,51 +323,42 @@ The `--skip-dither` flag is always used now since dithering happens client-side.
 
 ## Yocto Build System
 
-Inky Soup includes a Yocto-based build system for producing Pi Zero W/Zero 2 W images with A/B partitioning.
+Inky Soup includes a Yocto-based build system for Raspberry Pi Zero 2 W.
+
+**Current status**: Basic bootable image with NetworkManager, SSH, and WiFi support.
+
+**See `yocto/README.md` for complete documentation.**
 
 ### Quick Start
 
 ```bash
 cd yocto
-npm install           # First time only
-npm run build         # Build full image (takes a little while first time)
-npm run flash         # Flash to SD card with SSH key injection
-npm run deploy        # Quick app-only deploy to running Pi
-npm run yolo          # A/B partition update over network
-npm run clean-all     # Nuclear clean (removes build/tmp)
+
+# First time only
+source init.sh       # Clone Yocto layers
+npm install          # Install node dependencies
+
+# Build and flash
+npm run build        # Build image (~1-2 hours first time)
+npm run flash        # Flash to SD card with SSH key injection
 ```
 
-### Key Design Decisions
+### Current Features
 
-**Unified ARMv6 Image for Zero W and Zero 2 W**
-- Builds with hard-float ARMv6 (arm1176jzfshf) for compatibility with both boards.
-- Zero 2 W (ARMv8) runs ARMv6 code natively with minimal performance loss.
-- Performance is great on both platforms, since all the real work is done client-side.
-- We could make two images, but then we'd have a slightly more complex update/distribution
-process, and if performance is already good - then what's the point?
+- **Target**: Raspberry Pi Zero 2 W (ARMv8, compiled for ARMv6 compatibility)
+- **Networking**: NetworkManager with nmtui/nmcli, WiFi firmware (BCM43436)
+- **Access**: SSH with key-based auth, root user with empty password (debug-tweaks)
+- **Image format**: wic.gz with bmap for fast flashing
+- **Flash script**: Interactive SD card flasher with SSH key injection
 
-**Python Library Packaging**
-- Uses pre-built wheels for `inky` and `gpiodevice` libraries.
-- Avoids hatch build system complexity and slow on-device pip installs.
-- Wheels are bundled in `meta-inky-soup/recipes-devtools/python/`.
-- Is this something that we should revisit - did we take a shortcut here, or is this approach fine?
+### Architecture
 
-**Persistent Data**
-- `/data` partition (partition 4) survives all updates.
-- Bind mounts:
-  - `/data/NetworkManager/system-connections` → WiFi credentials
-  - `/data/inky-soup/images/` → Uploaded images and cache
-- Flash script automatically backs up and restores `/data`.
+Currently using a simplified xyron-style setup with direct git clones. **Plan to migrate back to KAS** for better reproducibility once the basic image is stable.
 
-**Display Script Path**
-- Installed to `/usr/bin/inky-soup-update-display` (system path).
-- Server code calls this absolute path (not relative `./update-image.py`).
-- Deploy script updates both server binary and display script.
+### Next Steps
 
-## TODO
-
-### Yocto Build System
-* Port e2e tests to Docker environment mimicking production layout.
-* Test on actual Pi Zero 2 W hardware.
-* Test with 7.3" and 13.3" Inky Impression displays.
-* Remove debug-tweaks and return to SSH-key-only auth.
+1. WiFi credential injection at flash time
+2. Hostname advertising (avahi/mDNS for `<hostname>.local`)
+3. Migrate to KAS-based build system
+4. Add persistent `/data` partition for WiFi credentials
+5. Integrate inky-soup server and display script
