@@ -273,6 +273,30 @@ npm run test:e2e:headed # Run in headed browser mode
 
 **Important:** E2E tests require the server to be running (`cargo run`) before execution.
 
+### Docker Testing
+
+Run tests against a Docker container that mirrors production paths:
+
+```bash
+cd upload-server
+npm run docker:build   # Build container
+npm run docker:up      # Start container
+npm run test:docker    # Run E2E tests against Docker (localhost:8000)
+npm run docker:down    # Stop and clean up
+```
+
+The Docker environment uses `/data/inky-soup/images` for image storage, matching the Yocto production setup. This ensures path handling works identically in dev and prod.
+
+### Remote Testing
+
+Run tests against a deployed Pi:
+
+```bash
+cd upload-server
+npm run test:remote    # Tests against inky-soup.local:8000
+REMOTE_URL=http://other-pi.local:8000 npm run test:remote
+```
+
 ### Code Quality (ESLint)
 
 ESLint with Airbnb style guide enforces consistent code quality.
@@ -289,6 +313,9 @@ npm run lint:fix     # Auto-fix formatting issues
 
 ### Rust Test File Mismatch
 `src/tests.rs` contains boilerplate Rocket form validation tests that don't match this application's forms (`FormInput`, `FormOption` don't exist in the actual code). These tests aren't active but should be replaced with real integration tests for upload/flash/delete endpoints.
+
+### Docker E2E Test Timing Issue
+When running E2E tests against the Docker container (`npm run test:docker`), some tests that wait for "Upload Complete!" may fail intermittently. The upload succeeds (files appear in `/data/inky-soup/images/`) but the modal state change timing differs from local dev. The root cause appears to be the modal's `active` class not being applied quickly enough for Playwright's assertions. This is a test timing issue, not a functional bug.
 
 ## Server Configuration
 

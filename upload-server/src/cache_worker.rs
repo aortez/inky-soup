@@ -1,11 +1,13 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use crate::config;
 
 /// Gets the cache path for a given original image path.
 /// Caches are always saved as PNG regardless of source format.
-pub fn get_cache_path(original_path: &str) -> String {
+pub fn get_cache_path(original_path: &str) -> PathBuf {
     let path = Path::new(original_path);
     let filename = path.file_name()
         .map(|f| f.to_str().unwrap_or("unknown"))
         .unwrap_or("unknown");
-    format!("static/images/cache/{}.png", filename)
+    config::cache_path(filename)
 }

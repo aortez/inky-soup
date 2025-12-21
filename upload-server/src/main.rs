@@ -2,6 +2,7 @@
 
 mod cache_worker;
 mod cleanup;
+mod config;
 mod flash_queue;
 mod image_locks;
 mod metadata;
@@ -198,7 +199,8 @@ fn sanitize_filename(filename: &str) -> Option<String> {
 fn get_gallery_images() -> Vec<GalleryImage> {
     let mut images: Vec<GalleryImage> = Vec::new();
 
-    for entry in glob("static/images/*").expect("Failed to read glob pattern") {
+    let glob_pattern = format!("{}/*", config::IMAGES_DIR.display());
+    for entry in glob(&glob_pattern).expect("Failed to read glob pattern") {
         match entry {
             Ok(path) => {
                 // Skip directories and non-image files.
@@ -217,8 +219,8 @@ fn get_gallery_images() -> Vec<GalleryImage> {
                 }
 
                 let image_path = format!("images/{}", filename);
-                let thumb_path = format!("static/images/thumbs/{}.png", filename);
-                let thumb_ready = Path::new(&thumb_path).exists();
+                let thumb_path = config::thumb_path(&filename);
+                let thumb_ready = thumb_path.exists();
 
                 // Load all metadata for this image.
                 let meta = metadata::get_all_metadata(&filename);
@@ -252,8 +254,8 @@ fn display_config() -> Json<DisplayConfig> {
 /// API endpoint to check if a gallery thumbnail exists.
 #[get("/api/thumb-status/<filename>")]
 fn thumb_status(filename: &str) -> Json<ThumbStatus> {
-    let thumb_path = format!("static/images/thumbs/{}.png", filename);
-    let ready = Path::new(&thumb_path).exists();
+    let thumb_path = config::thumb_path(filename);
+    let ready = thumb_path.exists();
 
     Json(ThumbStatus {
         ready,
@@ -486,7 +488,7 @@ async fn upload_dithered(
     }
 
     // Save dithered image to dithered directory (always as PNG).
-    let dithered_path = format!("static/images/dithered/{}.png", filename);
+    let dithered_path = config::dithered_path(&filename);
 
     match form.file.copy_to(&dithered_path).await {
         Ok(()) => {
@@ -571,7 +573,7 @@ async fn upload_cache(
     }
 
     // Save cache image to cache directory.
-    let cache_path = format!("static/images/cache/{}.png", filename);
+    let cache_path = config::cache_path(&filename);
 
     match form.file.copy_to(&cache_path).await {
         Ok(()) => {
@@ -603,8 +605,8 @@ async fn upload_cache(
                 );
 
                 // Remove dithered file if it exists since cache changed.
-                let dithered_path = format!("static/images/dithered/{}.png", filename);
-                if Path::new(&dithered_path).exists() {
+                let dithered_path = config::dithered_path(&filename);
+                if dithered_path.exists() {
                     let _ = fs::remove_file(&dithered_path);
                     debug!("Removed dithered cache: {}", filename);
                 }
@@ -646,7 +648,7 @@ async fn upload_thumb(mut form: Form<ThumbUpload<'_>>) -> Json<UploadThumbRespon
     debug!("Saving gallery thumbnail: {}", filename);
 
     // Save thumbnail to thumbs directory.
-    let thumb_path = format!("static/images/thumbs/{}.png", filename);
+    let thumb_path = config::thumb_path(&filename);
 
     match form.file.copy_to(&thumb_path).await {
         Ok(()) => {
@@ -690,11 +692,11 @@ async fn submit_delete_image<'r>(mut form: Form<Contextual<'r, SubmitDeleteImage
     };
 
     // Extract filename for logging.
-    let image_file = format!("static/{}", submission.submission.image_file_path.clone());
-    let filename = Path::new(&image_file)
+    let filename = Path::new(&submission.submission.image_file_path)
         .file_name()
         .and_then(|f| f.to_str())
         .unwrap_or("unknown");
+    let image_file = config::original_path(filename);
 
     info!("Delete started: {}", filename);
 
@@ -705,24 +707,24 @@ async fn submit_delete_image<'r>(mut form: Form<Contextual<'r, SubmitDeleteImage
     }
 
     // Also delete cached version if it exists (non-fatal if this fails).
-    let cache_path = cache_worker::get_cache_path(&image_file);
-    if Path::new(&cache_path).exists() {
+    let cache_path = config::cache_path(filename);
+    if cache_path.exists() {
         if let Err(e) = fs::remove_file(&cache_path) {
             warn!("Failed to remove cached image for {}: {}", filename, e);
         }
     }
 
     // Also delete gallery thumbnail if it exists (non-fatal if this fails).
-    let thumb_path = format!("static/images/thumbs/{}.png", filename);
-    if Path::new(&thumb_path).exists() {
+    let thumb_path = config::thumb_path(filename);
+    if thumb_path.exists() {
         if let Err(e) = fs::remove_file(&thumb_path) {
             warn!("Failed to remove thumbnail for {}: {}", filename, e);
         }
     }
 
     // Also delete dithered version if it exists (non-fatal if this fails).
-    let dithered_path = format!("static/images/dithered/{}.png", filename);
-    if Path::new(&dithered_path).exists() {
+    let dithered_path = config::dithered_path(filename);
+    if dithered_path.exists() {
         if let Err(e) = fs::remove_file(&dithered_path) {
             warn!("Failed to remove dithered image for {}: {}", filename, e);
         }
@@ -752,14 +754,14 @@ async fn submit_flash_image<'r>(
 
     // Get filename and path from submission.
     let filename = &submission.submission.filename;
-    let dithered_path = format!("static/{}", submission.submission.image_file_path.clone());
+    let dithered_path = config::dithered_path(filename);
     let flash_twice = submission.submission.flash_twice;
     let session_id = &submission.submission.session_id;
 
     info!("Flash request received: {} (flash_twice: {}, session: {})", filename, flash_twice, session_id);
 
     // Verify lock ownership.
-    let has_lock = image_locks::verify_lock_ownership(locks_state, &filename, session_id)
+    let has_lock = image_locks::verify_lock_ownership(locks_state, filename, session_id)
         .await
         .unwrap_or(false);
 
@@ -769,14 +771,14 @@ async fn submit_flash_image<'r>(
     }
 
     // Require pre-dithered version to exist (uploaded from preview dialog).
-    if !Path::new(&dithered_path).exists() {
+    if !dithered_path.exists() {
         error!("Flash failed for {}: pre-dithered image not found", filename);
         return Err((Status::NotFound, format!("Pre-dithered image not found: {}", filename)));
     }
 
     // Add to queue.
     let mut queue = queue_state.lock().await;
-    let job_id = queue.enqueue(filename.to_string(), dithered_path, flash_twice);
+    let job_id = queue.enqueue(filename.to_string(), dithered_path.to_string_lossy().to_string(), flash_twice);
     let queue_position = queue.get_position(job_id).unwrap_or(0);
     drop(queue);
 
@@ -854,8 +856,8 @@ async fn submit_new_image<'r>(
             info!("Upload started: {}", filename);
 
             // Save as new image in gallery.
-            let image_file_path = format!("static/images/{}", filename);
-            match file.copy_to(image_file_path.clone()).await {
+            let image_file_path = config::original_path(&filename);
+            match file.copy_to(&image_file_path).await {
                 Ok(_) => {
                     info!("Upload completed: {}", filename);
                     // Cache is now generated client-side and uploaded separately via /api/upload-cache.
@@ -929,9 +931,9 @@ impl Fairing for FlashQueueFairing {
 #[launch]
 fn rocket() -> _ {
     // Ensure image directories exist.
-    for dir in &["static/images", "static/images/cache", "static/images/dithered", "static/images/thumbs", "static/images/metadata"] {
-        if let Err(e) = fs::create_dir_all(dir) {
-            error!("Failed to create directory {}: {}", dir, e);
+    for dir in config::required_dirs() {
+        if let Err(e) = fs::create_dir_all(&dir) {
+            error!("Failed to create directory {}: {}", dir.display(), e);
         }
     }
 
@@ -944,7 +946,7 @@ fn rocket() -> _ {
     // Initialize image locks state.
     let image_locks_state: ImageLocksState = Arc::new(Mutex::new(HashMap::new()));
 
-    rocket::build()
+    let mut rocket = rocket::build()
         .manage(flash_queue_state)
         .manage(image_locks_state)
         .mount("/", routes![
@@ -962,7 +964,18 @@ fn rocket() -> _ {
             upload_form,
             upload_thumb
         ])
-        .mount("/", FileServer::from("static"))
+        // Use rank 10 (lower priority) for root static server so /images can take precedence.
+        .mount("/", FileServer::from("static").rank(10));
+
+    // Mount separate images FileServer only when images are outside of static/.
+    let images_dir_str = config::IMAGES_DIR.to_string_lossy();
+    if !images_dir_str.starts_with("static/") && !images_dir_str.starts_with("./static/") {
+        info!("Mounting images from external directory: {}", images_dir_str);
+        // Use rank 1 (higher priority) for images.
+        rocket = rocket.mount("/images", FileServer::from(config::IMAGES_DIR.as_path()).rank(1));
+    }
+
+    rocket
         .attach(Template::fairing())
         .attach(CleanupFairing)
         .attach(FlashQueueFairing)

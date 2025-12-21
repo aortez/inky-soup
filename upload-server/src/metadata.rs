@@ -1,16 +1,14 @@
 //! Per-image metadata storage.
 //!
-//! Each image has its own JSON file in `static/images/metadata/`.
+//! Each image has its own JSON file in the metadata directory.
 //! Files are read on demand and written atomically (temp file + rename).
 
+use crate::config;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
-
-const METADATA_DIR: &str = "static/images/metadata";
-const LEGACY_METADATA_FILE: &str = "static/images/metadata.json";
+use std::path::PathBuf;
 const DEFAULT_FILTER: &str = "bicubic";
 const DEFAULT_SATURATION: f32 = 0.5;
 const DEFAULT_BRIGHTNESS: i32 = 0;
@@ -74,9 +72,9 @@ struct LegacyImageMetadata {
 
 /// Ensures the metadata directory exists.
 pub fn ensure_metadata_dir() {
-    let path = Path::new(METADATA_DIR);
+    let path = config::metadata_dir();
     if !path.exists() {
-        if let Err(e) = fs::create_dir_all(path) {
+        if let Err(e) = fs::create_dir_all(&path) {
             error!("Failed to create metadata directory: {}", e);
         }
     }
@@ -84,7 +82,7 @@ pub fn ensure_metadata_dir() {
 
 /// Returns the path to a metadata file for a given image filename.
 fn get_metadata_path(filename: &str) -> PathBuf {
-    Path::new(METADATA_DIR).join(format!("{}.json", filename))
+    config::metadata_dir().join(format!("{}.json", filename))
 }
 
 /// Loads metadata for an image. Returns default if file doesn't exist.
@@ -239,12 +237,12 @@ pub fn save_dither_settings(
 
 /// Returns a list of all filenames that have metadata files.
 pub fn get_all_filenames() -> Vec<String> {
-    let path = Path::new(METADATA_DIR);
+    let path = config::metadata_dir();
     if !path.exists() {
         return Vec::new();
     }
 
-    match fs::read_dir(path) {
+    match fs::read_dir(&path) {
         Ok(entries) => entries
             .filter_map(|entry| {
                 let entry = entry.ok()?;
@@ -283,13 +281,13 @@ pub fn cleanup_orphaned_metadata(existing_images: &[String]) -> usize {
 /// Migrates from the legacy single-file metadata format.
 /// Called once at startup if the legacy file exists.
 pub fn migrate_legacy_metadata() {
-    let legacy_path = Path::new(LEGACY_METADATA_FILE);
+    let legacy_path = config::IMAGES_DIR.join("metadata.json");
     if !legacy_path.exists() {
         return;
     }
 
     // Check if migration already happened (backup exists).
-    let backup_path = Path::new("static/images/metadata.json.migrated");
+    let backup_path = config::IMAGES_DIR.join("metadata.json.migrated");
     if backup_path.exists() {
         // Migration already done, remove the legacy file if it somehow reappeared.
         warn!("Legacy metadata file exists but migration backup also exists, removing legacy file");
@@ -300,7 +298,7 @@ pub fn migrate_legacy_metadata() {
     info!("Migrating legacy metadata.json to per-file format...");
 
     // Read the legacy file.
-    let contents = match fs::read_to_string(legacy_path) {
+    let contents = match fs::read_to_string(&legacy_path) {
         Ok(c) => c,
         Err(e) => {
             error!("Failed to read legacy metadata file: {}", e);

@@ -1,0 +1,23 @@
+# Build artifacts.
+target/
+
+# Test artifacts.
+node_modules/
+e2e/
+tests/
+playwright-report/
+test-results/
+
+# Development files.
+*.md
+.eslintrc.json
+.gitignore
+vitest.config.js
+playwright.config.js
+playwright.remote.config.js
+
+# Static images (will use volume mount).
+static/images/cache/
+static/images/thumbs/
+static/images/dithered/
+static/images/metadata/

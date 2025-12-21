@@ -11,6 +11,7 @@ WorkingDirectory=/usr/share/inky-soup
 Environment="ROCKET_ADDRESS=0.0.0.0"
 Environment="ROCKET_PORT=8000"
 Environment="ROCKET_TEMPLATE_DIR=/usr/share/inky-soup/templates"
+Environment="INKY_SOUP_IMAGES_DIR=/data/inky-soup/images"
 ExecStart=/usr/bin/inky-soup-server
 Restart=on-failure
 RestartSec=5s

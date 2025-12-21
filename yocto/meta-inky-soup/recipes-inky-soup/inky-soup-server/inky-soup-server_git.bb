@@ -30,11 +30,12 @@ do_install() {
     install -d ${D}${datadir}/inky-soup/templates
     install -m 0644 ${S}/templates/*.tera ${D}${datadir}/inky-soup/templates/
 
-    # Create directories for runtime data.
+    # Create directories for runtime data (owned by inky user).
     install -d ${D}/data/inky-soup/images
     install -d ${D}/data/inky-soup/images/cache
     install -d ${D}/data/inky-soup/images/thumbs
     install -d ${D}/data/inky-soup/images/dithered
+    install -d ${D}/data/inky-soup/images/metadata
 
     # Install systemd service.
     install -d ${D}${systemd_system_unitdir}
@@ -44,6 +45,11 @@ do_install() {
 # Enable the systemd service.
 SYSTEMD_SERVICE:${PN} = "inky-soup-server.service"
 SYSTEMD_AUTO_ENABLE = "enable"
+
+# Set ownership of data directories on first boot.
+pkg_postinst:${PN}() {
+    chown -R inky:inky /data/inky-soup
+}
 
 # Package files.
 FILES:${PN} = " \

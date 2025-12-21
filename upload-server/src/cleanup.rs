@@ -6,6 +6,7 @@ use std::path::Path;
 use std::time::Duration;
 use tokio::time;
 
+use crate::config;
 use crate::metadata;
 
 const CLEANUP_INTERVAL_SECS: u64 = 300; // 5 minutes.
@@ -31,13 +32,13 @@ fn run_cleanup() {
     debug!("Found {} original images", originals.len());
 
     // Clean up cache directory.
-    let cache_removed = cleanup_derived_directory("static/images/cache", &originals);
+    let cache_removed = cleanup_derived_directory(&config::cache_dir(), &originals);
 
     // Clean up dithered directory.
-    let dithered_removed = cleanup_derived_directory("static/images/dithered", &originals);
+    let dithered_removed = cleanup_derived_directory(&config::dithered_dir(), &originals);
 
     // Clean up thumbs directory.
-    let thumbs_removed = cleanup_derived_directory("static/images/thumbs", &originals);
+    let thumbs_removed = cleanup_derived_directory(&config::thumbs_dir(), &originals);
 
     // Clean up metadata directory.
     let originals_vec: Vec<String> = originals.iter().cloned().collect();
@@ -57,7 +58,8 @@ fn run_cleanup() {
 fn get_original_filenames() -> HashSet<String> {
     let mut filenames = HashSet::new();
 
-    for entry in glob("static/images/*").unwrap_or_else(|_| panic!("Failed to read glob pattern")) {
+    let pattern = format!("{}/*", config::IMAGES_DIR.display());
+    for entry in glob(&pattern).unwrap_or_else(|_| panic!("Failed to read glob pattern")) {
         if let Ok(path) = entry {
             // Skip directories and metadata file.
             if path.is_dir() || path.extension().map(|e| e == "json").unwrap_or(false) {
@@ -78,9 +80,9 @@ fn get_original_filenames() -> HashSet<String> {
 /// - Don't end in .png
 /// - Don't have a corresponding original image
 /// Returns the number of files removed.
-fn cleanup_derived_directory(dir_path: &str, originals: &HashSet<String>) -> usize {
+fn cleanup_derived_directory(dir_path: &Path, originals: &HashSet<String>) -> usize {
     let mut removed = 0;
-    let pattern = format!("{}/*", dir_path);
+    let pattern = format!("{}/*", dir_path.display());
 
     for entry in glob(&pattern).unwrap_or_else(|_| panic!("Failed to read glob pattern")) {
         if let Ok(path) = entry {
