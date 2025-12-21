@@ -314,9 +314,6 @@ npm run lint:fix     # Auto-fix formatting issues
 ### Rust Test File Mismatch
 `src/tests.rs` contains boilerplate Rocket form validation tests that don't match this application's forms (`FormInput`, `FormOption` don't exist in the actual code). These tests aren't active but should be replaced with real integration tests for upload/flash/delete endpoints.
 
-### Docker E2E Test Timing Issue
-When running E2E tests against the Docker container (`npm run test:docker`), some tests that wait for "Upload Complete!" may fail intermittently. The upload succeeds (files appear in `/data/inky-soup/images/`) but the modal state change timing differs from local dev. The root cause appears to be the modal's `active` class not being applied quickly enough for Playwright's assertions. This is a test timing issue, not a functional bug.
-
 ## Server Configuration
 
 Rocket configuration in `upload-server/Rocket.toml`:

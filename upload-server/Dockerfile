@@ -22,6 +22,7 @@ WORKDIR /usr/share/inky-soup
 
 COPY --from=builder /build/target/release/upload-server /usr/bin/inky-soup-server
 COPY templates ./templates
+COPY Rocket.toml ./
 
 # Copy static files except images (images come from /data volume).
 COPY --chown=inky:inky static/js ./static/js

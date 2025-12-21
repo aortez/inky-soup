@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Run all tests for Inky Soup.
-# Starts the server, runs unit and e2e tests, then cleans up.
+# Uses Docker to match production environment.
 #
 
 set -e
@@ -16,7 +16,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo -e "${YELLOW}═══════════════════════════════════════════${NC}"
-echo -e "${YELLOW}  Inky Soup Test Suite${NC}"
+echo -e "${YELLOW}  Inky Soup Test Suite (Docker)${NC}"
 echo -e "${YELLOW}═══════════════════════════════════════════${NC}"
 echo
 
@@ -24,6 +24,14 @@ echo
 LINT_RESULT=0
 UNIT_RESULT=0
 E2E_RESULT=0
+
+# Cleanup function.
+cleanup() {
+    echo -e "${YELLOW}▶ Stopping Docker container...${NC}"
+    docker compose down -v 2>/dev/null || true
+    echo -e "  Container stopped"
+}
+trap cleanup EXIT
 
 # Run linter first.
 echo -e "${YELLOW}▶ Running ESLint...${NC}"
@@ -45,10 +53,17 @@ else
 fi
 echo
 
-# Start the server in the background.
-echo -e "${YELLOW}▶ Starting server...${NC}"
-cargo run --release 2>&1 &
-SERVER_PID=$!
+# Build and start Docker container.
+echo -e "${YELLOW}▶ Building Docker image...${NC}"
+if ! docker compose build --quiet; then
+    echo -e "${RED}✗ Docker build failed${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Docker image built${NC}"
+echo
+
+echo -e "${YELLOW}▶ Starting Docker container...${NC}"
+docker compose up -d
 
 # Wait for server to be ready.
 echo -n "  Waiting for server"
@@ -64,34 +79,19 @@ done
 # Check if server started.
 if ! curl -s -o /dev/null http://localhost:8000/; then
     echo -e " ${RED}failed to start${NC}"
-    kill $SERVER_PID 2>/dev/null || true
+    docker compose logs
     exit 1
 fi
 echo
 
-# Run e2e tests.
+# Run e2e tests against Docker.
 echo -e "${YELLOW}▶ Running e2e tests...${NC}"
-if npm run test:e2e; then
+if npm run test:docker; then
     echo -e "${GREEN}✓ E2E tests passed${NC}"
 else
     echo -e "${RED}✗ E2E tests failed${NC}"
     E2E_RESULT=1
 fi
-echo
-
-# Stop the server.
-echo -e "${YELLOW}▶ Stopping server...${NC}"
-kill $SERVER_PID 2>/dev/null || true
-wait $SERVER_PID 2>/dev/null || true
-echo -e "  Server stopped"
-echo
-
-# Clean up test artifacts.
-echo -e "${YELLOW}▶ Cleaning up test artifacts...${NC}"
-rm -f static/images/*.png static/images/*.jpg 2>/dev/null || true
-rm -f static/images/cache/* static/images/thumbs/* static/images/dithered/* static/images/metadata/* 2>/dev/null || true
-rm -f static/images/metadata.json 2>/dev/null || true
-echo -e "  Cleaned up"
 echo
 
 # Summary.
