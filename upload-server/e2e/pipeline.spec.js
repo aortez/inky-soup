@@ -69,8 +69,8 @@ test.describe('Pipeline Detail View', () => {
     const filename = await page.locator('#detailFilename').textContent();
 
     // Wait for initial processing to complete.
-    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
-    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 1000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 1000 });
 
     // Get initial values.
     const initialFilter = await page.locator('.filter-btn.active').getAttribute('data-filter');
@@ -81,7 +81,7 @@ test.describe('Pipeline Detail View', () => {
     const targetDither = initialDither === 'atkinson' ? 'ordered' : 'atkinson';
 
     await page.locator(`.filter-btn[data-filter="${targetFilter}"]`).click();
-    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 1000 });
 
     await page.locator('#saturationSlider').fill('0.7');
     await page.locator('#brightnessSlider').fill('15');
@@ -89,11 +89,11 @@ test.describe('Pipeline Detail View', () => {
     await page.locator(`.dither-btn[data-dither="${targetDither}"]`).click();
 
     // Wait for dither processing.
-    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 1000 });
 
     // Click Save button.
     await page.locator('.apply-filter-btn').click();
-    await expect(page.locator('#filterStatus')).toContainText('saved', { timeout: 10000 });
+    await expect(page.locator('#filterStatus')).toContainText('saved', { timeout: 1000 });
 
     // Go back to gallery (without page reload - typical user flow).
     await page.locator('.back-button').click();
@@ -105,8 +105,8 @@ test.describe('Pipeline Detail View', () => {
     await expect(page.locator('#detailView')).toBeVisible();
 
     // Wait for processing to complete.
-    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
-    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 1000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 1000 });
 
     // Verify all settings were restored.
     await expect(page.locator(`.filter-btn[data-filter="${targetFilter}"]`)).toHaveClass(/active/);
@@ -132,7 +132,7 @@ test.describe('Pipeline Detail View', () => {
     const targetDither = initialDither === 'floyd-steinberg' ? 'ordered' : 'floyd-steinberg';
 
     await page.locator(`.filter-btn[data-filter="${targetFilter}"]`).click();
-    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 1000 });
 
     await page.locator('#saturationSlider').fill('0.9');
     await page.locator('#brightnessSlider').fill('-20');
@@ -140,14 +140,14 @@ test.describe('Pipeline Detail View', () => {
     await page.locator(`.dither-btn[data-dither="${targetDither}"]`).click();
 
     // Wait for dither processing.
-    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 1000 });
 
     // Click Flash button.
     const flashBtn = page.locator('#flashBtn');
     await flashBtn.click();
 
     // Wait for flash to queue.
-    await expect(page.locator('#flashStatusBar')).toHaveClass(/visible/, { timeout: 10000 });
+    await expect(page.locator('#flashStatusBar')).toHaveClass(/visible/, { timeout: 1000 });
 
     // Go back to gallery (without page reload - typical user flow).
     await page.locator('.back-button').click();
@@ -159,8 +159,8 @@ test.describe('Pipeline Detail View', () => {
     await expect(page.locator('#detailView')).toBeVisible();
 
     // Wait for processing to complete.
-    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
-    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 1000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 1000 });
 
     // Verify all settings were restored.
     await expect(page.locator(`.filter-btn[data-filter="${targetFilter}"]`)).toHaveClass(/active/);
@@ -195,7 +195,7 @@ test.describe('Pipeline Detail View', () => {
     await expect(page.locator('#saturationValue')).toHaveText('1');
 
     // Wait for re-dithering to complete.
-    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 1000 });
 
     // Dither canvas should have changed.
     const newData = await getCanvasData();
@@ -241,7 +241,7 @@ test.describe('Pipeline Detail View', () => {
 
     // Wait for the flash status bar to become visible (indicates success).
     try {
-      await expect(page.locator('#flashStatusBar')).toHaveClass(/visible/, { timeout: 10000 });
+      await expect(page.locator('#flashStatusBar')).toHaveClass(/visible/, { timeout: 1000 });
     } catch (err) {
       // Log debug info on failure.
       console.log('Alerts captured:', alerts);
@@ -354,8 +354,8 @@ test.describe('Pipeline Processing', () => {
     await page.locator(`.filter-btn[data-filter="${targetFilter}"]`).click();
 
     // Wait for processing to complete.
-    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
-    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 1000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 1000 });
 
     // Small delay to ensure canvas painting completes.
     await page.waitForTimeout(200);
@@ -397,8 +397,8 @@ test.describe('Pipeline Processing', () => {
     }
 
     // Wait for final processing to complete.
-    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
-    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 1000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 1000 });
 
     // Verify no errors occurred.
     expect(consoleErrors).toEqual([]);
@@ -440,8 +440,8 @@ test.describe('Cache Optimization', () => {
     await expect(page.locator('#detailView')).toBeVisible();
 
     // Wait for processing to complete.
-    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
-    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+    await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 1000 });
+    await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 1000 });
 
     // Should have loaded from cache (cache URL contains "/cache/").
     const cacheRequests = networkRequests.filter(url => url.includes('/images/cache/'));

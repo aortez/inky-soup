@@ -23,8 +23,8 @@ async function clickThumbnail(page, filename) {
   await expect(page.locator('#detailView')).toBeVisible();
 
   // Wait for processing to complete.
-  await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
-  await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+  await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 1000 });
+  await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 1000 });
 }
 
 test.describe('Image Locking', () => {
@@ -119,9 +119,9 @@ test.describe('Image Locking', () => {
 
       // User B changes settings and saves.
       await pageB.locator('.filter-btn[data-filter="lanczos"]').click();
-      await expect(pageB.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
+      await expect(pageB.locator('#filterProcessing')).toHaveText('', { timeout: 1000 });
       await saveBtnB.click();
-      await expect(pageB.locator('#filterStatus')).toContainText('saved', { timeout: 10000 });
+      await expect(pageB.locator('#filterStatus')).toContainText('saved', { timeout: 1000 });
 
       // User B exits → releases lock.
       await pageB.locator('.back-button').click();

@@ -51,7 +51,7 @@ export const test = base.extend({
     // Wait for THIS test's thumbnail to appear.
     await page.waitForLoadState('networkidle');
     const myThumbnail = page.locator(`.thumbnail-item img[data-filename="${uniqueFilename}"]`);
-    await expect(myThumbnail).toBeVisible({ timeout: 10000 });
+    await expect(myThumbnail).toBeVisible({ timeout: 1000 });
 
     // Store the unique filename in page context so openDetailView can find it.
     await page.evaluate((filename) => {
@@ -104,8 +104,8 @@ export async function openDetailView(page) {
   }
 
   // Wait for initial image processing to complete before tests start.
-  await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 10000 });
-  await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 10000 });
+  await expect(page.locator('#filterProcessing')).toHaveText('', { timeout: 1000 });
+  await expect(page.locator('#ditherProcessing')).toHaveText('', { timeout: 1000 });
 
   return page;
 }

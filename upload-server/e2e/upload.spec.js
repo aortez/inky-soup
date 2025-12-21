@@ -73,7 +73,7 @@ test.describe('Upload with existing images', () => {
       await page.waitForLoadState('networkidle');
 
       // Wait for thumbnail to be ready (poll for img tag).
-      await expect(page.locator('.thumbnail-item img').first()).toBeVisible({ timeout: 10000 });
+      await expect(page.locator('.thumbnail-item img').first()).toBeVisible({ timeout: 1000 });
     }
 
     // Now click the first thumbnail.
