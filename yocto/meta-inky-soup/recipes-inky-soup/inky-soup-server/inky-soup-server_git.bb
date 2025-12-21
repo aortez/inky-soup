@@ -46,8 +46,8 @@ do_install() {
 SYSTEMD_SERVICE:${PN} = "inky-soup-server.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
-# Set ownership of data directories on first boot.
-pkg_postinst:${PN}() {
+# Set ownership of data directories on first boot (runs on target, not during image build).
+pkg_postinst_ontarget:${PN}() {
     chown -R inky:inky /data/inky-soup
 }
 

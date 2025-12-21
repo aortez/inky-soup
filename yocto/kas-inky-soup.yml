@@ -68,7 +68,7 @@ local_conf_header:
     # A/B partition layout configuration.
     BOOT_DEVICE = "mmcblk0"
     BOOT_SIZE = "150"
-    ROOTFS_SIZE = "800"
+    ROOTFS_SIZE = "1800"
     DATA_SIZE = "100"
 
     # Faster builds - adjust to your CPU cores.
