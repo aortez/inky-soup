@@ -41,6 +41,11 @@ let uploadThumbWorker = null;
 // Pending thumbnails (for upload coordination).
 let pendingThumbnails = { cache: null, thumb: null };
 
+// Image lock state.
+let currentSessionId = null;
+let lockKeepaliveInterval = null;
+let isReadOnly = false;
+
 // View state getters/setters.
 export const getCurrentView = () => currentView;
 export const setCurrentView = (view) => { currentView = view; };
@@ -114,3 +119,13 @@ export const getDisplayWidth = () => displayConfig.width;
 export const getDisplayHeight = () => displayConfig.height;
 export const getThumbWidth = () => displayConfig.thumbWidth;
 export const getThumbHeight = () => displayConfig.thumbHeight;
+
+// Image lock getters/setters.
+export const getCurrentSessionId = () => currentSessionId;
+export const setCurrentSessionId = (id) => { currentSessionId = id; };
+
+export const getLockKeepaliveInterval = () => lockKeepaliveInterval;
+export const setLockKeepaliveInterval = (interval) => { lockKeepaliveInterval = interval; };
+
+export const getIsReadOnly = () => isReadOnly;
+export const setIsReadOnly = (readOnly) => { isReadOnly = readOnly; };

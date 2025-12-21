@@ -270,6 +270,7 @@ export async function uploadPendingThumbnails(filename) {
 
   try {
     // Upload cache with filter metadata (use defaults for dither settings on upload).
+    // No session_id for new uploads (no lock required).
     const cacheData = await uploadCache(
       filename,
       pending.cache.blob,
@@ -278,6 +279,7 @@ export async function uploadPendingThumbnails(filename) {
       0, // default brightness
       0, // default contrast
       'floyd-steinberg', // default dither algorithm
+      null, // no session required for new uploads
     );
     if (!cacheData.success) {
       console.error('Cache upload failed:', cacheData.message);

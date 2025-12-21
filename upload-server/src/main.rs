@@ -3,6 +3,7 @@
 mod cache_worker;
 mod cleanup;
 mod flash_queue;
+mod image_locks;
 mod metadata;
 
 use glob::glob;
@@ -15,15 +16,17 @@ use rocket::fs::{FileServer, TempFile};
 use rocket::http::Status;
 use rocket::response::Redirect;
 use rocket::serde::json::Json;
-use rocket::serde::Serialize;
+use rocket::serde::{Deserialize, Serialize};
 use rocket::{Rocket, State};
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use flash_queue::{FlashJob, FlashQueue, FlashQueueState};
+use image_locks::ImageLocksState;
 
 
 #[derive(Debug, FromForm)]
@@ -33,8 +36,9 @@ struct DeleteSubmission {
 
 #[derive(Debug, FromForm)]
 struct FlashSubmission {
+    filename: String,
     image_file_path: String,
-
+    session_id: String,
     flash_twice: bool,
 }
 
@@ -257,6 +261,88 @@ fn thumb_status(filename: &str) -> Json<ThumbStatus> {
     })
 }
 
+/// Request to lock or refresh a lock on an image.
+#[derive(Deserialize)]
+#[serde(crate = "rocket::serde")]
+struct LockImageRequest {
+    filename: String,
+    session_id: String,
+}
+
+/// Response for image lock requests.
+#[derive(Serialize)]
+#[serde(crate = "rocket::serde")]
+struct LockImageResponse {
+    locked: bool,
+    expires_in_secs: Option<u64>,
+    reason: Option<String>,
+}
+
+/// API endpoint to acquire or refresh a lock on an image.
+#[post("/api/lock-image", data = "<request>")]
+async fn lock_image(
+    request: Json<LockImageRequest>,
+    locks_state: &State<ImageLocksState>,
+) -> Json<LockImageResponse> {
+    match image_locks::try_acquire_lock(
+        locks_state,
+        &request.filename,
+        &request.session_id,
+    ).await {
+        Ok(true) => {
+            let expires_in = image_locks::get_lock_remaining_secs(locks_state, &request.filename)
+                .await
+                .unwrap_or(image_locks::LOCK_DURATION_SECS);
+
+            Json(LockImageResponse {
+                locked: true,
+                expires_in_secs: Some(expires_in),
+                reason: None,
+            })
+        }
+        Ok(false) => {
+            let expires_in = image_locks::get_lock_remaining_secs(locks_state, &request.filename).await;
+            Json(LockImageResponse {
+                locked: false,
+                expires_in_secs: expires_in,
+                reason: Some("Image is being edited by another user".to_string()),
+            })
+        }
+        Err(e) => Json(LockImageResponse {
+            locked: false,
+            expires_in_secs: None,
+            reason: Some(format!("Lock error: {}", e)),
+        }),
+    }
+}
+
+/// Request to unlock an image.
+#[derive(Deserialize)]
+#[serde(crate = "rocket::serde")]
+struct UnlockImageRequest {
+    filename: String,
+    session_id: String,
+}
+
+/// Response for unlock requests.
+#[derive(Serialize)]
+#[serde(crate = "rocket::serde")]
+struct UnlockImageResponse {
+    success: bool,
+}
+
+/// API endpoint to release a lock on an image.
+#[post("/api/unlock-image", data = "<request>")]
+async fn unlock_image(
+    request: Json<UnlockImageRequest>,
+    locks_state: &State<ImageLocksState>,
+) -> Json<UnlockImageResponse> {
+    match image_locks::release_lock(locks_state, &request.filename, &request.session_id).await {
+        Ok(_) => Json(UnlockImageResponse { success: true }),
+        Err(_) => Json(UnlockImageResponse { success: false }),
+    }
+}
+
 /// Response for original image upload endpoint.
 #[derive(Serialize)]
 #[serde(crate = "rocket::serde")]
@@ -284,6 +370,7 @@ struct DitheredUpload<'v> {
     brightness: i32,
     contrast: i32,
     dither_algorithm: String,
+    session_id: String,
     file: TempFile<'v>,
 }
 
@@ -296,6 +383,7 @@ struct CacheUpload<'v> {
     brightness: Option<i32>,
     contrast: Option<i32>,
     dither_algorithm: Option<String>,
+    session_id: Option<String>,
     file: TempFile<'v>,
 }
 
@@ -355,7 +443,10 @@ struct FlashStatusResponse {
 
 /// API endpoint to upload a pre-dithered image.
 #[post("/api/upload-dithered", data = "<form>")]
-async fn upload_dithered(mut form: Form<DitheredUpload<'_>>) -> Json<UploadDitheredResponse> {
+async fn upload_dithered(
+    mut form: Form<DitheredUpload<'_>>,
+    locks_state: &State<ImageLocksState>,
+) -> Json<UploadDitheredResponse> {
     // Sanitize filename to prevent path traversal.
     let filename = match sanitize_filename(&form.filename) {
         Some(name) => name,
@@ -373,10 +464,26 @@ async fn upload_dithered(mut form: Form<DitheredUpload<'_>>) -> Json<UploadDithe
     let brightness = form.brightness;
     let contrast = form.contrast;
     let dither_algorithm = form.dither_algorithm.clone();
+    let session_id = &form.session_id;
+
     info!(
-        "Upload dithered: {} (filter: {}, sat: {}, bright: {}, contrast: {}, dither: {})",
-        filename, filter, saturation, brightness, contrast, dither_algorithm
+        "Upload dithered: {} (filter: {}, sat: {}, bright: {}, contrast: {}, dither: {}, session: {})",
+        filename, filter, saturation, brightness, contrast, dither_algorithm, session_id
     );
+
+    // Verify lock ownership.
+    let has_lock = image_locks::verify_lock_ownership(locks_state, &filename, session_id)
+        .await
+        .unwrap_or(false);
+
+    if !has_lock {
+        warn!("Upload dithered denied for {}: session {} does not own lock", filename, session_id);
+        return Json(UploadDitheredResponse {
+            success: false,
+            message: "You do not have edit access to this image".to_string(),
+            path: None,
+        });
+    }
 
     // Save dithered image to dithered directory (always as PNG).
     let dithered_path = format!("static/images/dithered/{}.png", filename);
@@ -417,7 +524,10 @@ async fn upload_dithered(mut form: Form<DitheredUpload<'_>>) -> Json<UploadDithe
 
 /// API endpoint to upload a pre-generated cache image.
 #[post("/api/upload-cache", data = "<form>")]
-async fn upload_cache(mut form: Form<CacheUpload<'_>>) -> Json<UploadCacheResponse> {
+async fn upload_cache(
+    mut form: Form<CacheUpload<'_>>,
+    locks_state: &State<ImageLocksState>,
+) -> Json<UploadCacheResponse> {
     // Sanitize filename to prevent path traversal.
     let filename = match sanitize_filename(&form.filename) {
         Some(name) => name,
@@ -437,11 +547,28 @@ async fn upload_cache(mut form: Form<CacheUpload<'_>>) -> Json<UploadCacheRespon
     let brightness = form.brightness;
     let contrast = form.contrast;
     let dither_algorithm = form.dither_algorithm.clone();
+    let session_id = form.session_id.as_ref();
 
     debug!(
-        "Upload cache: {} (filter: {:?}, sat: {:?}, bright: {:?}, contrast: {:?}, dither: {:?})",
-        filename, filter, saturation, brightness, contrast, dither_algorithm
+        "Upload cache: {} (filter: {:?}, sat: {:?}, bright: {:?}, contrast: {:?}, dither: {:?}, session: {:?})",
+        filename, filter, saturation, brightness, contrast, dither_algorithm, session_id
     );
+
+    // Verify lock ownership if session_id is provided.
+    if let Some(sid) = session_id {
+        let has_lock = image_locks::verify_lock_ownership(locks_state, &filename, sid)
+            .await
+            .unwrap_or(false);
+
+        if !has_lock {
+            warn!("Upload cache denied for {}: session {} does not own lock", filename, sid);
+            return Json(UploadCacheResponse {
+                success: false,
+                message: "You do not have edit access to this image".to_string(),
+                path: None,
+            });
+        }
+    }
 
     // Save cache image to cache directory.
     let cache_path = format!("static/images/cache/{}.png", filename);
@@ -612,7 +739,8 @@ async fn submit_delete_image<'r>(mut form: Form<Contextual<'r, SubmitDeleteImage
 #[post("/flash", data = "<form>")]
 async fn submit_flash_image<'r>(
     mut form: Form<Contextual<'r, SubmitFlashImage>>,
-    queue_state: &State<FlashQueueState>
+    queue_state: &State<FlashQueueState>,
+    locks_state: &State<ImageLocksState>,
 ) -> Result<Json<FlashResponse>, (Status, String)> {
     let submission = match form.value {
         Some(ref mut s) => s,
@@ -622,16 +750,23 @@ async fn submit_flash_image<'r>(
         }
     };
 
-    // Get the full path to the dithered image.
+    // Get filename and path from submission.
+    let filename = &submission.submission.filename;
     let dithered_path = format!("static/{}", submission.submission.image_file_path.clone());
-    let filename = Path::new(&dithered_path)
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or("unknown")
-        .to_string();
     let flash_twice = submission.submission.flash_twice;
+    let session_id = &submission.submission.session_id;
 
-    info!("Flash request received: {} (flash_twice: {})", filename, flash_twice);
+    info!("Flash request received: {} (flash_twice: {}, session: {})", filename, flash_twice, session_id);
+
+    // Verify lock ownership.
+    let has_lock = image_locks::verify_lock_ownership(locks_state, &filename, session_id)
+        .await
+        .unwrap_or(false);
+
+    if !has_lock {
+        warn!("Flash denied for {}: session {} does not own lock", filename, session_id);
+        return Err((Status::Forbidden, "You do not have edit access to this image".to_string()));
+    }
 
     // Require pre-dithered version to exist (uploaded from preview dialog).
     if !Path::new(&dithered_path).exists() {
@@ -806,16 +941,22 @@ fn rocket() -> _ {
     // Initialize flash queue state.
     let flash_queue_state: FlashQueueState = Arc::new(Mutex::new(FlashQueue::new()));
 
+    // Initialize image locks state.
+    let image_locks_state: ImageLocksState = Arc::new(Mutex::new(HashMap::new()));
+
     rocket::build()
         .manage(flash_queue_state)
+        .manage(image_locks_state)
         .mount("/", routes![
             display_config,
             flash_job_status,
             flash_status,
+            lock_image,
             submit_delete_image,
             submit_flash_image,
             submit_new_image,
             thumb_status,
+            unlock_image,
             upload_cache,
             upload_dithered,
             upload_form,

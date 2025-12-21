@@ -28,6 +28,7 @@ import {
 import { checkGlobalFlashStatus, flashImage } from './services/flash-service.js';
 import { updateSaturation, updateBrightness, updateContrast } from './services/dither-service.js';
 import { getDisplayConfig } from './services/api-client.js';
+import { getCurrentSessionId, getIsReadOnly } from './core/state.js';
 
 /**
  * Load display configuration from server.
@@ -122,3 +123,7 @@ window.updateSaturation = updateSaturation;
 window.updateBrightness = updateBrightness;
 window.updateContrast = updateContrast;
 window.flashImage = flashImage;
+
+// Expose state getters for testing/debugging.
+window.getCurrentSessionId = getCurrentSessionId;
+window.getIsReadOnly = getIsReadOnly;

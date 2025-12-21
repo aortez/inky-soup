@@ -12,6 +12,8 @@ import {
   getCurrentBrightness,
   getCurrentContrast,
   getCurrentDitherAlgorithm,
+  getCurrentSessionId,
+  getIsReadOnly,
   setCurrentJobId,
   getPollInterval,
   setPollInterval,
@@ -26,6 +28,19 @@ import {
  */
 export async function flashImage() {
   const { flashBtn } = elements;
+
+  // Check if in read-only mode.
+  if (getIsReadOnly()) {
+    alert('Cannot flash: Image is being edited by another user');
+    return;
+  }
+
+  const sessionId = getCurrentSessionId();
+  if (!sessionId) {
+    alert('Cannot flash: No lock acquired');
+    return;
+  }
+
   flashBtn.disabled = true;
 
   const flashTwice = elements.flashTwiceCheckbox.checked;
@@ -51,6 +66,7 @@ export async function flashImage() {
       brightness,
       contrast,
       ditherAlgorithm,
+      sessionId,
     );
 
     if (!uploadData.success) {
@@ -70,7 +86,7 @@ export async function flashImage() {
     }
 
     // Submit flash job.
-    const flashData = await submitFlashJob(filename, flashTwice);
+    const flashData = await submitFlashJob(filename, flashTwice, sessionId);
 
     if (!flashData.success) {
       alert(`Failed to queue flash: ${flashData.message}`);

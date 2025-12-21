@@ -35,6 +35,7 @@ export async function getDisplayConfig() {
  * @param {number} brightness - Brightness value.
  * @param {number} contrast - Contrast value.
  * @param {string} ditherAlgorithm - Dither algorithm name.
+ * @param {string} sessionId - Session ID for lock verification.
  * @returns {Promise<Object>} Server response.
  */
 export async function uploadCache(
@@ -45,6 +46,7 @@ export async function uploadCache(
   brightness,
   contrast,
   ditherAlgorithm,
+  sessionId,
 ) {
   const formData = new FormData();
   formData.append('filename', filename);
@@ -54,6 +56,9 @@ export async function uploadCache(
     formData.append('brightness', brightness.toString());
     formData.append('contrast', contrast.toString());
     formData.append('dither_algorithm', ditherAlgorithm);
+  }
+  if (sessionId) {
+    formData.append('session_id', sessionId);
   }
   formData.append('file', blob, `${filename}.png`);
 
@@ -111,6 +116,7 @@ export async function uploadDithered(
   brightness,
   contrast,
   ditherAlgorithm,
+  sessionId,
 ) {
   const formData = new FormData();
   formData.append('filename', filename);
@@ -119,6 +125,7 @@ export async function uploadDithered(
   formData.append('brightness', brightness.toString());
   formData.append('contrast', contrast.toString());
   formData.append('dither_algorithm', ditherAlgorithm);
+  formData.append('session_id', sessionId);
   formData.append('file', blob, `${filename}.png`);
 
   const response = await fetch('/api/upload-dithered', {
@@ -137,11 +144,14 @@ export async function uploadDithered(
  * Submit a flash job to display an image on the e-ink screen.
  * @param {string} filename - Filename to flash.
  * @param {boolean} flashTwice - Whether to flash the image twice.
+ * @param {string} sessionId - Session ID for lock verification.
  * @returns {Promise<Object>} Server response with job_id.
  */
-export async function submitFlashJob(filename, flashTwice) {
+export async function submitFlashJob(filename, flashTwice, sessionId) {
   const formData = new FormData();
+  formData.append('submission.filename', filename);
   formData.append('submission.image_file_path', `images/dithered/${filename}.png`);
+  formData.append('submission.session_id', sessionId);
   if (flashTwice) {
     formData.append('submission.flash_twice', 'true');
   }
@@ -197,6 +207,46 @@ export async function getThumbStatus(filename) {
 
   if (!response.ok) {
     throw new Error(`Failed to get thumbnail status: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Acquire or refresh a lock on an image for editing.
+ * @param {string} filename - The filename to lock.
+ * @param {string} sessionId - The session ID requesting the lock.
+ * @returns {Promise<Object>} Lock response {locked, expires_in_secs, reason}.
+ */
+export async function lockImage(filename, sessionId) {
+  const response = await fetch('/api/lock-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename, session_id: sessionId }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to lock image: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Release a lock on an image.
+ * @param {string} filename - The filename to unlock.
+ * @param {string} sessionId - The session ID releasing the lock.
+ * @returns {Promise<Object>} Unlock response {success}.
+ */
+export async function unlockImage(filename, sessionId) {
+  const response = await fetch('/api/unlock-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename, session_id: sessionId }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to unlock image: ${response.statusText}`);
   }
 
   return response.json();

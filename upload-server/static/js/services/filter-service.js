@@ -13,6 +13,8 @@ import {
   getCurrentBrightness,
   getCurrentContrast,
   getCurrentDitherAlgorithm,
+  getCurrentSessionId,
+  getIsReadOnly,
   getOriginalImageCache,
   getDisplayWidth,
   getDisplayHeight,
@@ -157,6 +159,19 @@ export function selectFilter(filter) {
  */
 export async function applyFilter() {
   const statusEl = elements.filterStatus;
+
+  // Check if in read-only mode.
+  if (getIsReadOnly()) {
+    alert('Cannot save: Image is being edited by another user');
+    return;
+  }
+
+  const sessionId = getCurrentSessionId();
+  if (!sessionId) {
+    alert('Cannot save: No lock acquired');
+    return;
+  }
+
   const filename = getCurrentFilename();
   const filter = getCurrentFilter();
   const saturation = getCurrentSaturation();
@@ -181,6 +196,7 @@ export async function applyFilter() {
       brightness,
       contrast,
       ditherAlgorithm,
+      sessionId,
     );
 
     if (!data.success) {

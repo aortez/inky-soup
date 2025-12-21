@@ -2,7 +2,7 @@
  * E2E tests for the gallery view.
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures.js';
 
 test.describe('Gallery View', () => {
   test('should load the gallery page with required elements', async ({ page }) => {
@@ -19,22 +19,11 @@ test.describe('Gallery View', () => {
 });
 
 test.describe('Gallery with Images', () => {
-  // These tests assume there are images in the gallery.
-  // They will be skipped if the gallery is empty.
-
-  test('thumbnail click should open detail view', async ({ page }) => {
-    await page.goto('/');
-
-    // Check if there are any thumbnails.
-    const thumbnails = page.locator('.thumbnail-item img');
-    const count = await thumbnails.count();
-
-    if (count === 0) {
-      test.skip();
-      return;
-    }
+  test('thumbnail click should open detail view', async ({ withImage }) => {
+    const page = withImage;
 
     // Click the first thumbnail.
+    const thumbnails = page.locator('.thumbnail-item img');
     await thumbnails.first().click();
 
     // Detail view should become visible.
@@ -44,18 +33,11 @@ test.describe('Gallery with Images', () => {
     await expect(page.locator('#galleryView')).not.toBeVisible();
   });
 
-  test('back button should return to gallery', async ({ page }) => {
-    await page.goto('/');
-
-    const thumbnails = page.locator('.thumbnail-item img');
-    const count = await thumbnails.count();
-
-    if (count === 0) {
-      test.skip();
-      return;
-    }
+  test('back button should return to gallery', async ({ withImage }) => {
+    const page = withImage;
 
     // Click thumbnail to open detail view.
+    const thumbnails = page.locator('.thumbnail-item img');
     await thumbnails.first().click();
     await expect(page.locator('#detailView')).toBeVisible();
 

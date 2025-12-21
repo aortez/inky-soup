@@ -203,6 +203,20 @@
         word-break: break-all;
         min-width: 200px;
       }
+      .lock-status {
+        background: rgba(255, 165, 0, 0.2);
+        border: 2px solid #FFA500;
+        color: #FFD700;
+        padding: 8px 15px;
+        border-radius: 4px;
+        font-size: 0.9em;
+        white-space: nowrap;
+      }
+      .lock-status.read-only {
+        background: rgba(255, 0, 0, 0.2);
+        border-color: #ff6b6b;
+        color: #ff6b6b;
+      }
       .delete-button {
         background: #3A2A1F;
         border: 2px solid #8B0000;
@@ -847,6 +861,7 @@
         <div class="detail-header">
           <button class="back-button" onclick="showGalleryView()">← Back to Gallery</button>
           <div id="detailFilename" class="detail-filename"></div>
+          <div id="lockStatus" class="lock-status" style="display: none;"></div>
           <button class="delete-button" onclick="showDeleteConfirmation()">Delete</button>
         </div>
 
