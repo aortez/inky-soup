@@ -359,9 +359,13 @@ Inky Soup includes a Yocto-based build system for Raspberry Pi Zero 2 W.
 cd yocto
 npm install          # First time only
 
+# Set up WiFi credentials (first time only)
+cp pi-base/scripts/wifi-creds.local.example wifi-creds.local
+# Edit wifi-creds.local with your SSID and password
+
 # Build and flash
 npm run build        # Build image (~20 min with cache, ~2 hours first time)
-npm run flash        # Flash to SD card with SSH key injection
+npm run flash        # Flash to SD card with SSH key and WiFi injection
 ```
 
 ### Current Features
@@ -378,8 +382,19 @@ npm run flash        # Flash to SD card with SSH key injection
 
 Uses [KAS](https://kas.readthedocs.io/) for reproducible Yocto builds. All configuration in `kas-inky-soup.yml`.
 
+### YOLO Updates (Over-the-Air)
+
+For updating a running Pi over the network:
+
+```bash
+cd yocto
+npm run yolo                # Build + push + flash + reboot
+npm run yolo -- --dry-run   # Show what would happen
+npm run yolo -- --skip-build # Push existing image only
+```
+
+Uses A/B partitions for safe atomic updates. If it fails, pull the disk and reflash.
+
 ### Next Steps
 
-1. A/B partition support for atomic updates
-2. A/B update script (yolo-update.mjs) for OTA updates
-3. Integrate inky-soup server and display script
+1. Integrate inky-soup server and display script into Yocto image
