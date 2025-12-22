@@ -30,31 +30,25 @@ do_install() {
     install -d ${D}${datadir}/inky-soup/templates
     install -m 0644 ${S}/templates/*.tera ${D}${datadir}/inky-soup/templates/
 
-    # Create directories for runtime data (owned by inky user).
-    install -d ${D}/data/inky-soup/images
-    install -d ${D}/data/inky-soup/images/cache
-    install -d ${D}/data/inky-soup/images/thumbs
-    install -d ${D}/data/inky-soup/images/dithered
-    install -d ${D}/data/inky-soup/images/metadata
+    # Install Rocket configuration.
+    install -m 0644 ${S}/Rocket.toml ${D}${datadir}/inky-soup/
 
-    # Install systemd service.
+    # Install systemd services.
+    # Note: /data/inky-soup directories are created at runtime by the init service
+    # and subdirectories (images/, cache/, etc.) are created by the server itself.
     install -d ${D}${systemd_system_unitdir}
+    install -m 0644 ${THISDIR}/files/inky-soup-data-init.service ${D}${systemd_system_unitdir}/
     install -m 0644 ${THISDIR}/files/inky-soup-server.service ${D}${systemd_system_unitdir}/
 }
 
-# Enable the systemd service.
-SYSTEMD_SERVICE:${PN} = "inky-soup-server.service"
+# Enable systemd services.
+SYSTEMD_SERVICE:${PN} = "inky-soup-data-init.service inky-soup-server.service"
 SYSTEMD_AUTO_ENABLE = "enable"
-
-# Set ownership of data directories on first boot (runs on target, not during image build).
-pkg_postinst_ontarget:${PN}() {
-    chown -R inky:inky /data/inky-soup
-}
 
 # Package files.
 FILES:${PN} = " \
     ${bindir}/inky-soup-server \
     ${datadir}/inky-soup \
-    /data/inky-soup \
+    ${systemd_system_unitdir}/inky-soup-data-init.service \
     ${systemd_system_unitdir}/inky-soup-server.service \
 "

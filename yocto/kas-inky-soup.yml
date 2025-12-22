@@ -62,7 +62,8 @@ local_conf_header:
     hostname:pn-base-files = "inky-soup"
 
     # Use WIC format with A/B partitions for safe updates.
-    IMAGE_FSTYPES = "wic.gz wic.bmap"
+    # Also produce tar.gz for content-based OTA updates.
+    IMAGE_FSTYPES = "wic.gz wic.bmap tar.gz"
     WKS_FILE = "sdimage-ab.wks.in"
 
     # A/B partition layout configuration.

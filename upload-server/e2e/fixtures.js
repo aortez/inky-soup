@@ -60,6 +60,20 @@ export const test = base.extend({
 
     // Provide the page to the test.
     await use(page);
+
+    // Cleanup: Delete the test image after test completes.
+    try {
+      await page.goto('/');
+      const deleteBtn = page.locator(`.thumbnail-item[data-filename="${uniqueFilename}"] .delete-btn`);
+      if (await deleteBtn.isVisible({ timeout: 1000 })) {
+        await deleteBtn.click();
+        await page.locator('#deleteConfirmBtn').click();
+        await expect(page.locator('#deleteModal')).not.toHaveClass(/active/, { timeout: 2000 });
+      }
+    } catch (err) {
+      // Ignore cleanup errors - test may have already deleted the image.
+      console.log(`Cleanup skipped for ${uniqueFilename}:`, err.message);
+    }
   },
 });
 

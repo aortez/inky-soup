@@ -273,7 +273,11 @@ export function uploadOriginalImage(file, onProgress, onSuccess, onError) {
     if (xhr.status === 200) {
       try {
         const data = JSON.parse(xhr.responseText);
-        onSuccess(data);
+        if (data.success === false) {
+          onError(new Error(data.message || 'Upload failed'));
+        } else {
+          onSuccess(data);
+        }
       } catch (error) {
         onError(new Error('Failed to parse server response'));
       }

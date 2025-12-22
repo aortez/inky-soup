@@ -230,12 +230,6 @@ async function main() {
     saveConfig(CONFIG_FILE, config);
   }
 
-  // Get WiFi credentials (from file or prompt, skip if restoring backup).
-  let wifiCredentials = null;
-  if (!dryRun && !hasDataPartition(targetDevice)) {
-    wifiCredentials = await getWifiCredentials(WIFI_CREDS_FILE);
-  }
-
   // Check if we can backup /data from the disk before flashing.
   let backupDir = null;
   if (!dryRun && hasDataPartition(targetDevice)) {
@@ -252,6 +246,12 @@ async function main() {
         }
       }
     }
+  }
+
+  // Get WiFi credentials (from file or prompt) unless restoring from backup.
+  let wifiCredentials = null;
+  if (!dryRun && !backupDir) {
+    wifiCredentials = await getWifiCredentials(WIFI_CREDS_FILE);
   }
 
   // Flash!

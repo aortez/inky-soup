@@ -6,6 +6,9 @@
   "description": "Yocto build and flash tools for Inky Soup",
   "scripts": {
     "build": "kas build kas-inky-soup.yml",
+    "clean": "kas shell kas-inky-soup.yml -c 'bitbake -c cleansstate inky-soup-server'",
+    "clean:image": "kas shell kas-inky-soup.yml -c 'bitbake -c cleansstate inky-soup-image'",
+    "clean:all": "kas shell kas-inky-soup.yml -c 'bitbake -c cleansstate inky-soup-server inky-soup-image'",
     "flash": "node scripts/flash.mjs",
     "yolo": "node scripts/yolo-update.mjs"
   },

@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 /**
- * YOLO remote update - push image over network and dd directly to disk.
+ * YOLO remote update - content-based A/B partition update.
  *
- * This is the "hold my mead" approach: we scp the image to the Pi,
- * verify the checksum, then dd it to the boot disk while running.
- * If it works, great! If not, pull the disk and reflash.
+ * Streams rootfs content directly to the inactive partition, no staging required.
+ * Uses ab-boot-manager to switch boot slots after update.
  *
  * Usage:
  *   npm run yolo                    # Build + push + flash + reboot
@@ -15,10 +14,10 @@
  *   npm run yolo -- --help          # Show help
  */
 
-import { existsSync, statSync, readdirSync } from 'fs';
+import { existsSync, statSync, readdirSync, readFileSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import { createConsola } from 'consola';
 
 // Import shared utilities.
@@ -31,16 +30,8 @@ import {
   skull,
   run,
   checkRemoteReachable,
-  getRemoteTmpSpace,
-  getRemoteBootDevice,
   getRemoteBootTime,
   waitForReboot,
-  transferImage,
-  verifyRemoteChecksum,
-  calculateChecksum,
-  prepareRootfs,
-  cleanupPreparedImage,
-  remoteFlash,
   createCleanupManager,
   loadConfig,
 } from '../pi-base/scripts/lib/index.mjs';
@@ -55,19 +46,19 @@ const YOCTO_DIR = dirname(__dirname);
 
 // Project-specific settings.
 const PROJECT_NAME = 'inky-soup';
-const MACHINE = 'raspberrypi-inky-soup';
+const MACHINE = 'raspberrypi0-2w';
 const REMOTE_HOST = 'inky-soup.local';
 const REMOTE_USER = 'inky';
 const IMAGE_NAME = 'inky-soup-image';
 const SERVER_NAME = 'inky-soup-server';
 const KAS_CONFIG = 'kas-inky-soup.yml';
-const PREFERRED_IMAGE = `${IMAGE_NAME}-${MACHINE}.rootfs.wic.gz`;
 
 const REMOTE_TARGET = `${REMOTE_USER}@${REMOTE_HOST}`;
 const IMAGE_DIR = join(YOCTO_DIR, `build/tmp/deploy/images/${MACHINE}`);
 const CONFIG_FILE = join(YOCTO_DIR, '.flash-config.json');
-const REMOTE_DEVICE = '/dev/sda';
-const REMOTE_TMP = '/tmp';
+
+// Mount point for inactive partition on remote.
+const REMOTE_MOUNT = '/mnt/inactive';
 
 // Set up consola with timestamps.
 const consola = createConsola({
@@ -118,15 +109,28 @@ async function build(forceClean = false, forceCleanAll = false) {
 }
 
 /**
- * Find the latest .wic.gz image file.
+ * Find the rootfs tarball.
  */
-function findLatestImage() {
+function findRootfsTarball() {
   if (!existsSync(IMAGE_DIR)) {
     return null;
   }
 
+  const expectedName = `${IMAGE_NAME}-${MACHINE}.rootfs.tar.gz`;
+  const tarballPath = join(IMAGE_DIR, expectedName);
+
+  if (existsSync(tarballPath)) {
+    const stat = statSync(tarballPath);
+    return {
+      name: expectedName,
+      path: tarballPath,
+      stat,
+    };
+  }
+
+  // Fallback: find any tar.gz.
   const files = readdirSync(IMAGE_DIR)
-    .filter(f => f.endsWith('.wic.gz') && !f.includes('->'))
+    .filter(f => f.endsWith('.tar.gz') && f.includes('rootfs'))
     .map(f => ({
       name: f,
       path: join(IMAGE_DIR, f),
@@ -134,13 +138,141 @@ function findLatestImage() {
     }))
     .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
 
-  // Prefer our custom image.
-  const preferredImage = files.find(f => f.name === PREFERRED_IMAGE);
-  if (preferredImage) {
-    return preferredImage;
+  return files[0] || null;
+}
+
+// ============================================================================
+// Remote Commands
+// ============================================================================
+
+/**
+ * Run a command on the remote Pi via SSH.
+ */
+function ssh(cmd, options = {}) {
+  const sshCmd = `ssh -o ConnectTimeout=10 ${REMOTE_TARGET} "${cmd}"`;
+  try {
+    return execSync(sshCmd, { encoding: 'utf8', ...options }).trim();
+  } catch (err) {
+    if (options.throwOnError !== false) {
+      throw err;
+    }
+    return null;
+  }
+}
+
+/**
+ * Get the inactive partition device from ab-boot-manager.
+ */
+function getInactiveDevice() {
+  return ssh('ab-boot-manager inactive-device');
+}
+
+/**
+ * Get the inactive slot name (a or b).
+ */
+function getInactiveSlot() {
+  return ssh('ab-boot-manager inactive');
+}
+
+/**
+ * Mount the inactive partition.
+ */
+function mountInactive(device) {
+  ssh(`sudo mkdir -p ${REMOTE_MOUNT}`);
+  ssh(`sudo mount ${device} ${REMOTE_MOUNT}`);
+}
+
+/**
+ * Unmount the inactive partition.
+ */
+function unmountInactive() {
+  ssh(`sudo umount ${REMOTE_MOUNT}`, { throwOnError: false });
+}
+
+/**
+ * Clear the inactive partition content.
+ */
+function clearInactive() {
+  // Use find + xargs for efficiency, skip lost+found.
+  ssh(`sudo find ${REMOTE_MOUNT} -mindepth 1 -maxdepth 1 ! -name 'lost+found' -exec rm -rf {} +`);
+}
+
+/**
+ * Stream tarball to remote and extract.
+ */
+function streamTarball(tarballPath, dryRun = false) {
+  return new Promise((resolve, reject) => {
+    if (dryRun) {
+      info(`Would stream ${tarballPath} to ${REMOTE_TARGET}:${REMOTE_MOUNT}`);
+      resolve();
+      return;
+    }
+
+    const sshProcess = spawn('ssh', [
+      '-o', 'ConnectTimeout=30',
+      REMOTE_TARGET,
+      `sudo tar -xzf - -C ${REMOTE_MOUNT}`,
+    ], {
+      stdio: ['pipe', 'inherit', 'inherit'],
+    });
+
+    const catProcess = spawn('cat', [tarballPath], {
+      stdio: ['inherit', 'pipe', 'inherit'],
+    });
+
+    catProcess.stdout.pipe(sshProcess.stdin);
+
+    sshProcess.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`tar extract failed with code ${code}`));
+      }
+    });
+
+    sshProcess.on('error', reject);
+    catProcess.on('error', reject);
+  });
+}
+
+/**
+ * Inject SSH key into the inactive rootfs.
+ */
+function injectSSHKey(config) {
+  if (!config || !config.ssh_key_path) {
+    warn('No SSH key configured, skipping injection');
+    return;
   }
 
-  return files[0] || null;
+  const keyContent = readFileSync(config.ssh_key_path, 'utf8').trim();
+  const sshDir = `${REMOTE_MOUNT}/home/${REMOTE_USER}/.ssh`;
+
+  // Create .ssh directory with correct permissions.
+  ssh(`sudo mkdir -p ${sshDir}`);
+  ssh(`sudo chmod 700 ${sshDir}`);
+
+  // Write authorized_keys.
+  ssh(`echo '${keyContent}' | sudo tee ${sshDir}/authorized_keys > /dev/null`);
+  ssh(`sudo chmod 600 ${sshDir}/authorized_keys`);
+
+  // Set ownership (UID 1000 is typically the first user).
+  ssh(`sudo chown -R 1000:1000 ${sshDir}`);
+
+  success('SSH key injected!');
+}
+
+/**
+ * Switch boot to the inactive slot.
+ */
+function switchBootSlot(slot) {
+  ssh(`sudo ab-boot-manager switch ${slot}`);
+}
+
+/**
+ * Reboot the Pi.
+ */
+function rebootPi() {
+  ssh('sudo reboot', { throwOnError: false });
 }
 
 // ============================================================================
@@ -154,19 +286,17 @@ async function main() {
   const forceClean = args.includes('--clean');
   const forceCleanAll = args.includes('--clean-all');
   const dryRun = args.includes('--dry-run');
-  const holdMyMead = args.includes('--hold-my-mead');
 
   if (args.includes('-h') || args.includes('--help')) {
     log(`Usage: npm run yolo [options]`);
     log('');
-    log('Push a Yocto image to the Pi over the network and flash it live.');
+    log('Content-based A/B update: streams rootfs to inactive partition.');
     log('');
     log('Options:');
-    log('  --skip-build     Skip kas build, use existing image');
+    log('  --skip-build     Skip kas build, use existing tarball');
     log('  --clean          Force rebuild by cleaning image sstate first');
     log('  --clean-all      Force full rebuild (cleans server + image sstate)');
     log('  --dry-run        Show what would happen without doing it');
-    log('  --hold-my-mead   Skip confirmation prompt (for scripts)');
     log('  -h, --help       Show this help');
     log('');
     log('This is the YOLO approach - if it fails, pull the disk and reflash.');
@@ -185,6 +315,7 @@ async function main() {
   skull();
 
   // Pre-flight checks.
+  info(`Checking if ${REMOTE_HOST} is reachable...`);
   if (!checkRemoteReachable(REMOTE_HOST, REMOTE_TARGET)) {
     error(`Cannot reach ${REMOTE_HOST}`);
     error('Make sure the Pi is running and accessible via SSH.');
@@ -192,12 +323,11 @@ async function main() {
   }
   success(`${REMOTE_HOST} is reachable`);
 
-  // Heat up sudo access for the deploy later.
-  execSync(`sudo echo "I'm sudo"`, { stdio: 'pipe' });
-
-  // Detect boot device and get original boot time.
-  const bootDevice = getRemoteBootDevice(REMOTE_TARGET, REMOTE_DEVICE);
-  info(`Boot device: ${bootDevice}`);
+  // Get A/B partition info.
+  const inactiveSlot = getInactiveSlot();
+  const inactiveDevice = getInactiveDevice();
+  info(`Current slot: ${inactiveSlot === 'b' ? 'a' : 'b'}`);
+  info(`Inactive slot: ${inactiveSlot} (${inactiveDevice})`);
 
   const originalBootTime = getRemoteBootTime(REMOTE_TARGET);
 
@@ -206,118 +336,116 @@ async function main() {
     await build(forceClean, forceCleanAll);
   }
 
-  // Find image.
-  const image = findLatestImage();
-  if (!image) {
-    error('No image found. Run "kas build kas-inky-soup.yml" first.');
+  // Find tarball.
+  const tarball = findRootfsTarball();
+  if (!tarball) {
+    error('No rootfs tarball found. Make sure IMAGE_FSTYPES includes "tar.gz".');
+    error('Run: npm run clean:image && npm run build');
     process.exit(1);
   }
 
   log('');
-  info(`Image: ${image.name}`);
-  info(`Size: ${formatBytes(image.stat.size)}`);
-  info(`Built: ${image.stat.mtime.toLocaleString()}`);
+  info(`Tarball: ${tarball.name}`);
+  info(`Size: ${formatBytes(tarball.stat.size)}`);
+  info(`Built: ${tarball.stat.mtime.toLocaleString()}`);
 
-  // Load SSH key config for image customization.
+  // Load SSH key config.
   const config = loadConfig(CONFIG_FILE);
-  if (!config) {
-    warn('No SSH key configured. Run "npm run flash -- --reconfigure" first.');
-    warn('Image will be flashed without SSH key - you may be locked out!');
-    const { prompt } = await import('../pi-base/scripts/lib/cli-utils.mjs');
-    const proceed = await prompt('Continue anyway? (y/N): ');
-    if (proceed.toLowerCase() !== 'y') {
-      error('Aborted.');
-      process.exit(1);
-    }
-  } else {
+  if (config) {
     info(`SSH key: ${basename(config.ssh_key_path)}`);
+  } else {
+    warn('No SSH key configured. Run "npm run flash -- --reconfigure" first.');
   }
 
-  // Extract rootfs and inject SSH key.
-  let rootfsToTransfer = image.path;
-  let workDir = null;
-
-  if (!dryRun && config) {
-    banner('Extracting and preparing rootfs...', consola);
-    const prepared = await prepareRootfs(image.path, config, REMOTE_USER);
-    rootfsToTransfer = prepared.preparedRootfsPath;
-    workDir = prepared.workDir;
-    cleanupManager.trackResource('tempdir', workDir);
+  if (dryRun) {
+    log('');
+    banner('Dry run - would perform these steps:', consola);
+    info(`1. Mount ${inactiveDevice} to ${REMOTE_MOUNT}`);
+    info(`2. Clear ${REMOTE_MOUNT}/*`);
+    info(`3. Stream ${tarball.name} to ${REMOTE_MOUNT}`);
+    info(`4. Inject SSH key`);
+    info(`5. Switch boot to slot ${inactiveSlot}`);
+    info(`6. Reboot`);
+    log('');
+    success('Dry run complete!');
+    process.exit(0);
   }
 
   try {
-    // Get the size of the prepared rootfs.
-    const rootfsSize = statSync(rootfsToTransfer).size;
+    // Mount inactive partition.
+    banner('Preparing inactive partition...', consola);
+    unmountInactive(); // Ensure clean state.
+    mountInactive(inactiveDevice);
+    success(`Mounted ${inactiveDevice} to ${REMOTE_MOUNT}`);
 
-    // Check remote has enough space.
-    const remoteSpace = getRemoteTmpSpace(REMOTE_TARGET, REMOTE_TMP);
-    if (remoteSpace < rootfsSize) {
-      error(`Not enough space in ${REMOTE_TMP} on ${REMOTE_HOST}`);
-      error(`Need: ${formatBytes(rootfsSize)}, Have: ${formatBytes(remoteSpace)}`);
-      process.exit(1);
-    }
-    success(`Remote has enough space (${formatBytes(remoteSpace)} available)`);
+    // Clear old content.
+    info('Clearing old content...');
+    clearInactive();
+    success('Partition cleared');
 
-    // Calculate checksum of prepared rootfs.
-    info('Calculating checksum...');
-    const checksum = await calculateChecksum(rootfsToTransfer);
-    success(`Checksum: ${checksum.substring(0, 16)}...`);
+    // Stream tarball.
+    banner('Streaming rootfs to Pi...', consola);
+    info(`Streaming ${formatBytes(tarball.stat.size)}...`);
+    await streamTarball(tarball.path, dryRun);
+    success('Rootfs extracted!');
 
-    // Transfer.
-    banner('Transferring image to Pi...', consola);
-    const { remoteImagePath, remoteChecksumPath } = await transferImage(
-      rootfsToTransfer, checksum, REMOTE_TARGET, REMOTE_TMP, dryRun
-    );
-
-    // Verify (skip in dry-run since we didn't actually transfer).
-    if (!dryRun) {
-      if (!verifyRemoteChecksum(remoteImagePath, remoteChecksumPath, REMOTE_TARGET)) {
-        error('Transfer corrupted! Aborting.');
-        process.exit(1);
-      }
+    // Inject SSH key.
+    if (config) {
+      info('Injecting SSH key...');
+      injectSSHKey(config);
     }
 
-    // Flash!
-    banner('Flashing image on Pi...', consola);
+    // Unmount.
+    info('Syncing and unmounting...');
+    ssh('sync');
+    unmountInactive();
+    success('Partition ready');
+
+    // Switch boot slot.
+    banner('Switching boot slot...', consola);
     cleanupManager.enterCriticalSection();
-    await remoteFlash(remoteImagePath, bootDevice, REMOTE_TARGET, dryRun, holdMyMead);
+    switchBootSlot(inactiveSlot);
+    success(`Boot switched to slot ${inactiveSlot}`);
 
-    if (!dryRun) {
-      // Wait for reboot.
-      banner('Waiting for Pi to reboot...', consola);
-      const online = await waitForReboot(REMOTE_TARGET, REMOTE_HOST, originalBootTime, 120);
+    // Reboot.
+    banner('Rebooting Pi...', consola);
+    rebootPi();
 
-      // Exit critical section.
-      cleanupManager.exitCriticalSection();
+    // Wait for reboot.
+    info('Waiting for Pi to come back online...');
+    const online = await waitForReboot(REMOTE_TARGET, REMOTE_HOST, originalBootTime, 120);
 
-      log('');
-      if (online) {
-        log(`${colors.bold}${colors.green}════════════════════════════════════════════════════════════════${colors.reset}`);
-        success('YOLO update complete!');
-        info(`Connect with: ssh ${REMOTE_TARGET}`);
-        log(`${colors.bold}${colors.green}════════════════════════════════════════════════════════════════${colors.reset}`);
-      } else {
-        log(`${colors.bold}${colors.yellow}════════════════════════════════════════════════════════════════${colors.reset}`);
-        warn('Pi did not come back online within timeout.');
-        warn('It may still be booting, or you may need to reflash.');
-        log(`${colors.bold}${colors.yellow}════════════════════════════════════════════════════════════════${colors.reset}`);
+    cleanupManager.exitCriticalSection();
+
+    log('');
+    if (online) {
+      log(`${colors.bold}${colors.green}════════════════════════════════════════════════════════════════${colors.reset}`);
+      success('YOLO update complete!');
+      info(`Connect with: ssh ${REMOTE_TARGET}`);
+
+      // Show which slot we're now on.
+      try {
+        const newSlot = ssh('ab-boot-manager current');
+        info(`Now running on slot: ${newSlot}`);
+      } catch {
+        // Ignore if we can't get the slot.
       }
+
+      log(`${colors.bold}${colors.green}════════════════════════════════════════════════════════════════${colors.reset}`);
     } else {
-      log('');
-      log(`${colors.bold}${colors.green}════════════════════════════════════════════════════════════════${colors.reset}`);
-      success('Dry run complete!');
-      info('Run without --dry-run to actually flash.');
-      log(`${colors.bold}${colors.green}════════════════════════════════════════════════════════════════${colors.reset}`);
+      log(`${colors.bold}${colors.yellow}════════════════════════════════════════════════════════════════${colors.reset}`);
+      warn('Pi did not come back online within timeout.');
+      warn('It may still be booting, or you may need to reflash.');
+      log(`${colors.bold}${colors.yellow}════════════════════════════════════════════════════════════════${colors.reset}`);
     }
 
     log('');
 
+  } catch (err) {
+    // Try to clean up on error.
+    unmountInactive();
+    throw err;
   } finally {
-    // Clean up prepared image temp files.
-    if (workDir) {
-      cleanupPreparedImage(workDir);
-      cleanupManager.untrackResource('tempdir');
-    }
     cleanupManager.uninstallSignalHandlers();
   }
 }

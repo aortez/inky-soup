@@ -1,0 +1,16 @@
+[Unit]
+Description=Initialize Inky Soup data directory
+Documentation=https://github.com/yourorg/inky-soup
+After=data.mount
+Before=inky-soup-server.service
+ConditionPathIsDirectory=/data
+ConditionPathIsDirectory=!/data/inky-soup
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/mkdir -p /data/inky-soup
+ExecStartPost=/bin/chown inky:inky /data/inky-soup
+
+[Install]
+WantedBy=multi-user.target

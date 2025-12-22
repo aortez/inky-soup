@@ -58,8 +58,10 @@ export default defineConfig({
   ],
 
   // Run local dev server before starting the tests.
+  // IMPORTANT: Use --release WITHOUT Rocket.toml to match production.
+  // Production doesn't have Rocket.toml deployed, so test-server.sh hides it temporarily.
   webServer: {
-    command: 'RUST_LOG=debug LOCK_DURATION_SECS=3 cargo run 2>&1 | tee /tmp/e2e-server.log',
+    command: './test-server.sh',
     url: 'http://localhost:8000',
     reuseExistingServer: false, // Always start fresh for clean test environment.
     timeout: 120 * 1000, // Cargo build can be slow.
