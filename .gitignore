@@ -136,13 +136,13 @@ package-lock.json
 playwright-report/
 test-results/
 
+# Test artifacts
+example.png
+upload-server/Rocket.toml.hidden
+
 # Test images (created during e2e tests)
-upload-server/static/images/*.png
-upload-server/static/images/*.jpg
-upload-server/static/images/cache/*
-upload-server/static/images/thumbs/*
-upload-server/static/images/dithered/*
-upload-server/static/images/metadata.json
+upload-server/static/images/
+!upload-server/static/images/.gitkeep
 
 # Rust/Cargo build artifacts
 upload-server/target/
