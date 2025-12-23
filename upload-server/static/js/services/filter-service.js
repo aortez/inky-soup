@@ -24,7 +24,8 @@ import {
 import { elements, query } from '../core/dom.js';
 import { applyDither } from './dither-service.js';
 import { uploadCache, uploadThumb } from './api-client.js';
-import { createImageDataFromImage, loadOriginalAndFilter } from './image-loader.js';
+import { loadOriginal } from './image-loader.js';
+import { createImageDataFromImage } from '../utils/image-utils.js';
 
 // Track filter operation start time for logging.
 let filterStartTime = null;
@@ -146,7 +147,7 @@ export function selectFilter(filter) {
   if (cache[filename]) {
     applyFilterFromImage(cache[filename]);
   } else {
-    loadOriginalAndFilter(filename).then((img) => {
+    loadOriginal(filename).then((img) => {
       applyFilterFromImage(img);
     }).catch((err) => {
       console.error('Failed to load and filter image:', err);

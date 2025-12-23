@@ -109,17 +109,17 @@ struct DisplayConfig {
 }
 
 /// Read display configuration from /etc/inky-soup/display.conf.
-/// Falls back to 5.7" Inky Impression defaults if file doesn't exist.
+/// Falls back to 13.3" Inky Impression 2025 defaults if file doesn't exist.
 fn get_display_config() -> DisplayConfig {
     let config_path = "/etc/inky-soup/display.conf";
 
-    // Default values for 5.7" Inky Impression.
+    // Default values for 13.3" Inky Impression 2025.
     let mut config = DisplayConfig {
-        width: 600,
-        height: 448,
+        width: 1600,
+        height: 1200,
         thumb_width: 150,
         thumb_height: 112,
-        model: "impression-5.7-default".to_string(),
+        model: "impression-13.3-2025".to_string(),
         color: "multi".to_string(),
     };
 

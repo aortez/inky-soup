@@ -3,13 +3,13 @@
  * All state variables are private and accessed via exported getters/setters.
  */
 
-// Display configuration (fetched from server, defaults to 5.7" Inky Impression).
+// Display configuration (fetched from server, defaults to 13.3" Inky Impression 2025).
 let displayConfig = {
-  width: 600,
-  height: 448,
+  width: 1600,
+  height: 1200,
   thumbWidth: 150,
   thumbHeight: 112,
-  model: 'impression-5.7-default',
+  model: 'impression-13.3-2025',
   color: 'multi',
 };
 

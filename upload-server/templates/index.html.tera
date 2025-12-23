@@ -874,8 +874,8 @@
         <div class="pipeline">
           <!-- Stage 1: Filtered/Resized Image -->
           <div class="pipeline-stage">
-            <canvas id="filterCanvas" width="600" height="448"></canvas>
-            <div class="pipeline-stage-label">600 × 448 (resized)</div>
+            <canvas id="filterCanvas" width="1600" height="1200"></canvas>
+            <div class="pipeline-stage-label">1600 × 1200 (resized)</div>
             <span id="filterProcessing" class="processing-indicator"></span>
           </div>
 
@@ -916,8 +916,8 @@
 
           <!-- Stage 2: Dithered Image -->
           <div class="pipeline-stage">
-            <canvas id="ditherCanvas" width="600" height="448"></canvas>
-            <div class="pipeline-stage-label">600 × 448 (7 colors)</div>
+            <canvas id="ditherCanvas" width="1600" height="1200"></canvas>
+            <div class="pipeline-stage-label">1600 × 1200 (7 colors)</div>
             <span id="ditherProcessing" class="processing-indicator"></span>
           </div>
 

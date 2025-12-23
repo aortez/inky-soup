@@ -1,42 +1,66 @@
 /**
  * Image loading and caching service.
- * Handles loading images from the server with fallback logic.
+ * Loads images with cache-first strategy. Does not process — caller coordinates that.
  */
 
-import { CACHE_WIDTH, CACHE_HEIGHT } from '../core/constants.js';
-import { getOriginalImageCache, setOriginalImageCache } from '../core/state.js';
+import {
+  getOriginalImageCache,
+  setOriginalImageCache,
+  getDisplayWidth,
+  getDisplayHeight,
+} from '../core/state.js';
 import { elements } from '../core/dom.js';
-import { applyDither } from './dither-service.js';
+import { createImageDataFromImage } from '../utils/image-utils.js';
 
 /**
- * Load an image for processing in the detail view.
- * Tries to load from cache first, falls back to original if needed.
+ * Load an image using cache-first strategy.
+ * Returns the image data and whether filtering is needed.
  * @param {string} filename - The filename to load.
+ * @returns {Promise<{imageData: ImageData, needsFiltering: boolean}>} The loaded image data.
  */
-export function loadImageForProcessing(filename) {
-  // Try to load from server-side cache first (600x448 PNG already filtered).
-  const cachedImg = new Image();
-  cachedImg.crossOrigin = 'anonymous';
+export async function loadImageUsingCache(filename) {
+  const expectedWidth = getDisplayWidth();
+  const expectedHeight = getDisplayHeight();
 
-  cachedImg.onload = () => {
-    // Cache exists - use it directly, skip filtering.
-    elements.filterProcessing.textContent = '';
+  // Try to load from server-side cache first.
+  try {
+    const cachedImg = await loadCachedImage(filename);
 
-    // Draw cached image to filter canvas.
-    const filterCtx = elements.filterCanvas.getContext('2d');
-    filterCtx.drawImage(cachedImg, 0, 0);
+    // Check if cached image matches current display dimensions.
+    if (cachedImg.width !== expectedWidth || cachedImg.height !== expectedHeight) {
+      console.log(
+        `[ImageLoader] Cache dimensions mismatch: ${cachedImg.width}x${cachedImg.height} `
+        + `vs expected ${expectedWidth}x${expectedHeight}. Loading original.`,
+      );
+      const img = await loadOriginal(filename);
+      const imageData = createImageDataFromImage(img);
+      return { imageData, needsFiltering: true };
+    }
 
-    // Get ImageData for dithering.
-    const imageData = filterCtx.getImageData(0, 0, CACHE_WIDTH, CACHE_HEIGHT);
-    applyDither(imageData);
-  };
+    // Cache exists and matches — extract ImageData directly.
+    const imageData = createImageDataFromImage(cachedImg);
+    return { imageData, needsFiltering: false };
+  } catch {
+    // Cache doesn't exist — load original.
+    const img = await loadOriginal(filename);
+    const imageData = createImageDataFromImage(img);
+    return { imageData, needsFiltering: true };
+  }
+}
 
-  cachedImg.onerror = () => {
-    // Cache doesn't exist - fall back to loading and filtering original.
-    loadOriginalAndFilter(filename);
-  };
-
-  cachedImg.src = `images/cache/${filename}.png`;
+/**
+ * Load a cached image from the server.
+ * @param {string} filename - The filename.
+ * @returns {Promise<HTMLImageElement>} The cached image element.
+ */
+function loadCachedImage(filename) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Cache not found'));
+    img.src = `images/cache/${filename}.png`;
+  });
 }
 
 /**
@@ -45,11 +69,11 @@ export function loadImageForProcessing(filename) {
  * @param {string} filename - The filename to load.
  * @returns {Promise<HTMLImageElement>} Promise that resolves with the image element.
  */
-export function loadOriginalAndFilter(filename) {
+export function loadOriginal(filename) {
   return new Promise((resolve, reject) => {
     const cache = getOriginalImageCache();
 
-    // Check in-memory cache first (return the cached image to be processed).
+    // Check in-memory cache first.
     if (cache[filename]) {
       resolve(cache[filename]);
       return;
@@ -63,7 +87,6 @@ export function loadOriginalAndFilter(filename) {
       // Cache the image element.
       const newCache = { ...cache, [filename]: img };
       setOriginalImageCache(newCache);
-
       resolve(img);
     };
 
@@ -75,19 +98,4 @@ export function loadOriginalAndFilter(filename) {
 
     img.src = `images/${filename}`;
   });
-}
-
-/**
- * Create ImageData from an image element.
- * @param {HTMLImageElement} img - The image element.
- * @returns {ImageData} The ImageData extracted from the image.
- */
-export function createImageDataFromImage(img) {
-  // Create fresh ImageData from the image element.
-  const canvas = document.createElement('canvas');
-  canvas.width = img.width;
-  canvas.height = img.height;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, 0, 0);
-  return ctx.getImageData(0, 0, img.width, img.height);
 }

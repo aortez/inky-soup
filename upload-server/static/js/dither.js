@@ -177,7 +177,7 @@ function findClosestPaletteColor(r, g, b, palette) {
  *
  * Where X is the current pixel being processed.
  *
- * @param {ImageData} imageData - Input image (600x448 RGBA)
+ * @param {ImageData} imageData - Input image (RGBA format).
  * @param {Array<Array<number>>} palette - 8-color palette
  * @returns {ImageData} Dithered image
  */
@@ -265,7 +265,7 @@ function floydSteinbergDither(imageData, palette) {
  *   1/8  1/8  1/8
  *        1/8
  *
- * @param {ImageData} imageData - Input image (600x448 RGBA)
+ * @param {ImageData} imageData - Input image (RGBA format).
  * @param {Array<Array<number>>} palette - 8-color palette
  * @returns {ImageData} Dithered image
  */
@@ -335,7 +335,7 @@ const BAYER_4X4 = [
  * It produces a distinctive cross-hatch pattern and is very fast.
  * Unlike error diffusion, it doesn't spread errors to neighboring pixels.
  *
- * @param {ImageData} imageData - Input image (600x448 RGBA)
+ * @param {ImageData} imageData - Input image (RGBA format).
  * @param {Array<Array<number>>} palette - 8-color palette
  * @returns {ImageData} Dithered image
  */
@@ -384,16 +384,12 @@ const DITHER_ALGORITHMS = {
 /**
  * High-level function to dither an image for e-ink display.
  *
- * @param {ImageData} imageData - Input image (should be 600x448)
- * @param {number} saturation - Saturation level (0.0 to 1.0, default 0.5)
- * @param {string} algorithm - Dithering algorithm: 'floyd-steinberg', 'atkinson', or 'ordered'
- * @returns {ImageData} Dithered image ready for e-ink display
+ * @param {ImageData} imageData - Input image (dimensions should match target display).
+ * @param {number} saturation - Saturation level (0.0 to 1.0, default 0.5).
+ * @param {string} algorithm - Dithering algorithm: 'floyd-steinberg', 'atkinson', or 'ordered'.
+ * @returns {ImageData} Dithered image ready for e-ink display.
  */
 function ditherForEInk(imageData, saturation = 0.5, algorithm = 'floyd-steinberg') {
-    if (imageData.width !== 600 || imageData.height !== 448) {
-        console.warn('Image dimensions should be 600x448 for Inky Impression display');
-    }
-
     const palette = generatePalette(saturation);
     const ditherFn = DITHER_ALGORITHMS[algorithm] || floydSteinbergDither;
     return ditherFn(imageData, palette);

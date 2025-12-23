@@ -20,9 +20,12 @@ import {
   setIsReadOnly,
 } from '../core/state.js';
 import { elements, query, queryAll } from '../core/dom.js';
-import { loadImageForProcessing } from '../services/image-loader.js';
+import { loadImageUsingCache } from '../services/image-loader.js';
 import { lockImage, unlockImage } from '../services/api-client.js';
 import { updateLockStatus, updateReadOnlyUI } from './detail-view.js';
+import { generateUUID } from '../utils/uuid.js';
+import { applyFilterToCanvas } from '../services/filter-service.js';
+import { applyDither } from '../services/dither-service.js';
 
 /**
  * Show the gallery view and release any image lock.
@@ -86,7 +89,7 @@ export async function showDetailView(
   }
 
   // Generate session ID and try to acquire lock.
-  const sessionId = crypto.randomUUID();
+  const sessionId = generateUUID();
   setCurrentSessionId(sessionId);
 
   try {
@@ -176,8 +179,8 @@ export async function showDetailView(
   ditherCtx.fillStyle = '#2A2A2A';
   ditherCtx.fillRect(0, 0, elements.ditherCanvas.width, elements.ditherCanvas.height);
 
-  // Load image data for filter preview and dithering.
-  loadImageForProcessing(filename);
+  // Load image and coordinate processing pipeline.
+  loadAndProcessImage(filename);
 
   // Switch views.
   elements.galleryView.classList.remove('active');
@@ -189,6 +192,30 @@ export async function showDetailView(
     '',
     `#detail-${encodeURIComponent(filename)}`,
   );
+}
+
+/**
+ * Load an image and coordinate the processing pipeline.
+ * @param {string} filename - The filename to load.
+ */
+async function loadAndProcessImage(filename) {
+  try {
+    const { imageData, needsFiltering } = await loadImageUsingCache(filename);
+
+    if (needsFiltering) {
+      // Original image loaded — needs filtering, which triggers dithering.
+      applyFilterToCanvas(imageData);
+    } else {
+      // Cache hit with correct dimensions — draw directly and dither.
+      elements.filterProcessing.textContent = '';
+      const filterCtx = elements.filterCanvas.getContext('2d');
+      filterCtx.putImageData(imageData, 0, 0);
+      applyDither(imageData);
+    }
+  } catch (err) {
+    console.error('Failed to load image:', err);
+    elements.filterProcessing.textContent = 'Error loading image';
+  }
 }
 
 /**

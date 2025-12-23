@@ -10,6 +10,17 @@ Inky Soup is a web-based image display system for Pimoroni Inky Impression e-ink
 2. **Client-side JavaScript** — Web Workers for image processing (resizing, dithering) in the browser.
 3. **Python display script** (`update-image.py`) — Hardware interface that flashes pre-processed images to the e-ink display.
 
+## Supported Displays
+
+The codebase supports multiple Pimoroni Inky Impression displays:
+
+| Display | Resolution | Status |
+|---------|-----------|--------|
+| 5.7" (legacy) | 600 × 448 | ✅ Supported |
+| 13.3" (2025 Edition) | 1600 × 1200 | 🚧 In progress |
+
+**Current state:** The codebase is being updated to support both displays. Display dimensions are defined in `core/constants.js` and propagate through the processing pipeline. Gallery thumbnails remain fixed at 150×112 regardless of display (they're a UI concern, not hardware). The Python display script auto-detects hardware dimensions via the `inky` library.
+
 ## Architecture
 
 ### Processing Pipeline
@@ -23,7 +34,7 @@ Upload image ──────────────────────�
                                      (static/images/)
        │
        ├─► Filter Worker ──────────► Save cache & thumbnail
-       │   (resize 600x448)          (static/images/cache/*.png)
+       │   (resize to display res)   (static/images/cache/*.png)
        │                             (static/images/thumbs/*.png)
        │
        ▼
@@ -114,9 +125,9 @@ static/js/
 static/images/
 ├── *.jpg, *.png, ...      # Original uploaded images
 ├── cache/
-│   └── {filename}.png     # Resized images (600x448) for preview and dithering
+│   └── {filename}.png     # Resized to display resolution (see Supported Displays)
 ├── thumbs/
-│   └── {filename}.png     # Gallery thumbnails (150x112)
+│   └── {filename}.png     # Gallery thumbnails (fixed 150x112)
 ├── dithered/
 │   └── {filename}.png     # Pre-dithered images ready for flashing
 └── metadata.json          # Per-image settings (filter preference, saturation)
@@ -216,7 +227,7 @@ SDCARD_ROOT=/media/user/rootfs ./deploy-sdcard.sh
 | `GET` | `/api/thumb-status/<filename>` | Check if gallery thumbnail exists |
 | `GET` | `/api/flash/status` | Get current flash job and queue status (all users) |
 | `GET` | `/api/flash/status/<job_id>` | Get status of specific flash job |
-| `POST` | `/api/upload-cache` | Upload client-generated cache image (600x448) |
+| `POST` | `/api/upload-cache` | Upload client-generated cache image (display resolution) |
 | `POST` | `/api/upload-thumb` | Upload client-generated gallery thumbnail (150x112) |
 | `POST` | `/api/upload-dithered` | Upload client-generated dithered image |
 

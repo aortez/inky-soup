@@ -3,7 +3,7 @@
 Flash an image to the Inky Impression e-ink display.
 
 Reads display configuration from /etc/inky-soup/display.conf if available,
-otherwise uses auto-detection or defaults to 5.7" Inky Impression (600x448).
+otherwise uses auto-detection or defaults to 13.3" Inky Impression 2025 (1600x1200).
 """
 
 import argparse
@@ -16,9 +16,9 @@ from PIL import Image
 # Configuration file path.
 CONFIG_FILE = "/etc/inky-soup/display.conf"
 
-# Default dimensions (5.7" Inky Impression).
-DEFAULT_WIDTH = 600
-DEFAULT_HEIGHT = 448
+# Default dimensions (13.3" Inky Impression 2025).
+DEFAULT_WIDTH = 1600
+DEFAULT_HEIGHT = 1200
 
 
 def read_display_config():
