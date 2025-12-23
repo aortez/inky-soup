@@ -128,7 +128,12 @@ This script runs:
     npm install          # First time only
     npm run lint:fix     # Auto-fix style issues
 
+See [JS_STYLE_GUIDE.md](./JS_STYLE_GUIDE.md) for JavaScript conventions.
+
 # TODO
+
+## FIX
+- [ ] If viewing a read-only instance of a Details page and the edit instance deletes the image, the the read-only viewer should get notified via a modal dialog that, once confirmed, takes them back to the gallery
 
 ## Image Gallery
 - [ ] Arbitrary hard limit on number of uploaded images.

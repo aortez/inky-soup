@@ -58,8 +58,6 @@ export default defineConfig({
   ],
 
   // Run local dev server before starting the tests.
-  // IMPORTANT: Use --release WITHOUT Rocket.toml to match production.
-  // Production doesn't have Rocket.toml deployed, so test-server.sh hides it temporarily.
   webServer: {
     command: './test-server.sh',
     url: 'http://localhost:8000',

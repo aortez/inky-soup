@@ -6,21 +6,31 @@
 import { test, expect } from '@playwright/test';
 import path from 'path';
 import fs from 'fs';
-import { execSync } from 'child_process';
 
 test.describe('Orphaned Image Recovery', () => {
   const testImagePath = path.join(import.meta.dirname, 'fixtures', 'test-image.png');
-  const imagesDir = path.join(import.meta.dirname, '..', 'static', 'images');
 
-  test('should generate missing thumbnail when placeholder is rendered', async ({ page }) => {
-    const filename = `orphaned_test_${Date.now()}.jpg`;
-    const destPath = path.join(imagesDir, filename);
+  test('should generate missing thumbnail when placeholder is rendered', async ({ page, request }) => {
+    const filename = `orphaned_test_${Date.now()}.png`;
 
-    // Manually copy file to create orphaned state (original exists, no thumb).
-    fs.copyFileSync(testImagePath, destPath);
+    // Upload directly to /upload API without going through browser JS.
+    // This creates an orphaned state: original exists but no thumbnail.
+    const fileBuffer = fs.readFileSync(testImagePath);
+    const response = await request.post('/upload', {
+      multipart: {
+        'submission.file': {
+          name: filename,
+          mimeType: 'image/png',
+          buffer: fileBuffer,
+        },
+      },
+    });
+    expect(response.ok()).toBe(true);
+    const uploadResult = await response.json();
+    expect(uploadResult.success).toBe(true);
 
     try {
-      // Navigate to gallery - should see placeholder.
+      // Navigate to gallery - should see placeholder for orphaned image.
       await page.goto('/');
       await page.waitForLoadState('networkidle');
 
@@ -37,14 +47,12 @@ test.describe('Orphaned Image Recovery', () => {
       const isLoaded = await thumbnail.evaluate((img) => img.complete && img.naturalWidth > 0);
       expect(isLoaded).toBe(true);
     } finally {
-      // Cleanup: Remove test files.
-      try {
-        fs.unlinkSync(destPath);
-        fs.unlinkSync(path.join(imagesDir, 'cache', `${filename}.png`));
-        fs.unlinkSync(path.join(imagesDir, 'thumbs', `${filename}.png`));
-      } catch {
-        // Files may not exist.
-      }
+      // Cleanup via delete API.
+      await request.post('/delete', {
+        form: {
+          'submission.image_file_path': `images/${filename}`,
+        },
+      });
     }
   });
 });

@@ -1,3 +1,5 @@
+TODO - this is out of date and we use yocto now instead.
+
 # Cross compiler setup
 Adapted from this SU answer:
 https://superuser.com/a/396667

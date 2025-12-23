@@ -147,10 +147,13 @@ export function selectFilter(filter) {
   if (cache[filename]) {
     applyFilterFromImage(cache[filename]);
   } else {
+    // Set processing state before async load so UI shows feedback immediately.
+    elements.filterProcessing.textContent = 'Loading...';
     loadOriginal(filename).then((img) => {
       applyFilterFromImage(img);
     }).catch((err) => {
       console.error('Failed to load and filter image:', err);
+      elements.filterProcessing.textContent = 'Error loading image';
     });
   }
 }
