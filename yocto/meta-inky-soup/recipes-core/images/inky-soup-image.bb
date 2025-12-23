@@ -6,10 +6,25 @@ inherit core-image extrausers
 # Create 'inky' user for SSH access.
 # - Password is locked ('*') so only SSH key auth works.
 # - Added to sudo group for administrative tasks.
+# - Hardware groups (gpio, spi, i2c) added in post-process.
 EXTRA_USERS_PARAMS = " \
     useradd -m -s /bin/sh -G sudo inky; \
     usermod -p '*' inky; \
 "
+
+# Add inky user to hardware access groups (created by rpi-gpio recipe).
+setup_inky_hardware_groups() {
+    # Add groups if they don't exist, then add inky to them.
+    grep -q '^gpio:' ${IMAGE_ROOTFS}/etc/group || echo 'gpio:x:997:' >> ${IMAGE_ROOTFS}/etc/group
+    grep -q '^spi:' ${IMAGE_ROOTFS}/etc/group || echo 'spi:x:996:' >> ${IMAGE_ROOTFS}/etc/group
+    grep -q '^i2c:' ${IMAGE_ROOTFS}/etc/group || echo 'i2c:x:995:' >> ${IMAGE_ROOTFS}/etc/group
+    sed -i 's/^\(gpio:.*\)/\1,inky/' ${IMAGE_ROOTFS}/etc/group
+    sed -i 's/^\(spi:.*\)/\1,inky/' ${IMAGE_ROOTFS}/etc/group
+    sed -i 's/^\(i2c:.*\)/\1,inky/' ${IMAGE_ROOTFS}/etc/group
+    # Clean up any double commas or trailing commas.
+    sed -i 's/:,/:/g; s/,,/,/g' ${IMAGE_ROOTFS}/etc/group
+}
+ROOTFS_POSTPROCESS_COMMAND:append = " setup_inky_hardware_groups;"
 
 # Set up SSH directory for inky user.
 setup_inky_ssh() {
@@ -64,4 +79,5 @@ IMAGE_INSTALL:append = " \
 # Application packages.
 IMAGE_INSTALL:append = " \
     inky-soup-server \
+    inky-soup-display \
 "
