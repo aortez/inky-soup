@@ -46,15 +46,29 @@ const YOCTO_DIR = dirname(__dirname);
 
 // Project-specific settings.
 const PROJECT_NAME = 'inky-soup';
-const MACHINE = 'raspberrypi0-2w';
 const REMOTE_HOST = 'inky-soup.local';
 const REMOTE_USER = 'inky';
 const IMAGE_NAME = 'inky-soup-image';
 const SERVER_NAME = 'inky-soup-server';
-const KAS_CONFIG = 'kas-inky-soup.yml';
-
 const REMOTE_TARGET = `${REMOTE_USER}@${REMOTE_HOST}`;
-const IMAGE_DIR = join(YOCTO_DIR, `build/tmp/deploy/images/${MACHINE}`);
+
+// Machine definitions.
+const MACHINES = {
+  zero1: {
+    id: 'zero1',
+    name: 'Pi Zero W',
+    machine: 'raspberrypi0-wifi',
+    kasFile: 'kas-inky-soup-zero1.yml',
+    imageDir: join(YOCTO_DIR, 'build/tmp/deploy/images/raspberrypi0-wifi'),
+  },
+  zero2: {
+    id: 'zero2',
+    name: 'Pi Zero 2 W',
+    machine: 'raspberrypi0-2w',
+    kasFile: 'kas-inky-soup-zero2.yml',
+    imageDir: join(YOCTO_DIR, 'build/tmp/deploy/images/raspberrypi0-2w'),
+  },
+};
 const CONFIG_FILE = join(YOCTO_DIR, '.flash-config.json');
 
 // Mount point for inactive partition on remote.
@@ -71,53 +85,78 @@ const warn = (msg) => consola.warn(msg);
 const error = (msg) => consola.error(msg);
 
 // ============================================================================
+// Machine Selection
+// ============================================================================
+
+/**
+ * Get machine from config or args.
+ */
+function getMachine(args) {
+  // Check for command-line override.
+  if (args.includes('--zero1')) return MACHINES.zero1;
+  if (args.includes('--zero2')) return MACHINES.zero2;
+
+  // Check for saved preference.
+  const config = loadConfig(CONFIG_FILE) || {};
+  if (config.machine && MACHINES[config.machine]) {
+    info(`Using saved machine: ${MACHINES[config.machine].name}`);
+    return MACHINES[config.machine];
+  }
+
+  // Default to zero1 for yolo (no interactive prompt).
+  warn('No machine configured. Use --zero1 or --zero2, or run "npm run flash" to set preference.');
+  warn('Defaulting to Pi Zero W.');
+  return MACHINES.zero1;
+}
+
+// ============================================================================
 // Build Functions (Project-Specific)
 // ============================================================================
 
 /**
  * Clean the image sstate to force a rebuild.
  */
-async function cleanImage() {
+async function cleanImage(machine) {
   info(`Cleaning ${IMAGE_NAME} sstate to force rebuild...`);
-  await run('kas', ['shell', KAS_CONFIG, '-c', `bitbake -c cleansstate ${IMAGE_NAME}`], { cwd: YOCTO_DIR });
+  await run('kas', ['shell', machine.kasFile, '-c', `bitbake -c cleansstate ${IMAGE_NAME}`], { cwd: YOCTO_DIR });
   success('Clean complete!');
 }
 
 /**
  * Clean both server and image sstate for a full rebuild.
  */
-async function cleanAll() {
+async function cleanAll(machine) {
   info(`Cleaning ${SERVER_NAME} and ${IMAGE_NAME} sstate...`);
-  await run('kas', ['shell', KAS_CONFIG, '-c', `bitbake -c cleansstate ${SERVER_NAME} ${IMAGE_NAME}`], { cwd: YOCTO_DIR });
+  await run('kas', ['shell', machine.kasFile, '-c', `bitbake -c cleansstate ${SERVER_NAME} ${IMAGE_NAME}`], { cwd: YOCTO_DIR });
   success('Clean complete!');
 }
 
 /**
  * Run the Yocto build.
  */
-async function build(forceClean = false, forceCleanAll = false) {
-  banner(`Building ${IMAGE_NAME}...`, consola);
+async function build(machine, forceClean = false, forceCleanAll = false) {
+  banner(`Building ${IMAGE_NAME} for ${machine.name}...`, consola);
 
   if (forceCleanAll) {
-    await cleanAll();
+    await cleanAll(machine);
   } else if (forceClean) {
-    await cleanImage();
+    await cleanImage(machine);
   }
 
-  await run('kas', ['build', KAS_CONFIG], { cwd: YOCTO_DIR });
+  await run('kas', ['build', machine.kasFile], { cwd: YOCTO_DIR });
   success('Build complete!');
 }
 
 /**
  * Find the rootfs tarball.
  */
-function findRootfsTarball() {
-  if (!existsSync(IMAGE_DIR)) {
+function findRootfsTarball(machine) {
+  if (!existsSync(machine.imageDir)) {
     return null;
   }
 
-  const expectedName = `${IMAGE_NAME}-${MACHINE}.rootfs.tar.gz`;
-  const tarballPath = join(IMAGE_DIR, expectedName);
+  const expectedName = `${IMAGE_NAME}-${machine.machine}.rootfs.tar.gz`;
+  const tarballPath = join(machine.imageDir, expectedName);
 
   if (existsSync(tarballPath)) {
     const stat = statSync(tarballPath);
@@ -129,12 +168,12 @@ function findRootfsTarball() {
   }
 
   // Fallback: find any tar.gz.
-  const files = readdirSync(IMAGE_DIR)
+  const files = readdirSync(machine.imageDir)
     .filter(f => f.endsWith('.tar.gz') && f.includes('rootfs'))
     .map(f => ({
       name: f,
-      path: join(IMAGE_DIR, f),
-      stat: statSync(join(IMAGE_DIR, f)),
+      path: join(machine.imageDir, f),
+      stat: statSync(join(machine.imageDir, f)),
     }))
     .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
 
@@ -293,6 +332,8 @@ async function main() {
     log('Content-based A/B update: streams rootfs to inactive partition.');
     log('');
     log('Options:');
+    log('  --zero1          Target Pi Zero W (ARMv6)');
+    log('  --zero2          Target Pi Zero 2 W (ARMv7)');
     log('  --skip-build     Skip kas build, use existing tarball');
     log('  --clean          Force rebuild by cleaning image sstate first');
     log('  --clean-all      Force full rebuild (cleans server + image sstate)');
@@ -303,12 +344,16 @@ async function main() {
     process.exit(0);
   }
 
+  // Get target machine.
+  const machine = getMachine(args);
+
   // Set up cleanup manager for Ctrl+C handling.
   const cleanupManager = createCleanupManager();
   cleanupManager.installSignalHandlers();
 
   log('');
   log(`${colors.bold}${colors.cyan}${PROJECT_NAME} YOLO Update${colors.reset}`);
+  info(`Target: ${machine.name}`);
   if (dryRun) {
     log(`${colors.yellow}(dry-run mode - no changes will be made)${colors.reset}`);
   }
@@ -333,11 +378,11 @@ async function main() {
 
   // Build phase.
   if (!skipBuild) {
-    await build(forceClean, forceCleanAll);
+    await build(machine, forceClean, forceCleanAll);
   }
 
   // Find tarball.
-  const tarball = findRootfsTarball();
+  const tarball = findRootfsTarball(machine);
   if (!tarball) {
     error('No rootfs tarball found. Make sure IMAGE_FSTYPES includes "tar.gz".');
     error('Run: npm run clean:image && npm run build');

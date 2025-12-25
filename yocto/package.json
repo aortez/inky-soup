@@ -5,12 +5,15 @@
   "type": "module",
   "description": "Yocto build and flash tools for Inky Soup",
   "scripts": {
-    "build": "kas build kas-inky-soup.yml",
-    "clean": "kas shell kas-inky-soup.yml -c 'bitbake -c cleansstate inky-soup-server'",
-    "clean:image": "kas shell kas-inky-soup.yml -c 'bitbake -c cleansstate inky-soup-image'",
-    "clean:all": "kas shell kas-inky-soup.yml -c 'bitbake -c cleansstate inky-soup-server inky-soup-image'",
+    "build": "node scripts/build.mjs",
+    "build:zero1": "node scripts/build.mjs --zero1",
+    "build:zero2": "node scripts/build.mjs --zero2",
     "flash": "node scripts/flash.mjs",
-    "yolo": "node scripts/yolo-update.mjs"
+    "flash:zero1": "node scripts/flash.mjs --zero1",
+    "flash:zero2": "node scripts/flash.mjs --zero2",
+    "yolo": "node scripts/yolo-update.mjs",
+    "yolo:zero1": "node scripts/yolo-update.mjs --zero1",
+    "yolo:zero2": "node scripts/yolo-update.mjs --zero2"
   },
   "bin": {
     "inky-flash": "./scripts/flash.mjs"

@@ -1,17 +1,12 @@
-# KAS configuration for Inky Soup Yocto build.
+# Base KAS configuration for Inky Soup Yocto build.
 #
-# Usage:
-#   kas build kas-inky-soup.yml
-#
-# This replaces init.sh + manual bitbake invocation.
+# This file contains shared configuration used by both machine targets.
+# Do not use directly - use kas-inky-soup-zero1.yml or kas-inky-soup-zero2.yml.
 
 header:
   version: 14
 
 distro: poky
-
-# Raspberry Pi Zero 2 W - stock machine from meta-raspberrypi.
-machine: raspberrypi0-2w
 
 repos:
   # Core Yocto - the foundation.

@@ -53,19 +53,86 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const YOCTO_DIR = dirname(__dirname);
-const IMAGE_DIR = join(YOCTO_DIR, 'build/tmp/deploy/images/raspberrypi0-2w');
 const CONFIG_FILE = join(YOCTO_DIR, '.flash-config.json');
 const WIFI_CREDS_FILE = join(YOCTO_DIR, 'wifi-creds.local');
 const DEFAULT_HOSTNAME = 'inky-soup';
 const IMAGE_SUFFIX = '.wic.gz';
-const PREFERRED_IMAGES = [
-  'inky-soup-image-raspberrypi0-2w.rootfs.wic.gz',
-  'inky-soup-image-raspberrypi0-2w.wic.gz',
-];
+
+// Machine definitions.
+const MACHINES = {
+  zero1: {
+    id: 'zero1',
+    name: 'Pi Zero W',
+    machine: 'raspberrypi0-wifi',
+    imageDir: join(YOCTO_DIR, 'build/tmp/deploy/images/raspberrypi0-wifi'),
+    preferredImages: [
+      'inky-soup-image-raspberrypi0-wifi.rootfs.wic.gz',
+      'inky-soup-image-raspberrypi0-wifi.wic.gz',
+    ],
+  },
+  zero2: {
+    id: 'zero2',
+    name: 'Pi Zero 2 W',
+    machine: 'raspberrypi0-2w',
+    imageDir: join(YOCTO_DIR, 'build/tmp/deploy/images/raspberrypi0-2w'),
+    preferredImages: [
+      'inky-soup-image-raspberrypi0-2w.rootfs.wic.gz',
+      'inky-soup-image-raspberrypi0-2w.wic.gz',
+    ],
+  },
+};
 
 // User configuration - matches what's created in inky-soup-image.bb.
 const SSH_USERNAME = 'inky';
 const SSH_UID = 1000;
+
+/**
+ * Prompt user to select a machine.
+ */
+async function selectMachine() {
+  log('');
+  log(`${colors.bold}Select target machine:${colors.reset}`);
+  log('');
+  log(`  ${colors.cyan}1)${colors.reset} ${MACHINES.zero1.name}`);
+  log(`  ${colors.cyan}2)${colors.reset} ${MACHINES.zero2.name}`);
+  log('');
+
+  const choice = await prompt('Choice (1-2): ');
+
+  if (choice === '1') return 'zero1';
+  if (choice === '2') return 'zero2';
+
+  error('Invalid selection.');
+  process.exit(1);
+}
+
+/**
+ * Get machine from config or args.
+ */
+async function getMachine(args, config) {
+  // Check for command-line override.
+  if (args.includes('--zero1')) return MACHINES.zero1;
+  if (args.includes('--zero2')) return MACHINES.zero2;
+
+  // Check for saved preference.
+  if (config && config.machine && MACHINES[config.machine]) {
+    info(`Using saved machine: ${MACHINES[config.machine].name}`);
+    return MACHINES[config.machine];
+  }
+
+  // Prompt user.
+  const selected = await selectMachine();
+
+  // Ask to save preference.
+  const saveChoice = await prompt('Save as default? (Y/n): ');
+  if (saveChoice.toLowerCase() !== 'n') {
+    config.machine = selected;
+    saveConfig(CONFIG_FILE, config);
+    success(`Saved ${MACHINES[selected].name} as default.`);
+  }
+
+  return MACHINES[selected];
+}
 
 /**
  * Get or create SSH key configuration.
@@ -95,6 +162,8 @@ Usage:
   npm run flash [options]
 
 Options:
+  --zero1          Flash Pi Zero W image
+  --zero2          Flash Pi Zero 2 W image
   --device <dev>   Flash directly to device (still confirms)
   --list           List available devices and exit
   --dry-run        Show what would happen without flashing
@@ -103,15 +172,17 @@ Options:
 
 Examples:
   npm run flash                       # Interactive device selection
+  npm run flash -- --zero1            # Flash Pi Zero W image
   npm run flash -- --device /dev/sdb  # Direct flash (still confirms)
   npm run flash -- --list             # Just list devices
   npm run flash -- --dry-run          # Preview without flashing
 
 Features:
+  - Supports Pi Zero W and Pi Zero 2 W (saves preference)
   - Injects your SSH public key for passwordless login
   - Prompts for WiFi credentials for first-boot connectivity
   - Backs up and restores /data partition (WiFi credentials, logs)
-  - Remembers your key preference in .flash-config.json
+  - Remembers preferences in .flash-config.json
 `);
 }
 
@@ -141,10 +212,14 @@ async function main() {
   // Ensure we have an SSH key configured.
   const config = await ensureSSHKeyConfig(reconfigure);
 
+  // Get target machine.
+  const machine = await getMachine(args, config);
+  info(`Target: ${machine.name}`);
+
   // Find image.
-  const image = findLatestImage(IMAGE_DIR, IMAGE_SUFFIX, PREFERRED_IMAGES);
+  const image = findLatestImage(machine.imageDir, IMAGE_SUFFIX, machine.preferredImages);
   if (!image) {
-    error('No image found. Run "npm run build" first.');
+    error(`No image found for ${machine.name}. Run "npm run build" first.`);
     process.exit(1);
   }
 
