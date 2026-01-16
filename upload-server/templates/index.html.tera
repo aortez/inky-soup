@@ -657,6 +657,65 @@
         color: #666;
         margin-top: 15px;
       }
+      .upload-queue {
+        margin-top: 15px;
+        padding: 10px;
+        background: #3A2A1F;
+        border: 1px solid #4A3728;
+        border-radius: 6px;
+        text-align: left;
+      }
+      .upload-queue-header {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.8em;
+        color: #888;
+        margin-bottom: 8px;
+      }
+      .upload-queue-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-height: 160px;
+        overflow-y: auto;
+      }
+      .upload-queue-item {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 6px 8px;
+        background: #2F2219;
+        border: 1px solid #4A3728;
+        border-radius: 4px;
+        font-size: 0.85em;
+      }
+      .upload-queue-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: #C9DBBD;
+      }
+      .upload-queue-meta {
+        display: flex;
+        gap: 8px;
+        flex-shrink: 0;
+        color: #888;
+      }
+      .upload-queue-item.queued .upload-queue-status-label {
+        color: #888;
+      }
+      .upload-queue-item.uploading .upload-queue-status-label,
+      .upload-queue-item.processing .upload-queue-status-label {
+        color: #B8956A;
+      }
+      .upload-queue-item.complete .upload-queue-status-label {
+        color: #6B8E4E;
+      }
+      .upload-queue-item.failed .upload-queue-status-label {
+        color: #ff6b6b;
+      }
 
       /* Delete confirmation modal. */
       .confirm-modal-content {
@@ -772,9 +831,9 @@
           <legend>Upload New Image</legend>
           <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
             <div id="dropZone" class="drop-zone">
-              <input type="file" name="submission.file" id="fileInput" accept="image/*" />
-              <div class="drop-zone-prompt">Drop image here or click to upload</div>
-              <div class="drop-zone-hint">JPEG, PNG, GIF, WebP (max 10 MB)</div>
+              <input type="file" name="submission.file" id="fileInput" accept="image/*" multiple />
+              <div class="drop-zone-prompt">Drop images here or click to upload</div>
+              <div class="drop-zone-hint">JPEG, PNG, GIF, WebP (max 10 MB each)</div>
               <div class="drop-zone-preview">
                 <img id="uploadPreviewImg" src="" alt="Preview" />
                 <div id="uploadFileName" class="file-name"></div>
@@ -989,6 +1048,13 @@
         <h2 id="uploadModalTitle">Uploading Image</h2>
         <img id="uploadModalImage" src="" alt=""/>
         <div id="uploadModalFilename" class="filename"></div>
+        <div class="upload-queue">
+          <div class="upload-queue-header">
+            <div id="uploadQueueStatus">Queue ready</div>
+            <div id="uploadQueueCount">0 files</div>
+          </div>
+          <div id="uploadQueueList" class="upload-queue-list"></div>
+        </div>
 
         <div id="uploadProgressContainer" class="progress-container">
           <div class="progress-label">Uploading</div>

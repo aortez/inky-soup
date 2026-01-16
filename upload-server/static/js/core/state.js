@@ -39,7 +39,12 @@ let uploadCacheWorker = null;
 let uploadThumbWorker = null;
 
 // Pending thumbnails (for upload coordination).
-let pendingThumbnails = { cache: null, thumb: null };
+let pendingThumbnails = { cache: null, thumb: null, uploaded: false };
+
+// Upload queue state.
+let uploadQueue = [];
+let uploadQueueActive = false;
+let uploadQueueCurrentId = null;
 
 // Image lock state.
 let currentSessionId = null;
@@ -109,6 +114,16 @@ export const getPendingThumbnails = () => pendingThumbnails;
 export const setPendingThumbnails = (thumbnails) => {
   pendingThumbnails = thumbnails;
 };
+
+// Upload queue getters/setters.
+export const getUploadQueue = () => uploadQueue;
+export const setUploadQueue = (queue) => { uploadQueue = queue; };
+
+export const getUploadQueueActive = () => uploadQueueActive;
+export const setUploadQueueActive = (active) => { uploadQueueActive = active; };
+
+export const getUploadQueueCurrentId = () => uploadQueueCurrentId;
+export const setUploadQueueCurrentId = (id) => { uploadQueueCurrentId = id; };
 
 // Display configuration getters/setters.
 export const getDisplayConfig = () => displayConfig;

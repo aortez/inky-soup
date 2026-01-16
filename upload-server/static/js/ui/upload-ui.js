@@ -28,14 +28,15 @@ export function initUploadUI() {
     elements.dropZone.classList.remove('drag-over');
     const { files } = e.dataTransfer;
     if (files.length > 0) {
-      handleFileSelect(files[0]);
+      handleFileSelect(files);
     }
   });
 
   // File input change handler.
   elements.fileInput.addEventListener('change', (e) => {
     if (e.target.files.length > 0) {
-      handleFileSelect(e.target.files[0]);
+      handleFileSelect(e.target.files);
+      e.target.value = '';
     }
   });
 }

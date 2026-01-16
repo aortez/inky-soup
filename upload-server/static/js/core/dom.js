@@ -76,6 +76,9 @@ export function initDOMCache() {
   elements.uploadModalTitle = document.getElementById('uploadModalTitle');
   elements.processingProgressContainer = document.getElementById('processingProgressContainer');
   elements.processingProgress = document.getElementById('processingProgress');
+  elements.uploadQueueList = document.getElementById('uploadQueueList');
+  elements.uploadQueueStatus = document.getElementById('uploadQueueStatus');
+  elements.uploadQueueCount = document.getElementById('uploadQueueCount');
 }
 
 /**
