@@ -12,6 +12,8 @@ import {
   getCurrentBrightness,
   getCurrentContrast,
   getCurrentDitherAlgorithm,
+  getCurrentFitMode,
+  getCurrentCacheVersion,
   getCurrentSessionId,
   getIsReadOnly,
   setCurrentJobId,
@@ -46,6 +48,7 @@ export async function flashImage() {
   const flashTwice = elements.flashTwiceCheckbox.checked;
   const filename = getCurrentFilename();
   const filter = getCurrentFilter();
+  const fitMode = getCurrentFitMode();
   const saturation = getCurrentSaturation();
   const brightness = getCurrentBrightness();
   const contrast = getCurrentContrast();
@@ -62,6 +65,7 @@ export async function flashImage() {
       filename,
       blob,
       filter,
+      fitMode,
       saturation,
       brightness,
       contrast,
@@ -78,7 +82,11 @@ export async function flashImage() {
     // Update gallery thumbnail data attributes (so reopening restores settings).
     const galleryThumb = query(`img[data-filename="${filename}"]`);
     if (galleryThumb) {
+      const cacheVersion = getCurrentCacheVersion();
+      const normalizedCacheVersion = Number.isFinite(cacheVersion) ? cacheVersion : 1;
       galleryThumb.dataset.filter = filter;
+      galleryThumb.dataset.fitMode = fitMode;
+      galleryThumb.dataset.cacheVersion = normalizedCacheVersion.toString();
       galleryThumb.dataset.saturation = saturation.toString();
       galleryThumb.dataset.brightness = brightness.toString();
       galleryThumb.dataset.contrast = contrast.toString();

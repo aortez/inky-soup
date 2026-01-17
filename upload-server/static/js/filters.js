@@ -159,9 +159,98 @@ const FilterLib = (function() {
     return new ImageData(dst, dstWidth, dstHeight);
   }
 
+  function normalizeFitMode(fitMode) {
+    return fitMode === 'cover' ? 'cover' : 'contain';
+  }
+
+  function fillImageData(dstData, r, g, b, a) {
+    const data = dstData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = r;
+      data[i + 1] = g;
+      data[i + 2] = b;
+      data[i + 3] = a;
+    }
+  }
+
+  function cropImageData(srcData, startX, startY, width, height) {
+    const dstData = new ImageData(width, height);
+    const src = srcData.data;
+    const dst = dstData.data;
+    const srcWidth = srcData.width;
+
+    for (let y = 0; y < height; y++) {
+      const srcRow = ((y + startY) * srcWidth + startX) * 4;
+      const dstRow = y * width * 4;
+      dst.set(src.subarray(srcRow, srcRow + width * 4), dstRow);
+    }
+
+    return dstData;
+  }
+
+  /**
+   * Resize an image with aspect-ratio fit.
+   * Returns ImageData at dstWidth x dstHeight.
+   * @param {ImageData} srcData - Source image data.
+   * @param {number} dstWidth - Target width.
+   * @param {number} dstHeight - Target height.
+   * @param {string} filterType - Filter type: 'nearest', 'bilinear', 'bicubic', 'mitchell', 'lanczos'.
+   * @param {string} fitMode - 'contain' or 'cover'.
+   * @returns {ImageData} Resized image data.
+   */
+  function resizeToFit(srcData, dstWidth, dstHeight, filterType, fitMode) {
+    const mode = normalizeFitMode(fitMode);
+    const srcWidth = srcData.width;
+    const srcHeight = srcData.height;
+
+    const scale = mode === 'cover'
+      ? Math.max(dstWidth / srcWidth, dstHeight / srcHeight)
+      : Math.min(dstWidth / srcWidth, dstHeight / srcHeight);
+
+    const scaledWidth = Math.max(
+      1,
+      mode === 'cover'
+        ? Math.ceil(srcWidth * scale)
+        : Math.floor(srcWidth * scale),
+    );
+    const scaledHeight = Math.max(
+      1,
+      mode === 'cover'
+        ? Math.ceil(srcHeight * scale)
+        : Math.floor(srcHeight * scale),
+    );
+    const resized = resize(srcData, scaledWidth, scaledHeight, filterType);
+
+    if (scaledWidth === dstWidth && scaledHeight === dstHeight) {
+      return resized;
+    }
+
+    if (mode === 'cover') {
+      const cropX = Math.max(0, Math.floor((scaledWidth - dstWidth) / 2));
+      const cropY = Math.max(0, Math.floor((scaledHeight - dstHeight) / 2));
+      return cropImageData(resized, cropX, cropY, dstWidth, dstHeight);
+    }
+
+    const output = new ImageData(dstWidth, dstHeight);
+    fillImageData(output, 255, 255, 255, 255);
+    const offsetX = Math.max(0, Math.floor((dstWidth - scaledWidth) / 2));
+    const offsetY = Math.max(0, Math.floor((dstHeight - scaledHeight) / 2));
+    const src = resized.data;
+    const dst = output.data;
+
+    for (let y = 0; y < scaledHeight; y++) {
+      const srcRow = y * scaledWidth * 4;
+      const dstRow = ((y + offsetY) * dstWidth + offsetX) * 4;
+      dst.set(src.subarray(srcRow, srcRow + scaledWidth * 4), dstRow);
+    }
+
+    return output;
+  }
+
   // Public API.
   return {
     resize: resize,
+    resizeToFit: resizeToFit,
     BICUBIC: 'bicubic',
     BILINEAR: 'bilinear',
     LANCZOS: 'lanczos',

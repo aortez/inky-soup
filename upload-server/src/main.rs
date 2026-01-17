@@ -74,6 +74,8 @@ struct GalleryImage {
     filename: String,
     thumb_ready: bool,
     filter: String,
+    fit_mode: String,
+    cache_version: u32,
     saturation: f32,
     brightness: i32,
     contrast: i32,
@@ -230,6 +232,8 @@ fn get_gallery_images() -> Vec<GalleryImage> {
                     filename,
                     thumb_ready,
                     filter: meta.filter,
+                    fit_mode: meta.fit_mode,
+                    cache_version: meta.cache_version,
                     saturation: meta.saturation,
                     brightness: meta.brightness,
                     contrast: meta.contrast,
@@ -368,6 +372,7 @@ struct UploadDitheredResponse {
 struct DitheredUpload<'v> {
     filename: String,
     filter: String,
+    fit_mode: Option<String>,
     saturation: f32,
     brightness: i32,
     contrast: i32,
@@ -381,6 +386,7 @@ struct DitheredUpload<'v> {
 struct CacheUpload<'v> {
     filename: String,
     filter: Option<String>,
+    fit_mode: Option<String>,
     saturation: Option<f32>,
     brightness: Option<i32>,
     contrast: Option<i32>,
@@ -462,6 +468,8 @@ async fn upload_dithered(
         }
     };
     let filter = form.filter.clone();
+    let fit_mode = form.fit_mode.clone().unwrap_or_else(|| "contain".to_string());
+    let fit_mode = if fit_mode == "cover" { "cover".to_string() } else { "contain".to_string() };
     let saturation = form.saturation;
     let brightness = form.brightness;
     let contrast = form.contrast;
@@ -469,8 +477,8 @@ async fn upload_dithered(
     let session_id = &form.session_id;
 
     info!(
-        "Upload dithered: {} (filter: {}, sat: {}, bright: {}, contrast: {}, dither: {}, session: {})",
-        filename, filter, saturation, brightness, contrast, dither_algorithm, session_id
+        "Upload dithered: {} (filter: {}, fit: {}, sat: {}, bright: {}, contrast: {}, dither: {}, session: {})",
+        filename, filter, fit_mode, saturation, brightness, contrast, dither_algorithm, session_id
     );
 
     // Verify lock ownership.
@@ -494,12 +502,13 @@ async fn upload_dithered(
         Ok(()) => {
             // Store all settings in metadata.
             info!(
-                "Saving metadata for {}: filter={}, sat={}, bright={}, contrast={}, dither={}",
-                filename, filter, saturation, brightness, contrast, dither_algorithm
+                "Saving metadata for {}: filter={}, fit={}, sat={}, bright={}, contrast={}, dither={}",
+                filename, filter, fit_mode, saturation, brightness, contrast, dither_algorithm
             );
-            metadata::save_all_settings(
+            metadata::save_dither_settings(
                 &filename,
                 &filter,
+                &fit_mode,
                 saturation,
                 brightness,
                 contrast,
@@ -545,6 +554,7 @@ async fn upload_cache(
 
     // Extract all settings.
     let filter = form.filter.clone();
+    let fit_mode = form.fit_mode.clone();
     let saturation = form.saturation;
     let brightness = form.brightness;
     let contrast = form.contrast;
@@ -552,8 +562,8 @@ async fn upload_cache(
     let session_id = form.session_id.as_ref();
 
     debug!(
-        "Upload cache: {} (filter: {:?}, sat: {:?}, bright: {:?}, contrast: {:?}, dither: {:?}, session: {:?})",
-        filename, filter, saturation, brightness, contrast, dither_algorithm, session_id
+        "Upload cache: {} (filter: {:?}, fit: {:?}, sat: {:?}, bright: {:?}, contrast: {:?}, dither: {:?}, session: {:?})",
+        filename, filter, fit_mode, saturation, brightness, contrast, dither_algorithm, session_id
     );
 
     // Verify lock ownership if session_id is provided.
@@ -578,26 +588,28 @@ async fn upload_cache(
     match form.file.copy_to(&cache_path).await {
         Ok(()) => {
             // Save settings if any are provided.
-            if filter.is_some() || saturation.is_some() || brightness.is_some()
+            if filter.is_some() || fit_mode.is_some() || saturation.is_some() || brightness.is_some()
                 || contrast.is_some() || dither_algorithm.is_some() {
 
                 // Load current metadata to preserve any settings not provided.
                 let current = metadata::get_all_metadata(&filename);
 
                 let final_filter = filter.as_deref().unwrap_or(&current.filter);
+                let final_fit_mode = fit_mode.as_deref().unwrap_or(&current.fit_mode);
                 let final_saturation = saturation.unwrap_or(current.saturation);
                 let final_brightness = brightness.unwrap_or(current.brightness);
                 let final_contrast = contrast.unwrap_or(current.contrast);
                 let final_dither = dither_algorithm.as_deref().unwrap_or(&current.dither_algorithm);
 
                 info!(
-                    "Saving metadata for {}: filter={}, sat={}, bright={}, contrast={}, dither={}",
-                    filename, final_filter, final_saturation, final_brightness, final_contrast, final_dither
+                    "Saving metadata for {}: filter={}, fit={}, sat={}, bright={}, contrast={}, dither={}",
+                    filename, final_filter, final_fit_mode, final_saturation, final_brightness, final_contrast, final_dither
                 );
 
                 metadata::save_all_settings(
                     &filename,
                     final_filter,
+                    final_fit_mode,
                     final_saturation,
                     final_brightness,
                     final_contrast,

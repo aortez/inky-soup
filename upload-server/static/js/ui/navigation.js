@@ -13,6 +13,8 @@ import {
   setCurrentBrightness,
   setCurrentContrast,
   setCurrentDitherAlgorithm,
+  setCurrentFitMode,
+  setCurrentCacheVersion,
   getCurrentSessionId,
   setCurrentSessionId,
   getLockKeepaliveInterval,
@@ -71,6 +73,8 @@ export async function showGalleryView() {
  * @param {number} [brightness=0] - The brightness value.
  * @param {number} [contrast=0] - The contrast value.
  * @param {string} [ditherAlgorithm='floyd-steinberg'] - The dither algorithm.
+ * @param {string} [fitMode='contain'] - The fit mode.
+ * @param {number} [cacheVersion=1] - The cache version.
  */
 export async function showDetailView(
   filename,
@@ -81,6 +85,8 @@ export async function showDetailView(
   brightness = 0,
   contrast = 0,
   ditherAlgorithm = 'floyd-steinberg',
+  fitMode = 'contain',
+  cacheVersion = 1,
 ) {
   if (!thumbReady) {
     // Can't view detail for uncached images yet.
@@ -135,6 +141,10 @@ export async function showDetailView(
   setCurrentBrightness(brightness);
   setCurrentContrast(contrast);
   setCurrentDitherAlgorithm(ditherAlgorithm);
+  const normalizedFitMode = fitMode === 'cover' ? 'cover' : 'contain';
+  setCurrentFitMode(normalizedFitMode);
+  const normalizedCacheVersion = Number.isFinite(cacheVersion) ? cacheVersion : 1;
+  setCurrentCacheVersion(Math.max(1, normalizedCacheVersion));
 
   // Update UI.
   elements.detailFilename.textContent = filename;
@@ -143,6 +153,11 @@ export async function showDetailView(
   // Set active filter button.
   queryAll('.filter-btn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.filter === (filter || 'bicubic'));
+  });
+
+  // Set active fit mode button.
+  queryAll('.fit-mode-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.fitMode === normalizedFitMode);
   });
 
   // Restore saturation from saved value (round to 1 decimal for display).
@@ -244,6 +259,8 @@ export function initNavigation() {
         const brightness = parseInt(thumb.dataset.brightness, 10) || 0;
         const contrast = parseInt(thumb.dataset.contrast, 10) || 0;
         const ditherAlgorithm = thumb.dataset.dither || 'floyd-steinberg';
+        const fitMode = thumb.dataset.fitMode || 'contain';
+        const cacheVersion = parseInt(thumb.dataset.cacheVersion, 10) || 1;
         showDetailView(
           e.state.filename,
           thumb.dataset.path,
@@ -253,6 +270,8 @@ export function initNavigation() {
           brightness,
           contrast,
           ditherAlgorithm,
+          fitMode,
+          cacheVersion,
         );
       } else {
         showGalleryView();

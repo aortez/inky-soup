@@ -12,6 +12,7 @@ import { initNavigation, showDetailView, showGalleryView } from './ui/navigation
 import { initDetailView } from './ui/detail-view.js';
 import { initGalleryView } from './ui/gallery-view.js';
 import { initFilterControls, applyFilter } from './ui/filter-controls.js';
+import { initFitModeControls } from './ui/fit-mode-controls.js';
 import { initSaturationControls } from './ui/saturation-controls.js';
 import { initDitherControls } from './ui/dither-controls.js';
 import { initBrightnessContrastControls } from './ui/brightness-contrast-controls.js';
@@ -90,6 +91,7 @@ async function init() {
   initDetailView();
   initGalleryView();
   initFilterControls();
+  initFitModeControls();
   initSaturationControls();
   initBrightnessContrastControls();
   initDitherControls();

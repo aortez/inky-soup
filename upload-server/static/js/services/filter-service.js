@@ -13,6 +13,9 @@ import {
   getCurrentBrightness,
   getCurrentContrast,
   getCurrentDitherAlgorithm,
+  getCurrentFitMode,
+  setCurrentFitMode,
+  setCurrentCacheVersion,
   getCurrentSessionId,
   getIsReadOnly,
   getOriginalImageCache,
@@ -21,11 +24,12 @@ import {
   getThumbWidth,
   getThumbHeight,
 } from '../core/state.js';
-import { elements, query } from '../core/dom.js';
+import { elements, query, queryAll } from '../core/dom.js';
 import { applyDither } from './dither-service.js';
 import { uploadCache, uploadThumb } from './api-client.js';
 import { loadOriginal } from './image-loader.js';
-import { createImageDataFromImage } from '../utils/image-utils.js';
+import { createImageDataFromImage, drawImageToFit } from '../utils/image-utils.js';
+import { CACHE_VERSION } from '../core/constants.js';
 
 // Track filter operation start time for logging.
 let filterStartTime = null;
@@ -54,8 +58,9 @@ export function initFilterWorker() {
       const elapsed = performance.now() - filterStartTime;
       const src = `${filterParams.srcWidth}x${filterParams.srcHeight}`;
       const target = `${filterParams.targetWidth}x${filterParams.targetHeight}`;
+      const fit = filterParams.fitMode ? `, fit: ${filterParams.fitMode}` : '';
       console.log(
-        `[Filter] ${filterParams.filter} completed in ${elapsed.toFixed(1)}ms (${src} → ${target})`,
+        `[Filter] ${filterParams.filter} completed in ${elapsed.toFixed(1)}ms (${src} → ${target}${fit})`,
       );
       filterStartTime = null;
       filterParams = null;
@@ -94,6 +99,7 @@ export function applyFilterToCanvas(imageData) {
   const worker = getFilterWorker();
 
   const filter = getCurrentFilter();
+  const fitMode = getCurrentFitMode();
 
   const targetWidth = getDisplayWidth();
   const targetHeight = getDisplayHeight();
@@ -106,6 +112,7 @@ export function applyFilterToCanvas(imageData) {
     srcHeight: imageData.height,
     targetWidth,
     targetHeight,
+    fitMode,
   };
 
   worker.postMessage({
@@ -115,6 +122,7 @@ export function applyFilterToCanvas(imageData) {
     targetWidth,
     targetHeight,
     filter,
+    fitMode,
   }, [imageData.data.buffer]);
 }
 
@@ -125,6 +133,23 @@ export function applyFilterToCanvas(imageData) {
 function applyFilterFromImage(img) {
   const imageData = createImageDataFromImage(img);
   applyFilterToCanvas(imageData);
+}
+
+function reprocessFromOriginal() {
+  const cache = getOriginalImageCache();
+  const filename = getCurrentFilename();
+
+  if (cache[filename]) {
+    applyFilterFromImage(cache[filename]);
+  } else {
+    elements.filterProcessing.textContent = 'Loading...';
+    loadOriginal(filename).then((img) => {
+      applyFilterFromImage(img);
+    }).catch((err) => {
+      console.error('Failed to load and filter image:', err);
+      elements.filterProcessing.textContent = 'Error loading image';
+    });
+  }
 }
 
 /**
@@ -141,21 +166,23 @@ export function selectFilter(filter) {
   });
 
   // Re-process from original (bypass server cache since filter changed).
-  const cache = getOriginalImageCache();
-  const filename = getCurrentFilename();
+  reprocessFromOriginal();
+}
 
-  if (cache[filename]) {
-    applyFilterFromImage(cache[filename]);
-  } else {
-    // Set processing state before async load so UI shows feedback immediately.
-    elements.filterProcessing.textContent = 'Loading...';
-    loadOriginal(filename).then((img) => {
-      applyFilterFromImage(img);
-    }).catch((err) => {
-      console.error('Failed to load and filter image:', err);
-      elements.filterProcessing.textContent = 'Error loading image';
-    });
-  }
+/**
+ * Select a new fit mode and re-process the current image.
+ * @param {string} mode - The fit mode ("contain" or "cover").
+ */
+export function selectFitMode(mode) {
+  const nextMode = mode === 'cover' ? 'cover' : 'contain';
+  setCurrentFitMode(nextMode);
+
+  elements.fitModeButtons = queryAll('.fit-mode-btn');
+  elements.fitModeButtons.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.fitMode === nextMode);
+  });
+
+  reprocessFromOriginal();
 }
 
 /**
@@ -178,6 +205,7 @@ export async function applyFilter() {
 
   const filename = getCurrentFilename();
   const filter = getCurrentFilter();
+  const fitMode = getCurrentFitMode();
   const saturation = getCurrentSaturation();
   const brightness = getCurrentBrightness();
   const contrast = getCurrentContrast();
@@ -196,6 +224,7 @@ export async function applyFilter() {
       filename,
       cacheBlob,
       filter,
+      fitMode,
       saturation,
       brightness,
       contrast,
@@ -209,6 +238,8 @@ export async function applyFilter() {
       return;
     }
 
+    setCurrentCacheVersion(CACHE_VERSION);
+
     // Also regenerate thumbnail.
     const thumbW = getThumbWidth();
     const thumbH = getThumbHeight();
@@ -216,7 +247,7 @@ export async function applyFilter() {
     thumbCanvas.width = thumbW;
     thumbCanvas.height = thumbH;
     const thumbCtx = thumbCanvas.getContext('2d');
-    thumbCtx.drawImage(elements.filterCanvas, 0, 0, thumbW, thumbH);
+    drawImageToFit(thumbCtx, elements.filterCanvas, thumbW, thumbH, fitMode);
 
     const thumbBlob = await new Promise((resolve) => {
       thumbCanvas.toBlob(resolve, 'image/png');
@@ -232,6 +263,8 @@ export async function applyFilter() {
     if (galleryThumb) {
       galleryThumb.src = `${thumbData.path}?t=${Date.now()}`;
       galleryThumb.dataset.filter = filter;
+      galleryThumb.dataset.fitMode = fitMode;
+      galleryThumb.dataset.cacheVersion = CACHE_VERSION.toString();
       galleryThumb.dataset.saturation = saturation.toString();
       galleryThumb.dataset.brightness = brightness.toString();
       galleryThumb.dataset.contrast = contrast.toString();

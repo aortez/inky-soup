@@ -14,6 +14,9 @@ const DEFAULT_SATURATION: f32 = 0.5;
 const DEFAULT_BRIGHTNESS: i32 = 0;
 const DEFAULT_CONTRAST: i32 = 0;
 const DEFAULT_DITHER_ALGORITHM: &str = "floyd-steinberg";
+const DEFAULT_FIT_MODE: &str = "contain";
+const CACHE_VERSION: u32 = 2;
+const LEGACY_CACHE_VERSION: u32 = 1;
 
 /// Metadata stored for each image.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,6 +31,10 @@ pub struct ImageMetadata {
     pub contrast: i32,
     #[serde(default = "default_dither_algorithm")]
     pub dither_algorithm: String,
+    #[serde(default = "default_fit_mode")]
+    pub fit_mode: String,
+    #[serde(default = "default_cache_version")]
+    pub cache_version: u32,
 }
 
 fn default_filter() -> String {
@@ -50,6 +57,14 @@ fn default_dither_algorithm() -> String {
     DEFAULT_DITHER_ALGORITHM.to_string()
 }
 
+fn default_fit_mode() -> String {
+    DEFAULT_FIT_MODE.to_string()
+}
+
+fn default_cache_version() -> u32 {
+    LEGACY_CACHE_VERSION
+}
+
 impl Default for ImageMetadata {
     fn default() -> Self {
         Self {
@@ -58,6 +73,8 @@ impl Default for ImageMetadata {
             brightness: DEFAULT_BRIGHTNESS,
             contrast: DEFAULT_CONTRAST,
             dither_algorithm: DEFAULT_DITHER_ALGORITHM.to_string(),
+            fit_mode: DEFAULT_FIT_MODE.to_string(),
+            cache_version: default_cache_version(),
         }
     }
 }
@@ -164,6 +181,11 @@ fn is_valid_dither_algorithm(algorithm: &str) -> bool {
     matches!(algorithm, "floyd-steinberg" | "atkinson" | "ordered")
 }
 
+/// Validates if a fit mode is recognized.
+fn is_valid_fit_mode(mode: &str) -> bool {
+    matches!(mode, "contain" | "cover")
+}
+
 /// Gets the filter preference for an image.
 pub fn get_filter_for_image(filename: &str) -> String {
     let metadata = load_metadata(filename);
@@ -183,6 +205,7 @@ pub fn get_filter_for_image(filename: &str) -> String {
 pub fn save_all_settings(
     filename: &str,
     filter: &str,
+    fit_mode: &str,
     saturation: f32,
     brightness: i32,
     contrast: i32,
@@ -190,10 +213,12 @@ pub fn save_all_settings(
 ) {
     let metadata = ImageMetadata {
         filter: filter.to_string(),
+        fit_mode: fit_mode.to_string(),
         saturation,
         brightness,
         contrast,
         dither_algorithm: dither_algorithm.to_string(),
+        cache_version: CACHE_VERSION,
     };
     save_metadata(filename, &metadata);
 }
@@ -214,20 +239,30 @@ pub fn get_all_metadata(filename: &str) -> ImageMetadata {
     if !is_valid_dither_algorithm(&metadata.dither_algorithm) {
         metadata.dither_algorithm = DEFAULT_DITHER_ALGORITHM.to_string();
     }
+    if !is_valid_fit_mode(&metadata.fit_mode) {
+        metadata.fit_mode = DEFAULT_FIT_MODE.to_string();
+    }
+    if metadata.cache_version == 0 || metadata.cache_version > CACHE_VERSION {
+        metadata.cache_version = CACHE_VERSION;
+    }
 
     metadata
 }
 
 /// Saves all dither-related settings for an image.
-/// Called when flashing an image.
+/// Called when flashing an image (preserves cache_version).
 pub fn save_dither_settings(
     filename: &str,
+    filter: &str,
+    fit_mode: &str,
     saturation: f32,
     brightness: i32,
     contrast: i32,
     dither_algorithm: &str,
 ) {
-    let mut metadata = load_metadata(filename);
+    let mut metadata = get_all_metadata(filename);
+    metadata.filter = filter.to_string();
+    metadata.fit_mode = fit_mode.to_string();
     metadata.saturation = saturation;
     metadata.brightness = brightness;
     metadata.contrast = contrast;
@@ -327,6 +362,8 @@ pub fn migrate_legacy_metadata() {
             brightness: DEFAULT_BRIGHTNESS,
             contrast: DEFAULT_CONTRAST,
             dither_algorithm: DEFAULT_DITHER_ALGORITHM.to_string(),
+            fit_mode: DEFAULT_FIT_MODE.to_string(),
+            cache_version: default_cache_version(),
         };
         save_metadata(&filename, &metadata);
         migrated += 1;

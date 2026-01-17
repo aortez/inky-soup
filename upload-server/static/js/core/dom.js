@@ -34,6 +34,7 @@ export function initDOMCache() {
 
   // Dither method buttons.
   elements.ditherButtons = document.querySelectorAll('.dither-btn');
+  elements.fitModeButtons = document.querySelectorAll('.fit-mode-btn');
 
   // Flash status bar.
   elements.flashStatusBar = document.getElementById('flashStatusBar');

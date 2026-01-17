@@ -250,4 +250,66 @@ describe('FilterLib', () => {
       expect(result.height).toBe(50);
     });
   });
+
+  describe('resizeToFit', () => {
+    function createSolidImage(width, height, r, g, b, a = 255) {
+      const data = new Uint8ClampedArray(width * height * 4);
+      for (let i = 0; i < data.length; i += 4) {
+        data[i] = r;
+        data[i + 1] = g;
+        data[i + 2] = b;
+        data[i + 3] = a;
+      }
+      return new ImageData(data, width, height);
+    }
+
+    function createTwoToneImage(width, height, left, right) {
+      const data = new Uint8ClampedArray(width * height * 4);
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = (y * width + x) * 4;
+          const color = x < width / 2 ? left : right;
+          data[idx] = color[0];
+          data[idx + 1] = color[1];
+          data[idx + 2] = color[2];
+          data[idx + 3] = 255;
+        }
+      }
+      return new ImageData(data, width, height);
+    }
+
+    it('should letterbox when using contain mode', () => {
+      const src = createSolidImage(100, 50, 10, 200, 30);
+      const result = FilterLib.resizeToFit(src, 50, 50, 'nearest', 'contain');
+
+      expect(result.width).toBe(50);
+      expect(result.height).toBe(50);
+
+      const topLeft = 0;
+      expect(result.data[topLeft]).toBe(255);
+      expect(result.data[topLeft + 1]).toBe(255);
+      expect(result.data[topLeft + 2]).toBe(255);
+
+      const centerIdx = (25 * 50 + 25) * 4;
+      expect(result.data[centerIdx]).toBeCloseTo(10, 0);
+      expect(result.data[centerIdx + 1]).toBeCloseTo(200, 0);
+      expect(result.data[centerIdx + 2]).toBeCloseTo(30, 0);
+    });
+
+    it('should crop when using cover mode', () => {
+      const src = createTwoToneImage(100, 50, [255, 0, 0], [0, 0, 255]);
+      const result = FilterLib.resizeToFit(src, 50, 50, 'nearest', 'cover');
+
+      const leftIdx = (25 * 50 + 0) * 4;
+      const rightIdx = (25 * 50 + 49) * 4;
+
+      expect(result.data[leftIdx]).toBe(255);
+      expect(result.data[leftIdx + 1]).toBe(0);
+      expect(result.data[leftIdx + 2]).toBe(0);
+
+      expect(result.data[rightIdx]).toBe(0);
+      expect(result.data[rightIdx + 1]).toBe(0);
+      expect(result.data[rightIdx + 2]).toBe(255);
+    });
+  });
 });

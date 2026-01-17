@@ -3,7 +3,7 @@
  * Manages the upload modal and thumbnail processing.
  */
 
-import { DEFAULT_FILTER } from '../core/constants.js';
+import { DEFAULT_FILTER, DEFAULT_FIT_MODE } from '../core/constants.js';
 import {
   getPendingThumbnails, setPendingThumbnails,
   getDisplayWidth, getDisplayHeight, getThumbWidth, getThumbHeight,
@@ -14,6 +14,7 @@ import {
 import { elements } from '../core/dom.js';
 import { formatSize, formatSpeed, formatTime } from '../utils/formatters.js';
 import { generateUUID } from '../utils/uuid.js';
+import { drawImageToFit } from '../utils/image-utils.js';
 import { uploadCache, uploadThumb, uploadOriginalImage } from './api-client.js';
 
 // Dedicated filter worker for upload processing.
@@ -46,9 +47,10 @@ function getUploadFilterWorker() {
  * @param {number} targetWidth - Target width.
  * @param {number} targetHeight - Target height.
  * @param {string} filter - Filter name to use.
+ * @param {string} fitMode - Fit mode ("contain" or "cover").
  * @returns {Promise<ImageData>} Filtered image data.
  */
-function filterImage(imageData, targetWidth, targetHeight, filter) {
+function filterImage(imageData, targetWidth, targetHeight, filter, fitMode) {
   return new Promise((resolve, reject) => {
     const worker = getUploadFilterWorker();
 
@@ -82,6 +84,7 @@ function filterImage(imageData, targetWidth, targetHeight, filter) {
       targetWidth,
       targetHeight,
       filter,
+      fitMode,
     }, [imageData.data.buffer]);
   });
 }
@@ -367,7 +370,7 @@ async function uploadQueueItem(item) {
     .then((dataUrl) => {
       if (getUploadQueueCurrentId() !== currentId) return;
       elements.uploadModalImage.src = dataUrl;
-      generateThumbnails(dataUrl, item.name);
+      generateThumbnails(dataUrl, item.name, DEFAULT_FIT_MODE);
     })
     .catch((err) => {
       console.error('Failed to read file for preview:', err);
@@ -494,9 +497,11 @@ export function handleFileSelect(selection) {
  * Thumbnail uses simple resize for speed.
  * @param {string} dataUrl - The data URL of the uploaded image.
  * @param {string} filename - The filename.
+ * @param {string} fitMode - The fit mode ("contain" or "cover").
  */
-export function generateThumbnails(dataUrl, filename) {
+export function generateThumbnails(dataUrl, filename, fitMode = DEFAULT_FIT_MODE) {
   const img = new Image();
+  const mode = fitMode === 'cover' ? 'cover' : DEFAULT_FIT_MODE;
 
   img.onload = async () => {
     // Get source image data.
@@ -520,6 +525,7 @@ export function generateThumbnails(dataUrl, filename) {
         cacheWidth,
         cacheHeight,
         DEFAULT_FILTER,
+        mode,
       );
 
       // Convert filtered ImageData to blob.
@@ -533,7 +539,12 @@ export function generateThumbnails(dataUrl, filename) {
         const pending = getPendingThumbnails();
         setPendingThumbnails({
           ...pending,
-          cache: { blob: cacheBlob, filename, filter: DEFAULT_FILTER },
+          cache: {
+            blob: cacheBlob,
+            filename,
+            filter: DEFAULT_FILTER,
+            fitMode: mode,
+          },
         });
         uploadPendingThumbnails(filename);
       }, 'image/png');
@@ -544,13 +555,18 @@ export function generateThumbnails(dataUrl, filename) {
       cacheCanvas.width = cacheWidth;
       cacheCanvas.height = cacheHeight;
       const cacheCtx = cacheCanvas.getContext('2d');
-      cacheCtx.drawImage(img, 0, 0, cacheWidth, cacheHeight);
+      drawImageToFit(cacheCtx, img, cacheWidth, cacheHeight, mode);
 
       cacheCanvas.toBlob((cacheBlob) => {
         const pending = getPendingThumbnails();
         setPendingThumbnails({
           ...pending,
-          cache: { blob: cacheBlob, filename, filter: null },
+          cache: {
+            blob: cacheBlob,
+            filename,
+            filter: null,
+            fitMode: mode,
+          },
         });
         uploadPendingThumbnails(filename);
       }, 'image/png');
@@ -561,13 +577,17 @@ export function generateThumbnails(dataUrl, filename) {
     thumbCanvas.width = thumbWidth;
     thumbCanvas.height = thumbHeight;
     const thumbCtx = thumbCanvas.getContext('2d');
-    thumbCtx.drawImage(img, 0, 0, thumbWidth, thumbHeight);
+    drawImageToFit(thumbCtx, img, thumbWidth, thumbHeight, mode);
 
     thumbCanvas.toBlob((thumbBlob) => {
       const pending = getPendingThumbnails();
       setPendingThumbnails({
         ...pending,
-        thumb: { blob: thumbBlob, filename },
+        thumb: {
+          blob: thumbBlob,
+          filename,
+          fitMode: mode,
+        },
       });
       uploadPendingThumbnails(filename);
     }, 'image/png');
@@ -599,6 +619,7 @@ export async function uploadPendingThumbnails(filename) {
       filename,
       pending.cache.blob,
       pending.cache.filter,
+      pending.cache.fitMode || DEFAULT_FIT_MODE,
       0.5, // default saturation
       0, // default brightness
       0, // default contrast

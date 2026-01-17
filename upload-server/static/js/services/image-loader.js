@@ -8,9 +8,11 @@ import {
   setOriginalImageCache,
   getDisplayWidth,
   getDisplayHeight,
+  getCurrentCacheVersion,
 } from '../core/state.js';
 import { elements } from '../core/dom.js';
 import { createImageDataFromImage } from '../utils/image-utils.js';
+import { CACHE_VERSION } from '../core/constants.js';
 
 /**
  * Load an image using cache-first strategy.
@@ -21,6 +23,17 @@ import { createImageDataFromImage } from '../utils/image-utils.js';
 export async function loadImageUsingCache(filename) {
   const expectedWidth = getDisplayWidth();
   const expectedHeight = getDisplayHeight();
+  const cacheVersion = getCurrentCacheVersion();
+
+  if (!Number.isFinite(cacheVersion) || cacheVersion < CACHE_VERSION) {
+    console.log(
+      `[ImageLoader] Cache version mismatch: ${cacheVersion} vs ${CACHE_VERSION}. `
+      + 'Loading original.',
+    );
+    const img = await loadOriginal(filename);
+    const imageData = createImageDataFromImage(img);
+    return { imageData, needsFiltering: true };
+  }
 
   // Try to load from server-side cache first.
   try {

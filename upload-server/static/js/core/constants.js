@@ -10,3 +10,9 @@ export const FLASH_DURATION_MS = 40000;
 
 // Default resize filter for new uploads.
 export const DEFAULT_FILTER = 'bicubic';
+
+// Default fit mode for new uploads.
+export const DEFAULT_FIT_MODE = 'contain';
+
+// Cache format version for resized images.
+export const CACHE_VERSION = 2;

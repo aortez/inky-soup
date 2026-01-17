@@ -245,6 +245,7 @@
         flex-direction: column;
         align-items: center;
         text-align: center;
+        margin: 0 10px;
       }
 
       .pipeline-stage canvas {
@@ -267,6 +268,7 @@
         justify-content: center;
         padding: 15px 10px;
         min-width: 120px;
+        margin: 0 10px;
       }
 
       .pipeline-arrow {
@@ -311,6 +313,30 @@
         border-color: #B8956A;
       }
       .filter-btn.active {
+        background: #B8956A;
+        color: #2A1A0F;
+        border-color: #B8956A;
+      }
+
+      .fit-mode-buttons {
+        display: flex;
+        gap: 6px;
+        justify-content: center;
+      }
+      .fit-mode-btn {
+        padding: 4px 10px;
+        border: 2px solid #6B5344;
+        background: #3A2A1F;
+        color: #C9DBBD;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 0.8em;
+      }
+      .fit-mode-btn:hover {
+        border-color: #B8956A;
+      }
+      .fit-mode-btn.active {
         background: #B8956A;
         color: #2A1A0F;
         border-color: #B8956A;
@@ -867,7 +893,9 @@
                     parseFloat(img.dataset.saturation),
                     parseInt(img.dataset.brightness),
                     parseInt(img.dataset.contrast),
-                    img.dataset.dither
+                    img.dataset.dither,
+                    img.dataset.fitMode,
+                    parseInt(img.dataset.cacheVersion, 10)
                   );
                 }
               ">
@@ -879,6 +907,8 @@
                   data-filename="{{ img.filename }}"
                   data-path="{{ img.path }}"
                   data-filter="{{ img.filter }}"
+                  data-fit-mode="{{ img.fit_mode }}"
+                  data-cache-version="{{ img.cache_version }}"
                   data-saturation="{{ img.saturation }}"
                   data-brightness="{{ img.brightness }}"
                   data-contrast="{{ img.contrast }}"
@@ -891,6 +921,8 @@
                   data-filename="{{ img.filename }}"
                   data-path="{{ img.path }}"
                   data-filter="{{ img.filter }}"
+                  data-fit-mode="{{ img.fit_mode }}"
+                  data-cache-version="{{ img.cache_version }}"
                   data-saturation="{{ img.saturation }}"
                   data-brightness="{{ img.brightness }}"
                   data-contrast="{{ img.contrast }}"
@@ -948,6 +980,11 @@
                 <button class="filter-btn" data-filter="mitchell">Mitchell</button>
                 <button class="filter-btn" data-filter="bilinear">Bilinear</button>
                 <button class="filter-btn" data-filter="nearest">Nearest</button>
+              </div>
+              <div class="pipeline-control-label" style="margin-top: 8px;">Fit Mode</div>
+              <div class="fit-mode-buttons">
+                <button class="fit-mode-btn active" data-fit-mode="contain">Contain</button>
+                <button class="fit-mode-btn" data-fit-mode="cover">Cover</button>
               </div>
               <button class="apply-filter-btn" onclick="applyFilter()">Save</button>
               <span id="filterStatus" class="filter-status"></span>

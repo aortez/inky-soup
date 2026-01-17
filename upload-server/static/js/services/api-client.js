@@ -31,6 +31,7 @@ export async function getDisplayConfig() {
  * @param {string} filename - Original filename (without .png extension).
  * @param {Blob} blob - PNG blob data.
  * @param {string} filter - Filter name to save in metadata.
+ * @param {string} fitMode - Fit mode ("contain" or "cover").
  * @param {number} saturation - Saturation value.
  * @param {number} brightness - Brightness value.
  * @param {number} contrast - Contrast value.
@@ -42,6 +43,7 @@ export async function uploadCache(
   filename,
   blob,
   filter,
+  fitMode,
   saturation,
   brightness,
   contrast,
@@ -56,6 +58,9 @@ export async function uploadCache(
     formData.append('brightness', brightness.toString());
     formData.append('contrast', contrast.toString());
     formData.append('dither_algorithm', ditherAlgorithm);
+  }
+  if (fitMode) {
+    formData.append('fit_mode', fitMode);
   }
   if (sessionId) {
     formData.append('session_id', sessionId);
@@ -102,6 +107,7 @@ export async function uploadThumb(filename, blob) {
  * @param {string} filename - Original filename (without .png extension).
  * @param {Blob} blob - PNG blob data.
  * @param {string} filter - Filter name used for the cached image.
+ * @param {string} fitMode - Fit mode ("contain" or "cover").
  * @param {number} saturation - Saturation value used for dithering.
  * @param {number} brightness - Brightness value used for dithering.
  * @param {number} contrast - Contrast value used for dithering.
@@ -112,6 +118,7 @@ export async function uploadDithered(
   filename,
   blob,
   filter,
+  fitMode,
   saturation,
   brightness,
   contrast,
@@ -121,6 +128,7 @@ export async function uploadDithered(
   const formData = new FormData();
   formData.append('filename', filename);
   formData.append('filter', filter);
+  formData.append('fit_mode', fitMode);
   formData.append('saturation', saturation.toString());
   formData.append('brightness', brightness.toString());
   formData.append('contrast', contrast.toString());

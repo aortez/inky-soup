@@ -10,6 +10,7 @@ vi.mock('../../static/js/core/state.js', () => ({
   setOriginalImageCache: vi.fn(),
   getDisplayWidth: vi.fn(() => 1600),
   getDisplayHeight: vi.fn(() => 1200),
+  getCurrentCacheVersion: vi.fn(() => 2),
 }));
 
 // Mock the dom module.
@@ -167,6 +168,41 @@ describe('image-loader', () => {
       expect(result.needsFiltering).toBe(true);
       expect(result.imageData).toBeDefined();
 
+      global.Image = originalImage;
+    });
+
+    it('should return needsFiltering=true when cache version mismatch', async () => {
+      const { loadImageUsingCache } = await import('../../static/js/services/image-loader.js');
+      const { getCurrentCacheVersion } = await import('../../static/js/core/state.js');
+
+      getCurrentCacheVersion.mockReturnValue(1);
+
+      const mockOriginalImage = {
+        width: 2000,
+        height: 1500,
+        onload: null,
+        onerror: null,
+        crossOrigin: null,
+        src: '',
+      };
+
+      const originalImage = global.Image;
+      global.Image = vi.fn(() => mockOriginalImage);
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      const promise = loadImageUsingCache('test.jpg');
+
+      mockOriginalImage.onload();
+
+      const result = await promise;
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Cache version mismatch'),
+      );
+      expect(result.needsFiltering).toBe(true);
+      expect(result.imageData).toBeDefined();
+
+      consoleSpy.mockRestore();
       global.Image = originalImage;
     });
   });

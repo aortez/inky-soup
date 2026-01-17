@@ -24,6 +24,8 @@ let currentSaturation = 0.5;
 let currentDitherAlgorithm = 'floyd-steinberg';
 let currentBrightness = 0; // Range: -100 to +100.
 let currentContrast = 0; // Range: -100 to +100.
+let currentFitMode = 'contain';
+let currentCacheVersion = 1;
 
 // Worker state.
 let filterWorker = null;
@@ -73,6 +75,16 @@ export const setCurrentSaturation = (saturation) => {
 export const getCurrentDitherAlgorithm = () => currentDitherAlgorithm;
 export const setCurrentDitherAlgorithm = (algorithm) => {
   currentDitherAlgorithm = algorithm;
+};
+
+export const getCurrentFitMode = () => currentFitMode;
+export const setCurrentFitMode = (mode) => {
+  currentFitMode = mode;
+};
+
+export const getCurrentCacheVersion = () => currentCacheVersion;
+export const setCurrentCacheVersion = (version) => {
+  currentCacheVersion = version;
 };
 
 export const getCurrentBrightness = () => currentBrightness;
