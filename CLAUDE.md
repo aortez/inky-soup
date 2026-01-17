@@ -141,7 +141,6 @@ static/images/
 - **Detail view UX** — Click a thumbnail to enter a full detail view with all controls (filter, saturation, dither preview, flash) in one place. No modal-hopping.
 - **Pre-dithered flashing** — The server requires a pre-dithered PNG before flashing; Python script just sends bytes to hardware.
 - **Background cleanup** — A Rocket fairing spawns a task that removes orphaned cache/dithered files every 5 minutes.
-- **Cross-compilation** — Uses `cross` with Docker for ARMv6 support (Pi Zero's architecture).
 - **File naming** — Cache, thumb, and dithered files are always PNG, named `{original}.png` (e.g., `photo.jpg.png`).
 - **Templates** — Tera template engine; single-page app in `index.html.tera` with shared macros in `macros.html.tera`.
 - **"Flash twice" option** — Overcomes e-ink ghosting by flashing the image twice.
@@ -170,50 +169,15 @@ npm run lint:fix     # Auto-fix code style issues
 npm run test:e2e     # Run E2E tests (requires server running)
 ```
 
-### Cross-Compilation Setup (for Pi Zero)
-First-time setup (automated):
+### Deployment (Yocto)
+
+Production deployment uses Yocto to build complete SD card images. See `yocto/README.md` for details.
+
 ```bash
-./setup-crosscompile.sh
-```
-
-This script (idempotent, safe to run multiple times):
-- Checks for Docker (required for `cross`).
-- Installs `cross` via cargo (Docker-based cross-compilation).
-- Installs ARM target via rustup.
-
-Manual build for Pi:
-```bash
-cd upload-server
-cross build --release --target=arm-unknown-linux-gnueabihf
-# Binary: target/arm-unknown-linux-gnueabihf/release/upload-server
-```
-
-**Why `cross` instead of `cargo`?** The Pi Zero uses ARMv6, but the standard Debian `arm-linux-gnueabihf-gcc` toolchain generates ARMv7 instructions by default. This causes "illegal instruction" (SIGILL) errors on the Pi Zero. The `cross` tool uses Docker containers with properly configured toolchains.
-
-### Deployment
-```bash
-INKY_SOUP_IP=<pi-hostname-or-ip> ./deploy.sh
-```
-
-For non-default usernames:
-```bash
-DEPLOY_USER=oldman INKY_SOUP_IP=inky-soup.local ./deploy.sh
-```
-
-The deploy script:
-- Validates prerequisites (Docker, `cross`, INKY_SOUP_IP variable).
-- Builds optimized release binary using `cross` for ARM target.
-- Stages binary, templates, static files, and Python script in `/tmp/inky-soup`.
-- Stops the running service (if any) to unlock the binary.
-- SCPs everything to Pi.
-- Installs and restarts the systemd service automatically.
-
-To build debug binary instead: `BUILD_TYPE=debug INKY_SOUP_IP=<ip> ./deploy.sh`
-
-### SD Card Deployment
-For initial setup or headless deployment via a mounted SD card:
-```bash
-SDCARD_ROOT=/media/user/rootfs ./deploy-sdcard.sh
+cd yocto
+npm install          # First time only
+npm run build        # Build image
+npm run flash        # Flash to SD card
 ```
 
 ## API Endpoints
@@ -338,7 +302,7 @@ Rocket configuration in `upload-server/Rocket.toml`:
 
 To tail logs on the remote Pi:
 ```bash
-DEPLOY_USER=oldman INKY_SOUP_IP=inky-soup.local ./tail_remote_logs.sh
+ssh inky@inky-soup.local journalctl -fu inky-soup-server
 ```
 
 ## Python Script
@@ -358,9 +322,7 @@ The `--skip-dither` flag is always used now since dithering happens client-side.
 
 ## Yocto Build System
 
-Inky Soup includes a Yocto-based build system for Raspberry Pi Zero 2 W.
-
-**Current status**: Basic bootable image with NetworkManager, SSH, and WiFi support.
+Inky Soup uses Yocto to build complete SD card images for Raspberry Pi Zero 2 W. The image includes the Rust server, Python display script, and all dependencies.
 
 **See `yocto/README.md` for complete documentation.**
 
@@ -379,33 +341,16 @@ npm run build        # Build image (~20 min with cache, ~2 hours first time)
 npm run flash        # Flash to SD card with SSH key and WiFi injection
 ```
 
-### Current Features
+### Features
 
 - **Target**: Raspberry Pi Zero 2 W (ARMv7, cortex-a7)
+- **Application**: inky-soup-server and inky-soup-display packages with systemd services
 - **Networking**: NetworkManager with nmtui/nmcli, WiFi firmware (BCM43436)
-- **Access**: SSH with key-based auth, root user with empty password (debug-tweaks)
-- **Image format**: rpi-sdimg (standard Pi SD card image)
-- **Flash script**: Interactive SD card flasher with SSH key injection
-- **WiFi**: Credential injection at flash time, persistent across reflashes
+- **Access**: SSH with key-based auth (user: `inky`)
+- **Flash script**: Interactive SD card flasher with SSH key and WiFi injection
 - **mDNS**: Avahi for `<hostname>.local` discovery
+- **A/B partitions**: Safe atomic updates with fallback
 
 ### Architecture
 
 Uses [KAS](https://kas.readthedocs.io/) for reproducible Yocto builds. All configuration in `kas-inky-soup.yml`.
-
-### YOLO Updates (Over-the-Air)
-
-For updating a running Pi over the network:
-
-```bash
-cd yocto
-npm run yolo                # Build + push + flash + reboot
-npm run yolo -- --dry-run   # Show what would happen
-npm run yolo -- --skip-build # Push existing image only
-```
-
-Uses A/B partitions for safe atomic updates. If it fails, pull the disk and reflash.
-
-### Next Steps
-
-1. Integrate inky-soup server and display script into Yocto image
