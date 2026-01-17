@@ -339,16 +339,16 @@ This project uses [sparkle-duck-shared](https://github.com/aortez/sparkle-duck-s
 ## TODO
 
 ### Completed
-- [x] WiFi credential injection at flash time
-- [x] Persistent `/data` partition for WiFi credentials across updates
-- [x] Hostname advertising (avahi/mDNS) - `<hostname>.local`
-- [x] Migrate to KAS-based build system
 - [x] A/B partition support for atomic updates
+- [x] Hostname advertising (avahi/mDNS) - `<hostname>.local`
+- [x] Inky-soup server package and service
 - [x] Integrate sparkle-duck-shared (pi-base)
+- [x] Migrate to KAS-based build system
+- [x] Persistent `/data` partition for WiFi credentials across updates
+- [x] Python display script integration
+- [x] WiFi credential injection at flash time
 
 ### Next
-- [ ] Inky-soup server package and service
-- [ ] Python display script integration
 - [ ] A/B update script (yolo-update.mjs) for OTA updates
 - [ ] Pre-dithered image pipeline
 - [ ] Test on actual Pi Zero 2 W with e-ink display
