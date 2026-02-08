@@ -25,8 +25,9 @@ use rocket_dyn_templates::Template;
 
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
 use derived_assets::{invalidate_all_derived_assets, DerivedAssetCounts};
@@ -360,6 +361,38 @@ fn count_original_images() -> usize {
     count
 }
 
+fn create_flash_job_snapshot(source_path: &Path) -> Result<PathBuf, String> {
+    let snapshots_dir = config::flash_jobs_dir();
+    fs::create_dir_all(&snapshots_dir).map_err(|e| {
+        format!(
+            "Failed to create flash snapshot directory '{}': {}",
+            snapshots_dir.display(),
+            e
+        )
+    })?;
+
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let snapshot_path = snapshots_dir.join(format!(
+        "flash-job-{}-{}.png",
+        std::process::id(),
+        timestamp
+    ));
+
+    fs::copy(source_path, &snapshot_path).map_err(|e| {
+        format!(
+            "Failed to snapshot dithered image '{}' -> '{}': {}",
+            source_path.display(),
+            snapshot_path.display(),
+            e
+        )
+    })?;
+
+    Ok(snapshot_path)
+}
+
 /// API endpoint to update global display rotation setting.
 #[post("/api/settings/display-rotation", data = "<request>")]
 fn update_display_rotation(
@@ -415,7 +448,7 @@ fn update_display_rotation(
     Ok(Json(DisplayRotationResponse {
         success: true,
         message: format!(
-            "Rotation updated to {}°. Cleared derived assets; reload to regenerate previews.",
+            "Rotation updated to {}°. Cleared derived assets; reload to regenerate cache, thumbnails, and dithered outputs.",
             rotation_degrees
         ),
         rotation_degrees,
@@ -572,7 +605,7 @@ struct DitheredUpload<'v> {
     brightness: i32,
     contrast: i32,
     dither_algorithm: String,
-    session_id: String,
+    session_id: Option<String>,
     file: TempFile<'v>,
 }
 
@@ -679,28 +712,30 @@ async fn upload_dithered(
     let brightness = form.brightness;
     let contrast = form.contrast;
     let dither_algorithm = form.dither_algorithm.clone();
-    let session_id = &form.session_id;
+    let session_id = form.session_id.as_deref();
 
     info!(
-        "Upload dithered: {} (filter: {}, fit: {}, sat: {}, bright: {}, contrast: {}, dither: {}, session: {})",
+        "Upload dithered: {} (filter: {}, fit: {}, sat: {}, bright: {}, contrast: {}, dither: {}, session: {:?})",
         filename, filter, fit_mode, saturation, brightness, contrast, dither_algorithm, session_id
     );
 
-    // Verify lock ownership.
-    let has_lock = image_locks::verify_lock_ownership(locks_state, &filename, session_id)
-        .await
-        .unwrap_or(false);
+    if let Some(session_id) = session_id {
+        // Verify lock ownership when this is an interactive edit flow.
+        let has_lock = image_locks::verify_lock_ownership(locks_state, &filename, session_id)
+            .await
+            .unwrap_or(false);
 
-    if !has_lock {
-        warn!(
-            "Upload dithered denied for {}: session {} does not own lock",
-            filename, session_id
-        );
-        return Json(UploadDitheredResponse {
-            success: false,
-            message: "You do not have edit access to this image".to_string(),
-            path: None,
-        });
+        if !has_lock {
+            warn!(
+                "Upload dithered denied for {}: session {} does not own lock",
+                filename, session_id
+            );
+            return Json(UploadDitheredResponse {
+                success: false,
+                message: "You do not have edit access to this image".to_string(),
+                path: None,
+            });
+        }
     }
 
     // Save dithered image to dithered directory (always as PNG).
@@ -1047,10 +1082,19 @@ async fn submit_flash_image<'r>(
 
     // Add to queue.
     let rotation_degrees = get_display_config().rotation_degrees;
+    let snapshot_path = create_flash_job_snapshot(&dithered_path).map_err(|e| {
+        error!(
+            "Failed to create flash snapshot for {} from {}: {}",
+            filename,
+            dithered_path.display(),
+            e
+        );
+        (Status::InternalServerError, format!("Failed to queue flash job: {}", e))
+    })?;
     let mut queue = queue_state.lock().await;
     let job_id = queue.enqueue(
         filename.clone(),
-        dithered_path.to_string_lossy().to_string(),
+        snapshot_path.to_string_lossy().to_string(),
         flash_twice,
         rotation_degrees,
     );
@@ -1283,6 +1327,29 @@ mod tests {
             }
             Err(_) => panic!("unchanged rotation should succeed"),
         }
+
+        if let Some(value) = previous_data_dir {
+            std::env::set_var("INKY_SOUP_DATA_DIR", value);
+        } else {
+            std::env::remove_var("INKY_SOUP_DATA_DIR");
+        }
+        fs::remove_dir_all(temp_data_dir).unwrap();
+    }
+
+    #[test]
+    fn test_create_flash_job_snapshot_copies_source_image() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let previous_data_dir = std::env::var("INKY_SOUP_DATA_DIR").ok();
+        let temp_data_dir = unique_temp_dir("inky_soup_flash_snapshot_test");
+        std::env::set_var("INKY_SOUP_DATA_DIR", &temp_data_dir);
+
+        let source_path = temp_data_dir.join("source-dithered.png");
+        fs::write(&source_path, b"snapshot-test").unwrap();
+
+        let snapshot_path = create_flash_job_snapshot(&source_path).unwrap();
+        assert!(snapshot_path.exists());
+        assert!(snapshot_path.starts_with(config::flash_jobs_dir()));
+        assert_eq!(fs::read(&snapshot_path).unwrap(), fs::read(&source_path).unwrap());
 
         if let Some(value) = previous_data_dir {
             std::env::set_var("INKY_SOUP_DATA_DIR", value);

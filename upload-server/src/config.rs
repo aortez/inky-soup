@@ -61,6 +61,11 @@ pub fn display_runtime_settings_path() -> PathBuf {
     settings_dir().join("display-runtime.json")
 }
 
+/// Path to temporary flash-job image snapshots.
+pub fn flash_jobs_dir() -> PathBuf {
+    data_dir().join("flash-jobs")
+}
+
 /// Get the full path for a cached image.
 pub fn cache_path(filename: &str) -> PathBuf {
     cache_dir().join(format!("{}.png", filename))
@@ -90,6 +95,7 @@ pub fn required_dirs() -> Vec<PathBuf> {
         dithered_dir(),
         metadata_dir(),
         settings_dir(),
+        flash_jobs_dir(),
     ]
 }
 

@@ -38,7 +38,7 @@ async function saveRotation() {
       `Saved ${response.rotation_degrees}°. Cleared `
       + `${removedAssets.cache} cache, `
       + `${removedAssets.thumbs} thumbs, `
-      + `${removedAssets.dithered} dithered files. Reloading...`,
+      + `${removedAssets.dithered} dithered files. Reloading to regenerate...`,
       '#6B8E4E',
     );
 

@@ -142,6 +142,7 @@ export async function uploadThumb(filename, blob) {
  * @param {number} brightness - Brightness value used for dithering.
  * @param {number} contrast - Contrast value used for dithering.
  * @param {string} ditherAlgorithm - Dither algorithm name.
+ * @param {string|null} sessionId - Optional lock session for protected edit flows.
  * @returns {Promise<Object>} Server response.
  */
 export async function uploadDithered(
@@ -163,7 +164,9 @@ export async function uploadDithered(
   formData.append('brightness', brightness.toString());
   formData.append('contrast', contrast.toString());
   formData.append('dither_algorithm', ditherAlgorithm);
-  formData.append('session_id', sessionId);
+  if (sessionId) {
+    formData.append('session_id', sessionId);
+  }
   formData.append('file', blob, `${filename}.png`);
 
   const response = await fetch('/api/upload-dithered', {

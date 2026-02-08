@@ -1093,7 +1093,7 @@
             <button id="saveRotationBtn" class="settings-button" type="button">Save rotation</button>
             <div id="rotationStatus" class="filter-status"></div>
             <p class="settings-note">
-              Changing rotation clears all derived assets and reloads the page to regenerate previews.
+              Changing rotation clears all derived assets and reloads the page to regenerate cache, thumbnails, and dithered outputs.
             </p>
           </div>
         </fieldset>

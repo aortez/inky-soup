@@ -4,7 +4,7 @@
 //! This allows the HTTP endpoint to return immediately while the actual
 //! flashing happens asynchronously.
 
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use rocket::serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -40,7 +40,7 @@ pub struct FlashJob {
     pub job_id: u64,
     /// Original filename (for display).
     pub filename: String,
-    /// Path to dithered image file.
+    /// Path to immutable flash snapshot image file.
     pub dithered_path: String,
     /// Whether to flash twice.
     pub flash_twice: bool,
@@ -263,6 +263,12 @@ pub fn spawn_flash_worker(queue_state: FlashQueueState) {
                 // Execute flash operation.
                 let result =
                     execute_flash(&job.dithered_path, job.flash_twice, job.rotation_degrees).await;
+                if let Err(e) = cleanup_flash_snapshot(&job.dithered_path).await {
+                    warn!(
+                        "Failed to clean flash snapshot for job {} ({}): {}",
+                        job.job_id, job.dithered_path, e
+                    );
+                }
 
                 // Update queue state.
                 let mut queue = queue_state.lock().await;
@@ -337,6 +343,14 @@ async fn execute_flash(
     }
 
     Ok(())
+}
+
+async fn cleanup_flash_snapshot(path: &str) -> Result<(), String> {
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("cleanup failed: {}", e)),
+    }
 }
 
 #[cfg(test)]

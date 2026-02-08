@@ -45,9 +45,6 @@ let pollInterval = null;
 let uploadCacheWorker = null;
 let uploadThumbWorker = null;
 
-// Pending thumbnails (for upload coordination).
-let pendingThumbnails = { cache: null, thumb: null, uploaded: false };
-
 // Upload queue state.
 let uploadQueue = [];
 let uploadQueueActive = false;
@@ -125,12 +122,6 @@ export const setUploadCacheWorker = (worker) => { uploadCacheWorker = worker; };
 
 export const getUploadThumbWorker = () => uploadThumbWorker;
 export const setUploadThumbWorker = (worker) => { uploadThumbWorker = worker; };
-
-// Pending thumbnails getters/setters.
-export const getPendingThumbnails = () => pendingThumbnails;
-export const setPendingThumbnails = (thumbnails) => {
-  pendingThumbnails = thumbnails;
-};
 
 // Upload queue getters/setters.
 export const getUploadQueue = () => uploadQueue;

@@ -8,6 +8,8 @@ import { CACHE_VERSION } from '../core/constants.js';
 import { getThumbStatus } from '../services/api-client.js';
 import { showDetailView } from './navigation.js';
 
+const REGENERATION_CONCURRENCY = 2;
+
 /**
  * Poll for thumbnail status and replace placeholder.
  * @param {string} filename - The filename.
@@ -89,34 +91,40 @@ async function generateMissingThumb(filename, path, placeholderEl) {
     const { generateThumbnails } = await import('../services/upload-service.js');
     const fitMode = placeholderEl?.dataset.fitMode || 'contain';
     const filter = placeholderEl?.dataset.filter || 'bicubic';
+    const saturation = parseFloat(placeholderEl?.dataset.saturation || '0.5');
+    const brightness = parseInt(placeholderEl?.dataset.brightness || '0', 10);
+    const contrast = parseInt(placeholderEl?.dataset.contrast || '0', 10);
+    const ditherAlgorithm = placeholderEl?.dataset.dither || 'floyd-steinberg';
 
-    // Load the original image.
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
+    // Load the original image and convert it to a data URL.
+    const dataUrl = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = () => {
+        reject(new Error(`Failed to load image for thumbnail generation: ${path}`));
+      };
+      img.src = path;
+    });
 
-    img.onload = () => {
-      // Create data URL from image.
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      const dataUrl = canvas.toDataURL('image/png');
-
-      // Generate and upload thumbnails.
-      generateThumbnails(dataUrl, filename, { fitMode, filter });
-
-      // Continue polling - thumb should appear soon.
-      pollThumbStatus(filename, path, placeholderEl);
-    };
-
-    img.onerror = () => {
-      console.error(`Failed to load image for thumbnail generation: ${path}`);
-      // Fall back to polling.
-      pollThumbStatus(filename, path, placeholderEl);
-    };
-
-    img.src = path;
+    const { thumbData } = await generateThumbnails(dataUrl, filename, {
+      fitMode,
+      filter,
+      saturation,
+      brightness,
+      contrast,
+      ditherAlgorithm,
+      sessionId: null,
+    });
+    const thumbPath = thumbData?.path || `images/thumbs/${filename}.png`;
+    replacePlaceholderWithThumb(filename, path, `${thumbPath}?t=${Date.now()}`, placeholderEl);
   } catch (err) {
     console.error('Failed to generate missing thumbnail:', err);
     // Fall back to polling.
@@ -128,14 +136,31 @@ async function generateMissingThumb(filename, path, placeholderEl) {
  * Initialize gallery view.
  */
 export function initGalleryView() {
-  // Start processing for any placeholder thumbnails.
-  queryAll('.thumbnail-placeholder').forEach((placeholder) => {
+  const placeholders = Array.from(queryAll('.thumbnail-placeholder'));
+  if (placeholders.length === 0) return;
+
+  // Regenerate in a small worker pool to avoid race conditions and worker overload.
+  let nextIndex = 0;
+  const runNext = () => {
+    const placeholder = placeholders[nextIndex];
+    nextIndex += 1;
+    if (!placeholder) return Promise.resolve();
+
     const { filename } = placeholder.dataset;
     const { path } = placeholder.dataset;
-
-    if (filename && path) {
-      // Generate the missing thumbnail instead of just polling.
-      generateMissingThumb(filename, path, placeholder);
+    if (!filename || !path) {
+      return runNext();
     }
+
+    return generateMissingThumb(filename, path, placeholder).then(runNext);
+  };
+
+  const workers = Array.from(
+    { length: Math.min(REGENERATION_CONCURRENCY, placeholders.length) },
+    () => runNext(),
+  );
+
+  Promise.all(workers).catch((err) => {
+    console.error('Background regeneration failed:', err);
   });
 }

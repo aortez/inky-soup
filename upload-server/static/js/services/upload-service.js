@@ -5,7 +5,6 @@
 
 import { DEFAULT_FILTER, DEFAULT_FIT_MODE } from '../core/constants.js';
 import {
-  getPendingThumbnails, setPendingThumbnails,
   getDisplayWidth, getDisplayHeight, getThumbWidth, getThumbHeight,
   getRotationDegrees,
   getUploadQueue, setUploadQueue,
@@ -21,10 +20,12 @@ import {
   imageDataToCanvas,
   rotateImageData,
 } from '../utils/image-utils.js';
-import { uploadCache, uploadThumb, uploadOriginalImage } from './api-client.js';
-
-// Dedicated filter worker for upload processing.
-let uploadFilterWorker = null;
+import {
+  uploadCache,
+  uploadDithered,
+  uploadThumb,
+  uploadOriginalImage,
+} from './api-client.js';
 
 const VALID_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -36,30 +37,49 @@ const UPLOAD_STATUS = {
   FAILED: 'failed',
 };
 const VALID_FILTERS = new Set(['bicubic', 'lanczos', 'mitchell', 'bilinear', 'nearest']);
+const VALID_DITHER_ALGORITHMS = new Set(['floyd-steinberg', 'atkinson', 'ordered']);
 
 function normalizeFilter(filter) {
   return VALID_FILTERS.has(filter) ? filter : DEFAULT_FILTER;
 }
 
-function emptyPendingThumbnails() {
-  return {
-    cache: null,
-    thumb: null,
-    uploaded: false,
-    failed: false,
-    error: null,
-  };
+function normalizeFitMode(fitMode) {
+  return fitMode === 'cover' ? 'cover' : DEFAULT_FIT_MODE;
 }
 
-/**
- * Get or create the upload filter worker.
- * @returns {Worker} The filter worker instance.
- */
-function getUploadFilterWorker() {
-  if (!uploadFilterWorker) {
-    uploadFilterWorker = new Worker('/js/filter-worker.js');
-  }
-  return uploadFilterWorker;
+function normalizeDitherAlgorithm(algorithm) {
+  return VALID_DITHER_ALGORITHMS.has(algorithm) ? algorithm : 'floyd-steinberg';
+}
+
+function normalizeNumeric(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function runWorkerTask(workerUrl, payload, transferList = []) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(workerUrl);
+
+    function handleMessage(e) {
+      if (e.data.success === false) {
+        worker.terminate();
+        reject(new Error(e.data.error));
+        return;
+      }
+
+      worker.terminate();
+      resolve(e.data);
+    }
+
+    function handleError(e) {
+      worker.terminate();
+      reject(e);
+    }
+
+    worker.onmessage = handleMessage;
+    worker.onerror = handleError;
+    worker.postMessage(payload, transferList);
+  });
 }
 
 /**
@@ -72,41 +92,47 @@ function getUploadFilterWorker() {
  * @returns {Promise<ImageData>} Filtered image data.
  */
 function filterImage(imageData, targetWidth, targetHeight, filter, fitMode) {
+  return runWorkerTask('/js/filter-worker.js', {
+    data: imageData.data.buffer,
+    width: imageData.width,
+    height: imageData.height,
+    targetWidth,
+    targetHeight,
+    filter,
+    fitMode,
+  }, [imageData.data.buffer]);
+}
+
+function ditherImage(imageData, saturation, algorithm, brightness, contrast) {
+  return runWorkerTask('/js/dither-worker.js', {
+    data: imageData.data.buffer,
+    width: imageData.width,
+    height: imageData.height,
+    saturation,
+    algorithm,
+    brightness,
+    contrast,
+  }, [imageData.data.buffer]);
+}
+
+function canvasToBlob(canvas) {
   return new Promise((resolve, reject) => {
-    const worker = getUploadFilterWorker();
-
-    // Define handlers as function declarations to avoid use-before-define.
-    function handleMessage(e) {
-      worker.removeEventListener('message', handleMessage);
-      worker.removeEventListener('error', handleError);
-
-      if (e.data.success === false) {
-        reject(new Error(e.data.error));
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('Failed to encode PNG'));
         return;
       }
+      resolve(blob);
+    }, 'image/png');
+  });
+}
 
-      resolve(e.data);
-    }
-
-    function handleError(e) {
-      worker.removeEventListener('message', handleMessage);
-      worker.removeEventListener('error', handleError);
-      reject(e);
-    }
-
-    worker.addEventListener('message', handleMessage);
-    worker.addEventListener('error', handleError);
-
-    // Transfer the buffer to the worker.
-    worker.postMessage({
-      data: imageData.data.buffer,
-      width: imageData.width,
-      height: imageData.height,
-      targetWidth,
-      targetHeight,
-      filter,
-      fitMode,
-    }, [imageData.data.buffer]);
+function loadImageFromDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Failed to decode source image'));
+    img.src = dataUrl;
   });
 }
 
@@ -330,45 +356,6 @@ function uploadOriginalImageWithProgress(file, onProgress) {
 }
 
 /**
- * Wait for thumbnail uploads to finish.
- * @param {boolean} showProgress - Whether to animate progress bar.
- * @returns {Promise<void>} Resolves when thumbnails are done.
- */
-function waitForThumbnailsReady(showProgress) {
-  return new Promise((resolve) => {
-    const checkInterval = setInterval(() => {
-      const pending = getPendingThumbnails();
-
-      if (pending.uploaded) {
-        clearInterval(checkInterval);
-        if (showProgress) {
-          elements.processingProgress.style.width = '100%';
-          elements.processingProgress.classList.add('complete');
-        }
-        setPendingThumbnails(emptyPendingThumbnails());
-        resolve({ success: true });
-        return;
-      }
-
-      if (pending.failed) {
-        clearInterval(checkInterval);
-        setPendingThumbnails(emptyPendingThumbnails());
-        resolve({
-          success: false,
-          error: pending.error || 'Failed to upload generated thumbnails',
-        });
-        return;
-      }
-
-      if (showProgress) {
-        const current = parseFloat(elements.processingProgress.style.width) || 0;
-        elements.processingProgress.style.width = `${Math.min(90, current + 10)}%`;
-      }
-    }, 200);
-  });
-}
-
-/**
  * Process the upload queue sequentially.
  */
 async function processUploadQueue() {
@@ -390,7 +377,6 @@ async function processUploadQueue() {
 async function uploadQueueItem(item) {
   updateQueueItem(item.id, { status: UPLOAD_STATUS.UPLOADING, message: null });
   setUploadQueueCurrentId(item.id);
-  setPendingThumbnails(emptyPendingThumbnails());
 
   resetUploadModalState(item.file);
   elements.uploadModalFilename.textContent = item.name;
@@ -435,7 +421,6 @@ async function uploadQueueItem(item) {
   if (uploadError) {
     updateQueueItem(item.id, { status: UPLOAD_STATUS.FAILED, message: uploadError.message });
     elements.uploadNote.textContent = `Upload failed for ${item.name}. Continuing...`;
-    setPendingThumbnails(emptyPendingThumbnails());
     return;
   }
 
@@ -457,21 +442,29 @@ async function uploadQueueItem(item) {
     const message = `Missing preview data for ${uploadedFilename}`;
     updateQueueItem(item.id, { status: UPLOAD_STATUS.FAILED, message });
     elements.uploadNote.textContent = `Failed to process ${uploadedFilename}. Continuing...`;
-    setPendingThumbnails(emptyPendingThumbnails());
     return;
   }
 
-  generateThumbnails(previewDataUrl, uploadedFilename, {
-    fitMode: DEFAULT_FIT_MODE,
-    filter: DEFAULT_FILTER,
-  });
-  const thumbnailResult = await waitForThumbnailsReady(true);
-  if (!thumbnailResult.success) {
-    updateQueueItem(item.id, { status: UPLOAD_STATUS.FAILED, message: thumbnailResult.error });
+  elements.processingProgress.style.width = '35%';
+  try {
+    await generateThumbnails(previewDataUrl, uploadedFilename, {
+      fitMode: DEFAULT_FIT_MODE,
+      filter: DEFAULT_FILTER,
+      saturation: 0.5,
+      brightness: 0,
+      contrast: 0,
+      ditherAlgorithm: 'floyd-steinberg',
+      sessionId: null,
+    });
+  } catch (err) {
+    const message = err?.message || `Failed to finish ${uploadedFilename}`;
+    updateQueueItem(item.id, { status: UPLOAD_STATUS.FAILED, message });
     elements.uploadNote.textContent = `Failed to finish ${uploadedFilename}. Continuing...`;
     return;
   }
 
+  elements.processingProgress.style.width = '100%';
+  elements.processingProgress.classList.add('complete');
   updateQueueItem(item.id, { status: UPLOAD_STATUS.COMPLETE, message: null });
 }
 
@@ -526,7 +519,9 @@ export function handleFileSelect(selection) {
   });
 
   if (invalid.length > 0) {
-    alert(`Skipped ${invalid.length} file${invalid.length === 1 ? '' : 's'}:\n${invalid.join('\n')}`);
+    alert(
+      `Skipped ${invalid.length} file${invalid.length === 1 ? '' : 's'}:\n${invalid.join('\n')}`,
+    );
   }
 
   if (newItems.length === 0) return;
@@ -548,189 +543,111 @@ export function handleFileSelect(selection) {
 
 /**
  * Generate cache and thumbnail images.
- * Cache uses filter worker with default filter for quality.
- * Thumbnail uses simple resize for speed.
  * @param {string} dataUrl - The data URL of the uploaded image.
  * @param {string} filename - The filename.
  * @param {object} options - Generation options.
  * @param {string} [options.fitMode] - The fit mode ("contain" or "cover").
  * @param {string} [options.filter] - The resize filter.
+ * @param {number} [options.saturation] - Dither saturation.
+ * @param {number} [options.brightness] - Dither brightness.
+ * @param {number} [options.contrast] - Dither contrast.
+ * @param {string} [options.ditherAlgorithm] - Dither algorithm.
+ * @param {string|null} [options.sessionId] - Optional lock session id.
+ * @returns {Promise<{cacheData: object, thumbData: object, ditherData: object}>}
  */
-export function generateThumbnails(dataUrl, filename, options = {}) {
-  const img = new Image();
-  const mode = options.fitMode === 'cover' ? 'cover' : DEFAULT_FIT_MODE;
+export async function generateThumbnails(dataUrl, filename, options = {}) {
+  const mode = normalizeFitMode(options.fitMode);
   const filter = normalizeFilter(options.filter);
+  const ditherAlgorithm = normalizeDitherAlgorithm(options.ditherAlgorithm);
+  const saturation = normalizeNumeric(options.saturation, 0.5);
+  const brightness = normalizeNumeric(options.brightness, 0);
+  const contrast = normalizeNumeric(options.contrast, 0);
+  const sessionId = options.sessionId || null;
 
-  img.onload = async () => {
-    // Get source image data.
-    const sourceImageData = createImageDataFromImage(img);
-    const rotationDegrees = getRotationDegrees();
-    const rotatedImageData = rotateImageData(sourceImageData, rotationDegrees);
-    const rotatedSource = imageDataToCanvas(rotatedImageData);
+  const img = await loadImageFromDataUrl(dataUrl);
+  const sourceImageData = createImageDataFromImage(img);
+  const rotationDegrees = getRotationDegrees();
+  const rotatedImageData = rotateImageData(sourceImageData, rotationDegrees);
+  const rotatedSource = imageDataToCanvas(rotatedImageData);
 
-    // Get current display dimensions from state.
-    const cacheWidth = getDisplayWidth();
-    const cacheHeight = getDisplayHeight();
-    const thumbWidth = getThumbWidth();
-    const thumbHeight = getThumbHeight();
+  const cacheWidth = getDisplayWidth();
+  const cacheHeight = getDisplayHeight();
+  const thumbWidth = getThumbWidth();
+  const thumbHeight = getThumbHeight();
 
-    // Generate cache using filter worker with default filter.
-    try {
-      const filteredData = await filterImage(
-        rotatedImageData,
-        cacheWidth,
-        cacheHeight,
-        filter,
-        mode,
-      );
+  const cacheCanvas = document.createElement('canvas');
+  cacheCanvas.width = cacheWidth;
+  cacheCanvas.height = cacheHeight;
+  const cacheCtx = cacheCanvas.getContext('2d');
 
-      // Convert filtered ImageData to blob.
-      const cacheCanvas = document.createElement('canvas');
-      cacheCanvas.width = cacheWidth;
-      cacheCanvas.height = cacheHeight;
-      const cacheCtx = cacheCanvas.getContext('2d');
-      cacheCtx.putImageData(filteredData, 0, 0);
-
-      cacheCanvas.toBlob((cacheBlob) => {
-        const pending = getPendingThumbnails();
-        setPendingThumbnails({
-          ...pending,
-          cache: {
-            blob: cacheBlob,
-            filename,
-            filter,
-            fitMode: mode,
-          },
-        });
-        uploadPendingThumbnails(filename);
-      }, 'image/png');
-    } catch (err) {
-      console.error('Filter worker error during upload:', err);
-      // Fall back to simple resize on error.
-      const cacheCanvas = document.createElement('canvas');
-      cacheCanvas.width = cacheWidth;
-      cacheCanvas.height = cacheHeight;
-      const cacheCtx = cacheCanvas.getContext('2d');
-      drawImageToFit(cacheCtx, rotatedSource, cacheWidth, cacheHeight, mode);
-
-      cacheCanvas.toBlob((cacheBlob) => {
-        const pending = getPendingThumbnails();
-        setPendingThumbnails({
-          ...pending,
-          cache: {
-            blob: cacheBlob,
-            filename,
-            filter,
-            fitMode: mode,
-          },
-        });
-        uploadPendingThumbnails(filename);
-      }, 'image/png');
-    }
-
-    // Generate thumbnail using simple resize (fast, just for gallery).
-    const thumbCanvas = document.createElement('canvas');
-    thumbCanvas.width = thumbWidth;
-    thumbCanvas.height = thumbHeight;
-    const thumbCtx = thumbCanvas.getContext('2d');
-    drawImageToFit(thumbCtx, rotatedSource, thumbWidth, thumbHeight, mode);
-
-    thumbCanvas.toBlob((thumbBlob) => {
-      const pending = getPendingThumbnails();
-      setPendingThumbnails({
-        ...pending,
-        thumb: {
-          blob: thumbBlob,
-          filename,
-          fitMode: mode,
-        },
-      });
-      uploadPendingThumbnails(filename);
-    }, 'image/png');
-  };
-
-  img.onerror = () => {
-    console.error('Failed to load image for thumbnail generation:', filename);
-    setPendingThumbnails({
-      ...emptyPendingThumbnails(),
-      failed: true,
-      error: `Failed to decode image for ${filename}`,
-    });
-  };
-
-  img.src = dataUrl;
-}
-
-/**
- * Upload pending thumbnails once both are ready.
- * @param {string} filename - The filename.
- */
-export async function uploadPendingThumbnails(filename) {
-  const pending = getPendingThumbnails();
-
-  // Wait for both thumbnails to be ready.
-  if (!pending.cache || !pending.thumb) return;
-  if (pending.cache.filename !== filename || pending.thumb.filename !== filename) return;
-  if (!pending.cache.blob || !pending.thumb.blob) {
-    setPendingThumbnails({
-      ...emptyPendingThumbnails(),
-      failed: true,
-      error: 'Failed to generate cache or thumbnail image',
-    });
-    return;
-  }
-
+  // Generate cache image with worker filter, fallback to direct draw on worker failure.
   try {
-    // Upload cache with filter metadata (use defaults for dither settings on upload).
-    // No session_id for new uploads (no lock required).
-    const cacheData = await uploadCache(
-      filename,
-      pending.cache.blob,
-      pending.cache.filter,
-      pending.cache.fitMode || DEFAULT_FIT_MODE,
-      0.5, // default saturation
-      0, // default brightness
-      0, // default contrast
-      'floyd-steinberg', // default dither algorithm
-      null, // no session required for new uploads
-    );
-    if (!cacheData.success) {
-      const message = cacheData.message || 'Cache upload failed';
-      console.error('Cache upload failed:', message);
-      setPendingThumbnails({
-        ...emptyPendingThumbnails(),
-        failed: true,
-        error: message,
-      });
-      return;
-    }
-
-    // Upload thumb.
-    const thumbData = await uploadThumb(filename, pending.thumb.blob);
-    if (!thumbData.success) {
-      const message = thumbData.message || 'Thumbnail upload failed';
-      console.error('Thumb upload failed:', message);
-      setPendingThumbnails({
-        ...emptyPendingThumbnails(),
-        failed: true,
-        error: message,
-      });
-      return;
-    }
-
-    // Mark thumbnails as uploaded.
-    setPendingThumbnails({
-      ...emptyPendingThumbnails(),
-      uploaded: true,
-    });
+    const filteredData = await filterImage(rotatedImageData, cacheWidth, cacheHeight, filter, mode);
+    cacheCtx.putImageData(filteredData, 0, 0);
   } catch (err) {
-    console.error('Error uploading thumbnails:', err);
-    setPendingThumbnails({
-      ...emptyPendingThumbnails(),
-      failed: true,
-      error: err.message || 'Thumbnail upload error',
-    });
+    console.error('Filter worker error during upload:', err);
+    drawImageToFit(cacheCtx, rotatedSource, cacheWidth, cacheHeight, mode);
   }
+
+  const cacheBlob = await canvasToBlob(cacheCanvas);
+
+  const thumbCanvas = document.createElement('canvas');
+  thumbCanvas.width = thumbWidth;
+  thumbCanvas.height = thumbHeight;
+  const thumbCtx = thumbCanvas.getContext('2d');
+  drawImageToFit(thumbCtx, rotatedSource, thumbWidth, thumbHeight, mode);
+  const thumbBlob = await canvasToBlob(thumbCanvas);
+
+  const cacheImageData = cacheCtx.getImageData(0, 0, cacheWidth, cacheHeight);
+  const ditheredImageData = await ditherImage(
+    cacheImageData,
+    saturation,
+    ditherAlgorithm,
+    brightness,
+    contrast,
+  );
+  const ditherCanvas = document.createElement('canvas');
+  ditherCanvas.width = cacheWidth;
+  ditherCanvas.height = cacheHeight;
+  ditherCanvas.getContext('2d').putImageData(ditheredImageData, 0, 0);
+  const ditherBlob = await canvasToBlob(ditherCanvas);
+
+  const cacheData = await uploadCache(
+    filename,
+    cacheBlob,
+    filter,
+    mode,
+    saturation,
+    brightness,
+    contrast,
+    ditherAlgorithm,
+    sessionId,
+  );
+  if (!cacheData.success) {
+    throw new Error(cacheData.message || 'Cache upload failed');
+  }
+
+  const thumbData = await uploadThumb(filename, thumbBlob);
+  if (!thumbData.success) {
+    throw new Error(thumbData.message || 'Thumbnail upload failed');
+  }
+
+  const ditherData = await uploadDithered(
+    filename,
+    ditherBlob,
+    filter,
+    mode,
+    saturation,
+    brightness,
+    contrast,
+    ditherAlgorithm,
+    sessionId,
+  );
+  if (!ditherData.success) {
+    throw new Error(ditherData.message || 'Dithered upload failed');
+  }
+
+  return { cacheData, thumbData, ditherData };
 }
 
 /**
@@ -741,6 +658,5 @@ export function closeUploadModal() {
   setUploadQueue([]);
   setUploadQueueActive(false);
   setUploadQueueCurrentId(null);
-  setPendingThumbnails(emptyPendingThumbnails());
   window.location.reload();
 }
