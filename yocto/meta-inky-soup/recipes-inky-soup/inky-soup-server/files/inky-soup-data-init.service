@@ -1,0 +1,17 @@
+[Unit]
+Description=Initialize Inky Soup data directory
+Documentation=https://github.com/yourorg/inky-soup
+After=data.mount
+Before=inky-soup-server.service
+ConditionPathIsDirectory=/data
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Create directory structure if needed.
+ExecStart=/bin/mkdir -p /data/inky-soup/images/cache /data/inky-soup/images/thumbs /data/inky-soup/images/dithered
+# Always ensure correct ownership (handles upgrades from root-owned dirs).
+ExecStartPost=/bin/chown -R inky:inky /data/inky-soup
+
+[Install]
+WantedBy=multi-user.target

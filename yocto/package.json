@@ -1,0 +1,24 @@
+{
+  "name": "inky-soup-yocto",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Yocto build and flash tools for Inky Soup",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:zero1": "node scripts/build.mjs --zero1",
+    "build:zero2": "node scripts/build.mjs --zero2",
+    "flash": "node scripts/flash.mjs",
+    "flash:zero1": "node scripts/flash.mjs --zero1",
+    "flash:zero2": "node scripts/flash.mjs --zero2",
+    "yolo": "node scripts/yolo-update.mjs",
+    "yolo:zero1": "node scripts/yolo-update.mjs --zero1",
+    "yolo:zero2": "node scripts/yolo-update.mjs --zero2"
+  },
+  "bin": {
+    "inky-flash": "./scripts/flash.mjs"
+  },
+  "dependencies": {
+    "consola": "^3.4.2"
+  }
+}

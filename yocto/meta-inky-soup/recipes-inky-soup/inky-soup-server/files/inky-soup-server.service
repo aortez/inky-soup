@@ -1,0 +1,21 @@
+[Unit]
+Description=Inky Soup web server
+Documentation=https://github.com/yourorg/inky-soup
+After=network.target data.mount inky-soup-data-init.service
+Requires=inky-soup-data-init.service
+
+[Service]
+Type=simple
+User=inky
+Group=inky
+WorkingDirectory=/usr/share/inky-soup
+Environment="ROCKET_ADDRESS=0.0.0.0"
+Environment="ROCKET_PORT=8000"
+Environment="ROCKET_TEMPLATE_DIR=/usr/share/inky-soup/templates"
+Environment="INKY_SOUP_IMAGES_DIR=/data/inky-soup/images"
+ExecStart=/usr/bin/inky-soup-server
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

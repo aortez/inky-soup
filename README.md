@@ -1,16 +1,19 @@
 # Inky Soup
 
-# Introduction
+## Intro
 Inky Soup is automation for displaying images on the Pimoroni Inky Impression e-ink screen.
-It provides users with a web page that they can use to flash images
-to their Inky Impression.  
+It provides users with a web app that they can use to flash images to their Inky Impression.
+
+![Example of Web Page](./inky-soup-uploader.png "Example of Web Page")
 
 I suggest using a Pi Zero W, as it has low compute requirements and when combined with the e-ink display, it has very low power utilization (~1 watt peak).
 
-## Web Page
-![Example of Web Page](./inky-soup-uploader.png "Example of Web Page")
+The web app mostly keeps computation client side and maintains caches to avoid recomputing things.
+
+It provides a nice gallery for viewing/managing/processing and of course flashing your images.
 
 ## Example Display Build
+
 ![Example of Inky Impression Display](./inky-soup-display.jpg "Example of Display")
 
 ![A Goose](./upload-server/static/favicon.ico "A Goose")
@@ -23,38 +26,123 @@ The project consists of two components:
 for all the web stuff.
 1. A python script for flashing the images to the screen.
 
-Use the deploy script to build and deploy to your Pi.
+**New:** We're building a complete Yocto Linux image for turnkey deployment. See `yocto/README.md` for the integrated build system (currently in development).
+
+## Prerequisites
+
+**On your development machine:**
+- Rust (via rustup)
+- Docker (required for cross-compilation)
+
+**On your Pi Zero:**
+- Raspberry Pi OS (tested with Trixie/Bookworm)
+- Python 3 with `pillow` and `inky` libraries
+- SPI and I2C enabled
+
+## Pi Zero Setup
+
+Enable SPI and I2C in `/boot/firmware/config.txt`:
+
+```
+dtparam=i2c_arm=on
+dtparam=spi=on
+dtoverlay=spi0-0cs
+```
+
+Install Python dependencies on the Pi:
+
+```bash
+sudo apt-get install -y python3-pil python3-numpy python3-spidev python3-smbus2
+pip3 install --break-system-packages inky
+```
+
+## First-Time Setup (Development Machine)
+
+Set up cross-compilation tools (only needed once):
+
+    ./setup-crosscompile.sh
+
+This installs `cross`, a Docker-based cross-compilation tool that properly supports
+the Pi Zero's ARMv6 architecture.
+
+## Deploy to Your Pi
+
+Use the deploy script to build and deploy to your Pi:
 
     INKY_SOUP_IP=<your Pi's IP or hostname> ./deploy.sh
 
-Then, run the image server by hand:
+For non-default usernames (default is `pi`):
 
-    cd inky-soup
-    ./upload-server
+    DEPLOY_USER=oldman INKY_SOUP_IP=inky-soup.local ./deploy.sh
 
-Or, run it as a service:
+This builds an optimized release binary, deploys it to your Pi, and automatically restarts the service.
 
-    cd inky-soup
-    cp inky-soup.service /etc/systemd/system/
-    sudo systemctl start inky-soup.service
+To enable the service on first deployment (so it starts on boot):
 
-Now, visit your PI in a web browser (port 8000) over your local network and start uploading
-images!
+    ssh <your-pi> "sudo systemctl enable inky-soup.service"
+
+Now, visit your Pi in a web browser (port 8000) over your local network and start uploading images!
+
+To tail logs on the remote Pi:
+
+    DEPLOY_USER=oldman INKY_SOUP_IP=inky-soup.local ./tail_remote_logs.sh
+
+## SD Card Deployment
+
+For initial setup or when the Pi isn't on the network, use the SD card deploy script:
+
+    SDCARD_ROOT=/media/user/rootfs ./deploy-sdcard.sh
+
+This copies files directly to a mounted SD card via a remote machine (useful for headless setup).
+
+## Development & Testing
+
+### Running the Test Suite
+
+The project includes a test suite with linting, unit tests, and E2E tests:
+
+    cd upload-server
+    ./run-tests.sh
+
+This script runs:
+1. **ESLint** - Code style checks (Airbnb config)
+2. **Unit tests** (Vitest) - JavaScript functions and modules
+3. **E2E tests** (Playwright) - Complete user workflows
+
+### Manual Testing
+
+**Start the development server:**
+
+    cd upload-server
+    cargo run
+
+**Run individual test suites:**
+
+    cd upload-server
+    npm run lint         # Code style only
+    npm test             # Unit tests only
+    npm run test:e2e     # E2E tests only (requires server running)
+
+**Frontend development:**
+
+    npm install          # First time only
+    npm run lint:fix     # Auto-fix style issues
+
+See [JS_STYLE_GUIDE.md](./JS_STYLE_GUIDE.md) for JavaScript conventions.
 
 # TODO
 
-## Basic
-* add validator for image types
-* logging
+## FIX
+- [ ] If viewing a read-only instance of a Details page and the edit instance deletes the image, the the read-only viewer should get notified via a modal dialog that, once confirmed, takes them back to the gallery
 
 ## Image Gallery
-* Hard code some limit to how many pictures can be uploaded?
-* Some kind of confirmation dialog for the delete button?
+- [ ] Arbitrary hard limit on number of uploaded images.
 
 ## Image Rotation
-* [ ] Add a way to show a random image at a fixed interval.
-* [ ] Add a way to rotate images in sequential order.
-* [ ] Add a way to configure the change interval.
+- [ ] Show a random image at a fixed interval.
+- [ ] Allow user to assign values to each image's likely hood of being in the rotation.  The default value is zero.
+- [ ] Configure the change interval.
 
 ## Advanced
-* preview image before flashing? allow user to crop interactively?
+- [ ] Remember last image parameters and re-use - allows users to tune already showing image! (consider user stories here)
+- [ ] Interactive cropping sometime before flashing... when?

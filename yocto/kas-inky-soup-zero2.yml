@@ -1,0 +1,16 @@
+# KAS configuration for Pi Zero 2 W.
+#
+# Usage:
+#   kas build kas-inky-soup-zero2.yml
+#
+# Target: Raspberry Pi Zero 2 W
+# Architecture: ARMv7/ARMv8 (Cortex-A53, running in 32-bit mode)
+# SoC: BCM2710A1
+
+header:
+  version: 14
+  includes:
+    - kas-base.yml
+
+# Raspberry Pi Zero 2 W - ARMv7 quad-core.
+machine: raspberrypi0-2w

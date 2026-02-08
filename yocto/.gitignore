@@ -1,0 +1,32 @@
+# Yocto build artifacts and large directories.
+# These are generated or downloaded - not source controlled.
+
+# Build output (huge).
+build/
+
+# Downloaded sources (can be 10s of GB).
+downloads/
+
+# Shared state cache (speeds rebuilds, also huge).
+sstate-cache/
+
+# Yocto layers cloned by kas (fetched from upstream).
+meta-openembedded/
+meta-raspberrypi/
+meta-rust-bin/
+poky/
+
+# Old init.sh structure (deprecated, will be removed).
+src/poky/
+src/meta-raspberrypi/
+src/meta-openembedded/
+src/openembedded-core/
+
+# Node.js dependencies.
+node_modules/
+
+# User-specific flash configuration (SSH key path).
+.flash-config.json
+
+# WiFi credentials (contains secrets).
+wifi-creds.local

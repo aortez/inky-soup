@@ -4,29 +4,94 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="/chota.min.css">
     <style>
+      body {
+        background-color: #A0826D;
+        margin: 0;
+        padding-bottom: 60px; /* Space for status bar. */
+      }
       .container {
         max-width: 1400px;
         margin: 0 auto;
         padding: 20px 10px;
       }
-      .thumbnails img {
-        height: 80px;
+
+      /* View container management. */
+      .view-container {
+        display: none;
+        opacity: 0;
+        transition: opacity 0.25s ease-in-out;
+      }
+      .view-container.active {
+        display: block;
+        opacity: 1;
+      }
+
+      /* Gallery thumbnails. */
+      .thumbnails {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+      }
+      .thumbnail-item {
+        text-align: center;
+        cursor: pointer;
+      }
+      .thumbnail-item img {
+        height: 100px;
         border: 4px solid #555;
         padding: 1px;
-        margin: 0 10px 10px 0;
+        display: block;
+        transition: border-color 0.2s;
       }
-      .thumbnails img:hover {
-        border: 4px solid #00ccff;
-        cursor:pointer;
+      .thumbnail-item img:hover {
+        border-color: #B8956A;
       }
-      .preview img {
-        border: 4px solid #444;
-        padding: 1px;
-        width: 600px;
+      .thumbnail-item .thumb-filename {
+        font-size: 0.75em;
+        color: #C9DBBD;
+        max-width: 140px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        margin-top: 4px;
       }
+
+      /* Thumbnail placeholder for images being cached. */
+      .thumbnail-placeholder {
+        width: 134px;
+        height: 100px;
+        background: #333;
+        border: 4px solid #555;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        cursor: pointer;
+      }
+      .thumbnail-placeholder:hover {
+        border-color: #B8956A;
+      }
+      .thumbnail-placeholder .spinner {
+        width: 24px;
+        height: 24px;
+        border: 3px solid #555;
+        border-top-color: #B8956A;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      .thumbnail-placeholder .label {
+        position: absolute;
+        bottom: 4px;
+        font-size: 0.65em;
+        color: #888;
+      }
+
       .bad {
         color: red;
         background-color: black;
@@ -35,119 +100,1051 @@
         color: green;
         background-color: white;
       }
+
+      /* Upload drop zone. */
+      .drop-zone {
+        border: 3px dashed #6B5344;
+        border-radius: 8px;
+        padding: 30px 20px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s;
+        background: rgba(58, 42, 31, 0.3);
+        min-height: 120px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      .drop-zone:hover {
+        border-color: #B8956A;
+        background: rgba(58, 42, 31, 0.5);
+      }
+      .drop-zone.drag-over {
+        border-color: #B8956A;
+        background: rgba(184, 149, 106, 0.2);
+        border-style: solid;
+      }
+      .drop-zone.has-file {
+        border-style: solid;
+        border-color: #6B8E4E;
+        background: rgba(107, 142, 78, 0.1);
+      }
+      .drop-zone-prompt {
+        color: #C9DBBD;
+        font-size: 1.1em;
+        margin-bottom: 8px;
+      }
+      .drop-zone-hint {
+        color: #888;
+        font-size: 0.85em;
+      }
+      .drop-zone input[type="file"] {
+        display: none;
+      }
+      .drop-zone-preview {
+        display: none;
+      }
+      .drop-zone.has-file .drop-zone-prompt,
+      .drop-zone.has-file .drop-zone-hint {
+        display: none;
+      }
+      .drop-zone.has-file .drop-zone-preview {
+        display: block;
+      }
+      .drop-zone-preview img {
+        max-width: 200px;
+        max-height: 150px;
+        border: 2px solid #444;
+        margin-bottom: 10px;
+        border-radius: 4px;
+      }
+      .drop-zone-preview .file-name {
+        font-weight: bold;
+        color: #C9DBBD;
+        word-break: break-all;
+        margin-bottom: 4px;
+      }
+      .drop-zone-preview .file-size {
+        color: #888;
+        font-size: 0.9em;
+      }
+
+      /* Detail view. */
+      .detail-header {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+        border-bottom: 2px solid #6B5344;
+        flex-wrap: wrap;
+      }
+      .back-button {
+        background: #3A2A1F;
+        border: 2px solid #6B5344;
+        color: #C9DBBD;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 1em;
+        transition: all 0.2s;
+        white-space: nowrap;
+      }
+      .back-button:hover {
+        border-color: #B8956A;
+        background: rgba(184, 149, 106, 0.2);
+      }
+      .detail-filename {
+        flex: 1;
+        color: #B8956A;
+        font-size: 1.3em;
+        font-weight: bold;
+        word-break: break-all;
+        min-width: 200px;
+      }
+      .lock-status {
+        background: rgba(255, 165, 0, 0.2);
+        border: 2px solid #FFA500;
+        color: #FFD700;
+        padding: 8px 15px;
+        border-radius: 4px;
+        font-size: 0.9em;
+        white-space: nowrap;
+      }
+      .lock-status.read-only {
+        background: rgba(255, 0, 0, 0.2);
+        border-color: #ff6b6b;
+        color: #ff6b6b;
+      }
+      .delete-button {
+        background: #3A2A1F;
+        border: 2px solid #8B0000;
+        color: #ff6b6b;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 1em;
+        transition: all 0.2s;
+      }
+      .delete-button:hover {
+        background: #8B0000;
+        color: #fff;
+      }
+
+      /* Pipeline flow layout. */
+      .pipeline {
+        display: flex;
+        flex-direction: row;
+        align-items: flex-start;
+        gap: 0;
+      }
+
+      .pipeline-stage {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        margin: 0 10px;
+      }
+
+      .pipeline-stage canvas {
+        border: 3px solid #444;
+        border-radius: 4px;
+        max-width: 100%;
+        height: auto;
+      }
+
+      .pipeline-stage-label {
+        color: #888;
+        font-size: 0.85em;
+        margin-top: 8px;
+      }
+
+      .pipeline-connector {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 15px 10px;
+        min-width: 120px;
+        margin: 0 10px;
+      }
+
+      .pipeline-arrow {
+        color: #B8956A;
+        font-size: 2em;
+        margin: 10px 0;
+      }
+
+      .pipeline-control {
+        background: rgba(58, 42, 31, 0.5);
+        border: 2px solid #6B5344;
+        border-radius: 8px;
+        padding: 12px 15px;
+        min-width: 100px;
+      }
+
+      .pipeline-control-label {
+        color: #C9DBBD;
+        font-size: 0.8em;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      /* Filter buttons in pipeline. */
+      .filter-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .filter-btn {
+        padding: 6px 12px;
+        border: 2px solid #6B5344;
+        background: #3A2A1F;
+        color: #C9DBBD;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 0.85em;
+      }
+      .filter-btn:hover {
+        border-color: #B8956A;
+      }
+      .filter-btn.active {
+        background: #B8956A;
+        color: #2A1A0F;
+        border-color: #B8956A;
+      }
+
+      .fit-mode-buttons {
+        display: flex;
+        gap: 6px;
+        justify-content: center;
+      }
+      .fit-mode-btn {
+        padding: 4px 10px;
+        border: 2px solid #6B5344;
+        background: #3A2A1F;
+        color: #C9DBBD;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 0.8em;
+      }
+      .fit-mode-btn:hover {
+        border-color: #B8956A;
+      }
+      .fit-mode-btn.active {
+        background: #B8956A;
+        color: #2A1A0F;
+        border-color: #B8956A;
+      }
+
+      /* Dither method buttons in pipeline. */
+      .dither-buttons {
+        display: flex;
+        flex-direction: row;
+        gap: 4px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .dither-btn {
+        padding: 4px 8px;
+        border: 2px solid #6B5344;
+        background: #3A2A1F;
+        color: #C9DBBD;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 0.75em;
+      }
+      .dither-btn:hover {
+        border-color: #B8956A;
+      }
+      .dither-btn.active {
+        background: #B8956A;
+        color: #2A1A0F;
+        border-color: #B8956A;
+      }
+
+      /* Saturation slider in pipeline. */
+      .saturation-slider {
+        width: 100%;
+        margin: 5px 0;
+      }
+      .saturation-value {
+        color: #B8956A;
+        font-weight: bold;
+        font-size: 0.9em;
+      }
+
+      /* Brightness/Contrast sliders. */
+      .adjustment-slider {
+        width: 100%;
+        margin: 3px 0;
+      }
+      .adjustment-value {
+        color: #B8956A;
+        font-weight: bold;
+        font-size: 0.85em;
+      }
+
+      /* Final connector (just arrow). */
+      .pipeline-connector-final {
+        min-width: auto;
+        padding: 15px 5px;
+      }
+
+      /* Flash section at end of pipeline. */
+      .pipeline-flash {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 15px;
+      }
+
+      .flash-options {
+        margin-bottom: 15px;
+      }
+      .flash-options label {
+        color: #C9DBBD;
+        font-size: 0.9em;
+        cursor: pointer;
+      }
+
+      .flash-button {
+        padding: 15px 30px;
+        font-size: 1.1em;
+        background: #6B8E4E;
+        border: 2px solid #8BAF6E;
+        color: #fff;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+        white-space: nowrap;
+      }
+      .flash-button:hover {
+        background: #7BA05E;
+      }
+      .flash-button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      /* Processing indicator. */
+      .processing-indicator {
+        color: #6B8E4E;
+        font-weight: bold;
+        font-size: 0.85em;
+        min-height: 1.2em;
+        margin-top: 5px;
+      }
+
+      /* Filter status. */
+      .filter-status {
+        color: #6B8E4E;
+        font-size: 0.8em;
+        margin-top: 8px;
+      }
+
+      /* Apply filter button. */
+      .apply-filter-btn {
+        margin-top: 10px;
+        padding: 6px 12px;
+        font-size: 0.8em;
+        background: #3A2A1F;
+        border: 2px solid #6B5344;
+        color: #C9DBBD;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .apply-filter-btn:hover {
+        border-color: #B8956A;
+        background: rgba(184, 149, 106, 0.2);
+      }
+
+      /* Vertical layout for narrow screens. */
+      @media (max-width: 1200px) {
+        .pipeline {
+          flex-direction: column;
+          align-items: center;
+        }
+
+        .pipeline-connector {
+          flex-direction: row;
+          padding: 10px 15px;
+          min-width: auto;
+          width: 100%;
+          max-width: 600px;
+        }
+
+        .pipeline-arrow {
+          transform: rotate(90deg);
+          margin: 0 15px;
+        }
+
+        .pipeline-control {
+          flex: 1;
+          min-width: auto;
+        }
+
+        .filter-buttons {
+          flex-direction: row;
+          flex-wrap: wrap;
+          justify-content: center;
+        }
+
+        .pipeline-stage canvas {
+          max-width: 600px;
+        }
+
+        .pipeline-flash {
+          width: 100%;
+          max-width: 600px;
+        }
+
+        .flash-button {
+          width: 100%;
+        }
+      }
+
+      /* Flash status bar (sticky bottom). */
+      .flash-status-bar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #4A3728;
+        border-top: 2px solid #B8956A;
+        padding: 12px 20px;
+        z-index: 999;
+        transform: translateY(100%);
+        transition: transform 0.3s ease;
+      }
+      .flash-status-bar.visible {
+        transform: translateY(0);
+      }
+      .status-bar-content {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+      .status-icon {
+        font-size: 1.5em;
+      }
+      .status-info {
+        flex: 1;
+      }
+      .status-text {
+        color: #C9DBBD;
+        font-size: 0.95em;
+        margin-bottom: 5px;
+      }
+      .status-progress-mini {
+        height: 6px;
+        background: #333;
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .status-progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #B8956A, #6B8E4E);
+        width: 0%;
+        transition: width 0.5s linear;
+      }
+      .status-progress-fill.complete {
+        background: #6B8E4E;
+      }
+      .status-progress-fill.failed {
+        background: #ff6b6b;
+      }
+      .status-expand-btn {
+        padding: 8px 16px;
+        background: #3A2A1F;
+        border: 2px solid #6B5344;
+        color: #C9DBBD;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9em;
+        transition: all 0.2s;
+      }
+      .status-expand-btn:hover {
+        border-color: #B8956A;
+      }
+
+      /* Upload modal. */
+      .modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+      }
+      .modal.active {
+        display: flex;
+      }
+      .modal-content {
+        background: #4A3728;
+        border: 2px solid #B8956A;
+        border-radius: 8px;
+        padding: 30px;
+        text-align: center;
+        max-width: 500px;
+        min-width: 320px;
+        color: #C9DBBD;
+        position: relative;
+      }
+      .modal-close {
+        position: absolute;
+        top: 10px;
+        right: 15px;
+        font-size: 28px;
+        color: #888;
+        cursor: pointer;
+        line-height: 1;
+        transition: color 0.2s;
+      }
+      .modal-close:hover {
+        color: #C9DBBD;
+      }
+      .modal-content h2 {
+        margin: 0 0 20px 0;
+        color: #B8956A;
+      }
+      .modal-content img {
+        max-width: 300px;
+        max-height: 200px;
+        border: 2px solid #444;
+        margin-bottom: 15px;
+      }
+      .modal-content .filename {
+        font-size: 0.9em;
+        color: #aaa;
+        margin-bottom: 20px;
+        word-break: break-all;
+      }
+      .progress-container {
+        margin: 15px 0;
+      }
+      .progress-label {
+        font-size: 0.85em;
+        color: #888;
+        margin-bottom: 5px;
+        text-align: left;
+      }
+      .progress-bar {
+        width: 100%;
+        height: 24px;
+        background: #333;
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .progress-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #B8956A, #6B8E4E);
+        transition: width 0.5s linear;
+      }
+      .progress-fill.complete {
+        background: #6B8E4E;
+      }
+      .upload-stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin: 15px 0;
+        font-size: 0.9em;
+      }
+      .upload-stats .stat {
+        text-align: center;
+      }
+      .upload-stats .stat-value {
+        font-size: 1.2em;
+        font-weight: bold;
+        color: #B8956A;
+      }
+      .upload-stats .stat-label {
+        font-size: 0.8em;
+        color: #888;
+      }
+      .modal-note {
+        font-size: 0.8em;
+        color: #666;
+        margin-top: 15px;
+      }
+      .upload-queue {
+        margin-top: 15px;
+        padding: 10px;
+        background: #3A2A1F;
+        border: 1px solid #4A3728;
+        border-radius: 6px;
+        text-align: left;
+      }
+      .upload-queue-header {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.8em;
+        color: #888;
+        margin-bottom: 8px;
+      }
+      .upload-queue-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-height: 160px;
+        overflow-y: auto;
+      }
+      .upload-queue-item {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 6px 8px;
+        background: #2F2219;
+        border: 1px solid #4A3728;
+        border-radius: 4px;
+        font-size: 0.85em;
+      }
+      .upload-queue-name {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: #C9DBBD;
+      }
+      .upload-queue-meta {
+        display: flex;
+        gap: 8px;
+        flex-shrink: 0;
+        color: #888;
+      }
+      .upload-queue-item.queued .upload-queue-status-label {
+        color: #888;
+      }
+      .upload-queue-item.uploading .upload-queue-status-label,
+      .upload-queue-item.processing .upload-queue-status-label {
+        color: #B8956A;
+      }
+      .upload-queue-item.complete .upload-queue-status-label {
+        color: #6B8E4E;
+      }
+      .upload-queue-item.failed .upload-queue-status-label {
+        color: #ff6b6b;
+      }
+
+      /* Delete confirmation modal. */
+      .confirm-modal-content {
+        background: #4A3728;
+        border: 2px solid #ff6b6b;
+      }
+      .confirm-modal-content h2 {
+        color: #ff6b6b;
+      }
+      .confirm-modal-content .warning {
+        font-size: 0.85em;
+        color: #ff6b6b;
+        margin-bottom: 20px;
+      }
+      .confirm-modal-footer {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+        margin-top: 20px;
+      }
+      .confirm-modal-footer button {
+        padding: 10px 25px;
+        font-size: 1em;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .confirm-modal-footer .cancel-btn {
+        background: #3A2A1F;
+        border: 2px solid #6B5344;
+        color: #C9DBBD;
+      }
+      .confirm-modal-footer .cancel-btn:hover {
+        border-color: #B8956A;
+      }
+      .confirm-modal-footer .delete-btn {
+        background: #8B0000;
+        border: 2px solid #ff6b6b;
+        color: #fff;
+      }
+      .confirm-modal-footer .delete-btn:hover {
+        background: #a00;
+      }
+
+      /* Empty gallery state. */
+      .empty-gallery {
+        text-align: center;
+        padding: 40px;
+        color: #888;
+      }
+      .empty-gallery p {
+        font-size: 1.1em;
+        margin-bottom: 10px;
+      }
+
+      /* Mobile responsive. */
+      @media (max-width: 768px) {
+        .detail-header {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .detail-filename {
+          order: -1;
+          text-align: center;
+          margin-bottom: 10px;
+        }
+        .detail-header .back-button,
+        .detail-header .delete-button {
+          flex: 1;
+        }
+        .status-bar-content {
+          flex-wrap: wrap;
+        }
+        .status-info {
+          min-width: 200px;
+        }
+        .pipeline-connector {
+          padding: 8px 10px;
+        }
+        .pipeline-control {
+          padding: 10px;
+        }
+        .filter-btn {
+          padding: 8px 12px;
+        }
+      }
     </style>
-  <title>inky-soup - upload</title>
+    <title>inky-soup</title>
   </head>
   <body>
     <div class="container">
+      <!-- Gallery View -->
+      <div id="galleryView" class="view-container active">
+        {% if errors | length >= 1 %}
+          <small class="text-error" style="margin-top: 20px">
+            Errors:
+            {{ errors | length }} errors(s):
+            {% for s in errors %}
+              <p>{{s}}</p>
+            {% endfor %}
+          </small>
+        {% endif %}
 
-      {% if errors | length >= 1 %}
-        <small class="text-error" style="margin-top: 20px">
-          Errors:
-          {{ errors | length }} errors(s):
-          {% for s in errors %}
-            <p>{{s}}</p>
-          {% endfor %}
-        </small>
-      {% endif %}
-
-      {% if values | length >= 1 %}
-        <small class="good" style="margin-top: 20px">
-          {{ values | length }} Message(s):
-          {% for v in values %}
-            <p> {{v}} </p>
-          {% endfor %}
-        </small>
-      {% endif %}
-
-      <fieldset>
-        <legend>Upload New Image</legend>
-
-        <form action="/upload" method="post" enctype="multipart/form-data">
-
-            {{
-                m::input(
-                    label="File to Upload (Image, max 10MiB)",
-                    type="file",
-                    name="submission.file"
-                )
-            }}
-
-          <br />
-          <input type="submit" value="Upload Image" />
-        </form>
-      </fieldset>
-      <br />
-
-      <form action="/flash" method="post" enctype="multipart/form-data">
-      <div class="row">
-        <div class="col">
-            <fieldset>
-              <legend>Select an Image</legend>
-              <div class="thumbnails">
-
-                <div class="row">
-                  {% for s in images %}
-                  <div class="col">
-                    {{ s }}
-                    <img
-                      onclick=
-                        "getElementById('submission.image_file_path').value = this.id;
-                        getElementById('preview').src = this.src;
-                        this.focus();"
-                      id="{{ s }}"
-                      src="{{ s }}"
-                      align="center"
-                    />
-
-                  </div>
-                  {% endfor %}
-                </div>
-
-              </div>
-            </fieldset>
-
-            <fieldset>
-              <legend>Flash Parameters</legend>
-              <div>
-                {{ m::checkbox(name="submission.flash_twice", label="Flash twice (to overcome ghosting).") }}
-              </div>
-              <div>
-                {{
-                    m::select(
-                        label="Saturation",
-                        name="submission.saturation",
-                        options=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
-                        selected_value=0.5
-                    )
-                }}
-              </div>
-            </fieldset>
-            <input type="submit" value="Flash Image" class="is-full-width" />
-
-            <br>
-
-            <input type="submit" formaction="/delete" value="Remove Image (warning there is no confirmation and this is permanent)" class="bad"/>
-        </div>
+        {% if values | length >= 1 %}
+          <small class="good" style="margin-top: 20px">
+            {% for v in values %}
+              <p>{{v}}</p>
+            {% endfor %}
+          </small>
+        {% endif %}
 
         <fieldset>
-          <legend>Selected Image</legend>
-          {{
-              m::input(
-                  label="Filename:",
-                  name="submission.image_file_path"
-              )
-          }}
-          <br>
-
-          Preview:
-          <div class="preview" align="center">
-            <img id="preview" src="" alt=""/>
-          </div>
+          <legend>Upload New Image</legend>
+          <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
+            <div id="dropZone" class="drop-zone">
+              <input type="file" name="submission.file" id="fileInput" accept="image/*" multiple />
+              <div class="drop-zone-prompt">Drop images here or click to upload</div>
+              <div class="drop-zone-hint">JPEG, PNG, GIF, WebP (max 10 MB each)</div>
+              <div class="drop-zone-preview">
+                <img id="uploadPreviewImg" src="" alt="Preview" />
+                <div id="uploadFileName" class="file-name"></div>
+                <div id="uploadFileSize" class="file-size"></div>
+              </div>
+            </div>
+          </form>
         </fieldset>
 
+        <br>
+
+        <fieldset>
+          <legend>Gallery</legend>
+          {% if images | length == 0 %}
+            <div class="empty-gallery">
+              <p>No images uploaded yet.</p>
+              <p style="font-size: 0.9em;">Drop an image above to get started.</p>
+            </div>
+          {% else %}
+            <div class="thumbnails">
+              {% for img in images %}
+              {%- set thumb_path = "images/thumbs/" ~ img.filename ~ ".png" -%}
+              <div class="thumbnail-item" onclick="
+                const img = this.querySelector('img') || this.querySelector('[data-filename]');
+                if (img) {
+                  showDetailView(
+                    img.dataset.filename,
+                    img.dataset.path,
+                    img.dataset.filter,
+                    {{ img.thumb_ready }},
+                    parseFloat(img.dataset.saturation),
+                    parseInt(img.dataset.brightness),
+                    parseInt(img.dataset.contrast),
+                    img.dataset.dither,
+                    img.dataset.fitMode,
+                    parseInt(img.dataset.cacheVersion, 10)
+                  );
+                }
+              ">
+                {% if img.thumb_ready %}
+                <img
+                  src="{{ thumb_path }}"
+                  alt="{{ img.filename }}"
+                  loading="lazy"
+                  data-filename="{{ img.filename }}"
+                  data-path="{{ img.path }}"
+                  data-filter="{{ img.filter }}"
+                  data-fit-mode="{{ img.fit_mode }}"
+                  data-cache-version="{{ img.cache_version }}"
+                  data-saturation="{{ img.saturation }}"
+                  data-brightness="{{ img.brightness }}"
+                  data-contrast="{{ img.contrast }}"
+                  data-dither="{{ img.dither_algorithm }}"
+                />
+                {% else %}
+                <div
+                  class="thumbnail-placeholder"
+                  id="placeholder-{{ img.filename }}"
+                  data-filename="{{ img.filename }}"
+                  data-path="{{ img.path }}"
+                  data-filter="{{ img.filter }}"
+                  data-fit-mode="{{ img.fit_mode }}"
+                  data-cache-version="{{ img.cache_version }}"
+                  data-saturation="{{ img.saturation }}"
+                  data-brightness="{{ img.brightness }}"
+                  data-contrast="{{ img.contrast }}"
+                  data-dither="{{ img.dither_algorithm }}"
+                >
+                  <div class="spinner"></div>
+                  <span class="label">Caching...</span>
+                </div>
+                {% endif %}
+                <div class="thumb-filename">
+                  {%- if img.filename | length > 20 -%}
+                    {%- set ext = img.filename | split(pat=".") | last -%}
+                    {{ img.filename | replace(from="." ~ ext, to="") | truncate(length=15, end="...") }}.{{ ext }}
+                  {%- else -%}
+                    {{ img.filename }}
+                  {%- endif -%}
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </fieldset>
       </div>
 
+      <!-- Detail View -->
+      <div id="detailView" class="view-container">
+        <div class="detail-header">
+          <button class="back-button" onclick="showGalleryView()">← Back to Gallery</button>
+          <div id="detailFilename" class="detail-filename"></div>
+          <div id="lockStatus" class="lock-status" style="display: none;"></div>
+          <button class="delete-button" onclick="showDeleteConfirmation()">Delete</button>
+        </div>
+
+        <!-- Hidden form field for delete. -->
+        <form id="deleteForm" action="/delete" method="post" style="display: none;">
+          <input type="hidden" name="submission.image_file_path" id="deleteImagePath" value="" />
+        </form>
+
+        <!-- Pipeline Flow -->
+        <div class="pipeline">
+          <!-- Stage 1: Filtered/Resized Image -->
+          <div class="pipeline-stage">
+            <canvas id="filterCanvas" width="1600" height="1200"></canvas>
+            <div class="pipeline-stage-label">1600 × 1200 (resized)</div>
+            <span id="filterProcessing" class="processing-indicator"></span>
+          </div>
+
+          <!-- Connector: Filter + Saturation Controls -->
+          <div class="pipeline-connector">
+            <div class="pipeline-control">
+              <div class="pipeline-control-label">Resize Filter</div>
+              <div class="filter-buttons">
+                <button class="filter-btn" data-filter="bicubic">Bicubic</button>
+                <button class="filter-btn" data-filter="lanczos">Lanczos</button>
+                <button class="filter-btn" data-filter="mitchell">Mitchell</button>
+                <button class="filter-btn" data-filter="bilinear">Bilinear</button>
+                <button class="filter-btn" data-filter="nearest">Nearest</button>
+              </div>
+              <div class="pipeline-control-label" style="margin-top: 8px;">Fit Mode</div>
+              <div class="fit-mode-buttons">
+                <button class="fit-mode-btn active" data-fit-mode="contain">Contain</button>
+                <button class="fit-mode-btn" data-fit-mode="cover">Cover</button>
+              </div>
+              <button class="apply-filter-btn" onclick="applyFilter()">Save</button>
+              <span id="filterStatus" class="filter-status"></span>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-control">
+              <div class="pipeline-control-label">Brightness</div>
+              <input type="range" id="brightnessSlider" class="adjustment-slider" min="-100" max="100" step="5" value="0" oninput="updateBrightness(this.value)">
+              <div class="adjustment-value"><span id="brightnessValue">0</span></div>
+              <div class="pipeline-control-label" style="margin-top: 8px;">Contrast</div>
+              <input type="range" id="contrastSlider" class="adjustment-slider" min="-100" max="100" step="5" value="0" oninput="updateContrast(this.value)">
+              <div class="adjustment-value"><span id="contrastValue">0</span></div>
+              <div class="pipeline-control-label" style="margin-top: 8px;">Saturation</div>
+              <input type="range" id="saturationSlider" class="saturation-slider" min="0.1" max="1.0" step="0.1" value="0.5" oninput="updateSaturation(this.value)">
+              <div class="saturation-value"><span id="saturationValue">0.5</span></div>
+              <div class="pipeline-control-label" style="margin-top: 8px;">Dither</div>
+              <div class="dither-buttons">
+                <button class="dither-btn active" data-dither="floyd-steinberg">F-S</button>
+                <button class="dither-btn" data-dither="atkinson">Atkinson</button>
+                <button class="dither-btn" data-dither="ordered">Ordered</button>
+              </div>
+            </div>
+            <div class="pipeline-arrow">→</div>
+          </div>
+
+          <!-- Stage 2: Dithered Image -->
+          <div class="pipeline-stage">
+            <canvas id="ditherCanvas" width="1600" height="1200"></canvas>
+            <div class="pipeline-stage-label">1600 × 1200 (7 colors)</div>
+            <span id="ditherProcessing" class="processing-indicator"></span>
+          </div>
+
+          <!-- Connector to Flash -->
+          <div class="pipeline-connector pipeline-connector-final">
+            <div class="pipeline-arrow">→</div>
+          </div>
+
+          <!-- Stage 3: Flash to Display -->
+          <div class="pipeline-flash">
+            <div class="flash-options">
+              <label>
+                <input type="checkbox" id="flashTwiceCheckbox">
+                Flash twice
+              </label>
+            </div>
+            <button id="flashBtn" class="flash-button" onclick="flashImage()">
+              ⚡ Flash to Display
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
+
+    <!-- Flash Status Bar -->
+    <div id="flashStatusBar" class="flash-status-bar">
+      <div class="status-bar-content">
+        <span id="statusIcon" class="status-icon">⚡</span>
+        <div class="status-info">
+          <div id="statusText" class="status-text">Idle</div>
+          <div class="status-progress-mini">
+            <div id="statusProgress" class="status-progress-fill"></div>
+          </div>
+        </div>
+        <button class="status-expand-btn" onclick="expandFlashModal()">Details</button>
+      </div>
+    </div>
+
+    <!-- Flash Progress Modal (expandable from status bar). -->
+    <div id="flashModal" class="modal">
+      <div class="modal-content">
+        <span class="modal-close" onclick="closeFlashModal()">&times;</span>
+        <h2 id="flashModalTitle">Flashing to Display</h2>
+        <img id="flashModalImage" src="" alt=""/>
+        <div id="flashModalFilename" class="filename"></div>
+
+        <div id="flashProgress1Container" class="progress-container">
+          <div class="progress-label">Flash 1</div>
+          <div class="progress-bar">
+            <div id="flashProgress1" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <div id="flashProgress2Container" class="progress-container" style="display: none;">
+          <div class="progress-label">Flash 2</div>
+          <div class="progress-bar">
+            <div id="flashProgress2" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <div id="flashModalNote" class="modal-note">This takes about 40 seconds per flash...</div>
+        <button type="button" id="flashModalClose" style="display: none; margin-top: 15px;" onclick="closeFlashModal()">Close</button>
+      </div>
+    </div>
+
+    <!-- Upload Progress Modal. -->
+    <div id="uploadModal" class="modal">
+      <div class="modal-content">
+        <h2 id="uploadModalTitle">Uploading Image</h2>
+        <img id="uploadModalImage" src="" alt=""/>
+        <div id="uploadModalFilename" class="filename"></div>
+        <div class="upload-queue">
+          <div class="upload-queue-header">
+            <div id="uploadQueueStatus">Queue ready</div>
+            <div id="uploadQueueCount">0 files</div>
+          </div>
+          <div id="uploadQueueList" class="upload-queue-list"></div>
+        </div>
+
+        <div id="uploadProgressContainer" class="progress-container">
+          <div class="progress-label">Uploading</div>
+          <div class="progress-bar">
+            <div id="uploadProgress" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <div id="processingProgressContainer" class="progress-container" style="display: none;">
+          <div class="progress-label">Processing</div>
+          <div class="progress-bar">
+            <div id="processingProgress" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <div class="upload-stats">
+          <div class="stat">
+            <div id="uploadPercent" class="stat-value">0%</div>
+            <div class="stat-label">Progress</div>
+          </div>
+          <div class="stat">
+            <div id="uploadSpeed" class="stat-value">-- MB/s</div>
+            <div class="stat-label">Speed</div>
+          </div>
+          <div class="stat">
+            <div id="uploadTransferred" class="stat-value">0 / 0 MB</div>
+            <div class="stat-label">Transferred</div>
+          </div>
+          <div class="stat">
+            <div id="uploadTime" class="stat-value">0:00</div>
+            <div class="stat-label">Elapsed</div>
+          </div>
+        </div>
+
+        <div id="uploadNote" class="modal-note">Uploading to server...</div>
+        <button type="button" id="uploadCloseBtn" style="display: none; margin-top: 15px;" onclick="closeUploadModal()">Close</button>
+      </div>
+    </div>
+
+    <!-- Delete Confirmation Modal. -->
+    <div id="deleteConfirmModal" class="modal">
+      <div class="modal-content confirm-modal-content">
+        <h2>Delete Image?</h2>
+        <p style="color: #C9DBBD;">You are about to delete:</p>
+        <div id="deleteConfirmFilename" class="filename"></div>
+        <div class="warning">This action cannot be undone.</div>
+        <div class="confirm-modal-footer">
+          <button type="button" class="cancel-btn" onclick="closeDeleteConfirmation()">Cancel</button>
+          <button type="button" class="delete-btn" onclick="confirmDelete()">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/js/main.js"></script>
   </body>
 </html>

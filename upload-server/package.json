@@ -1,0 +1,30 @@
+{
+  "name": "inky-soup-frontend",
+  "version": "1.0.0",
+  "description": "Frontend tests for Inky Soup e-ink display server",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down -v",
+    "docker:logs": "docker compose logs -f",
+    "test:docker": "REMOTE_URL=http://localhost:8000 playwright test --config=playwright.remote.config.js",
+    "test:remote": "playwright test --config=playwright.remote.config.js",
+    "lint": "eslint static/js/**/*.js",
+    "lint:fix": "eslint static/js/**/*.js --fix"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@vitest/coverage-v8": "^2.1.0",
+    "eslint": "^8.57.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-plugin-import": "^2.29.1",
+    "vitest": "^2.1.0"
+  }
+}

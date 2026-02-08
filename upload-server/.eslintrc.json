@@ -1,0 +1,20 @@
+{
+  "extends": "airbnb-base",
+  "env": {
+    "browser": true,
+    "es2021": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module"
+  },
+  "rules": {
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "no-alert": "warn",
+    "import/extensions": ["error", "always"],
+    "import/prefer-default-export": "off",
+    "no-use-before-define": ["error", { "functions": false }],
+    "max-len": ["warn", { "code": 100, "ignoreUrls": true }]
+  },
+  "ignorePatterns": ["node_modules/", "static/js/lib/", "static/js/workers/"]
+}

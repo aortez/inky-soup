@@ -1,0 +1,21 @@
+# Docker Compose for local testing with production-like paths.
+#
+# Usage:
+#   docker compose up --build     # Build and run
+#   docker compose down -v        # Stop and remove volumes
+#
+# Server available at http://localhost:8000
+
+services:
+  inky-soup:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist images across container restarts.
+      - inky-images:/data/inky-soup/images
+    environment:
+      - RUST_LOG=info
+
+volumes:
+  inky-images:

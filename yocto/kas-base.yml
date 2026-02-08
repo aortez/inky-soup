@@ -1,0 +1,112 @@
+# Base KAS configuration for Inky Soup Yocto build.
+#
+# This file contains shared configuration used by both machine targets.
+# Do not use directly - use kas-inky-soup-zero1.yml or kas-inky-soup-zero2.yml.
+
+header:
+  version: 14
+
+distro: poky
+
+repos:
+  # Core Yocto - the foundation.
+  poky:
+    url: "https://git.yoctoproject.org/poky"
+    branch: scarthgap
+    layers:
+      meta:
+      meta-poky:
+
+  # Raspberry Pi BSP.
+  meta-raspberrypi:
+    url: "https://git.yoctoproject.org/meta-raspberrypi"
+    branch: scarthgap
+
+  # OpenEmbedded layers for NetworkManager and Python.
+  meta-openembedded:
+    url: "https://git.openembedded.org/meta-openembedded"
+    branch: scarthgap
+    layers:
+      meta-networking:
+      meta-oe:
+      meta-python:
+
+  # Prebuilt Rust toolchain (faster than compiling from source).
+  meta-rust-bin:
+    url: "https://github.com/rust-embedded/meta-rust-bin.git"
+    branch: master
+
+  # Shared infrastructure layer (submodule).
+  meta-pi-base:
+    path: pi-base/yocto/meta-pi-base
+
+  # Our custom layer.
+  meta-inky-soup:
+    path: meta-inky-soup
+
+local_conf_header:
+  # Base build configuration.
+  base: |
+    # Accept restricted licenses (Pi WiFi firmware).
+    LICENSE_FLAGS_ACCEPTED = "commercial synaptics-killswitch"
+
+    # Use systemd as init system.
+    INIT_MANAGER = "systemd"
+
+    # Set hostname (can be overridden by /boot/hostname.txt at boot).
+    hostname:pn-base-files = "inky-soup"
+
+    # Use WIC format with A/B partitions for safe updates.
+    # Also produce tar.gz for content-based OTA updates.
+    IMAGE_FSTYPES = "wic.gz wic.bmap tar.gz"
+    WKS_FILE = "sdimage-ab.wks.in"
+
+    # A/B partition layout configuration.
+    BOOT_DEVICE = "mmcblk0"
+    BOOT_SIZE = "150"
+    ROOTFS_SIZE = "1800"
+    DATA_SIZE = "100"
+
+    # Faster builds - adjust to your CPU cores.
+    BB_NUMBER_THREADS = "8"
+    PARALLEL_MAKE = "-j 8"
+
+    # Download directory (shared across builds).
+    DL_DIR = "${TOPDIR}/../downloads"
+
+    # Shared state cache (speeds up rebuilds).
+    SSTATE_DIR = "${TOPDIR}/../sstate-cache"
+
+    # Disable SPDX generation (requires user namespaces which may not be available).
+    INHERIT:remove = "create-spdx"
+
+    # Pin Rust version - 1.92.0 changed tarball format and breaks meta-rust-bin.
+    PREFERRED_VERSION_rust-bin-cross-arm = "1.85.0"
+    PREFERRED_VERSION_cargo-bin-cross-arm = "1.85.0"
+
+  # Raspberry Pi specific configuration.
+  rpi: |
+    # Disable rainbow splash for cleaner boot.
+    DISABLE_SPLASH = "1"
+
+    # Boot from SD card.
+    CMDLINE_ROOT_PARTITION = "/dev/mmcblk0p2"
+
+    # Enable HDMI console output for boot messages and kernel logs.
+    CMDLINE:append = " console=tty1"
+
+  # Display configuration for e-ink.
+  display: |
+    # Enable SPI bus for e-ink display communication.
+    # The Inky Impression uses SPI0 with manual chip select via GPIO.
+    ENABLE_SPI_BUS = "1"
+
+    # Enable I2C for display EEPROM (used to detect display model).
+    ENABLE_I2C = "1"
+
+    # Extra config.txt settings.
+    # Critical: disable_fw_kms_setup=1 is required when using VC4 graphics.
+    RPI_EXTRA_CONFIG = "\ndisable_fw_kms_setup=1\n"
+
+# Target image to build.
+target: inky-soup-image

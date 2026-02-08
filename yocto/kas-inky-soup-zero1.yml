@@ -1,0 +1,16 @@
+# KAS configuration for Pi Zero W (original).
+#
+# Usage:
+#   kas build kas-inky-soup-zero1.yml
+#
+# Target: Raspberry Pi Zero W
+# Architecture: ARMv6 (ARM1176JZF-S)
+# SoC: BCM2835
+
+header:
+  version: 14
+  includes:
+    - kas-base.yml
+
+# Raspberry Pi Zero W - ARMv6 single-core.
+machine: raspberrypi0-wifi

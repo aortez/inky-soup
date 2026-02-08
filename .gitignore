@@ -127,3 +127,41 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Node.js
+node_modules/
+package-lock.json
+
+# Playwright
+playwright-report/
+test-results/
+
+# Test artifacts
+example.png
+upload-server/Rocket.toml.hidden
+
+# Test images (created during e2e tests)
+upload-server/static/images/
+!upload-server/static/images/.gitkeep
+
+# Rust/Cargo build artifacts
+upload-server/target/
+upload-server/.rustc_info.json
+upload-server/arm-unknown-linux-gnueabihf/
+upload-server/release/
+
+# Yocto externalsrc symlinks (created during build)
+upload-server/oe-logs
+upload-server/oe-workdir
+
+# Yocto build artifacts
+yocto/build/
+yocto/downloads/
+yocto/sstate-cache/
+
+# Yocto layer sources (cloned by init.sh) - except our custom layer
+yocto/src/*
+!yocto/src/meta-inky-soup/
+
+# WiFi credentials (contains secrets)
+yocto/wifi-creds.local
