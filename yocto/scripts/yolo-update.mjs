@@ -271,6 +271,53 @@ function getInactiveSlot() {
 }
 
 /**
+ * Get boot partition device (typically p1) from root device.
+ */
+function getBootDevice() {
+  return ssh("cat /proc/cmdline | sed -n 's/.*root=\\([^ ]*\\).*/\\1/p' | sed 's/[0-9]*$//; s/$/1/'");
+}
+
+/**
+ * Ensure /boot/cmdline.txt is accessible for slot switching.
+ *
+ * Returns true if this function mounted /boot and caller should unmount later.
+ */
+function prepareBootForSlotSwitch() {
+  const hasCmdline = ssh('[ -f /boot/cmdline.txt ] && echo yes || echo no', { throwOnError: false }) === 'yes';
+  if (hasCmdline) {
+    return false;
+  }
+
+  const bootAlreadyMounted = ssh('mountpoint -q /boot && echo yes || echo no', { throwOnError: false }) === 'yes';
+  if (bootAlreadyMounted) {
+    throw new Error('/boot is mounted but /boot/cmdline.txt is missing. Refusing to switch slot.');
+  }
+
+  const bootDevice = getBootDevice();
+  if (!bootDevice) {
+    throw new Error('Could not determine boot partition device for slot switch.');
+  }
+
+  info(`Mounting boot partition ${bootDevice} at /boot...`);
+  ssh(`sudo mount ${bootDevice} /boot`);
+
+  const hasCmdlineAfterMount = ssh('[ -f /boot/cmdline.txt ] && echo yes || echo no', { throwOnError: false }) === 'yes';
+  if (!hasCmdlineAfterMount) {
+    ssh('sudo umount /boot', { throwOnError: false });
+    throw new Error('Mounted /boot, but /boot/cmdline.txt is still missing.');
+  }
+
+  return true;
+}
+
+/**
+ * Unmount /boot after temporary mount for slot switching.
+ */
+function unmountBootAfterSlotSwitch() {
+  ssh('sudo umount /boot', { throwOnError: false });
+}
+
+/**
  * Mount the inactive partition.
  */
 function mountInactive(device) {
@@ -478,7 +525,10 @@ async function main() {
     process.exit(0);
   }
 
+  let bootMountedForSwitch = false;
+
   try {
+
     // Mount inactive partition.
     banner('Preparing inactive partition...', consola);
     unmountInactive(); // Ensure clean state.
@@ -511,7 +561,13 @@ async function main() {
     // Switch boot slot.
     banner('Switching boot slot...', consola);
     cleanupManager.enterCriticalSection();
+    bootMountedForSwitch = prepareBootForSlotSwitch();
     switchBootSlot(inactiveSlot);
+    if (bootMountedForSwitch) {
+      ssh('sync');
+      unmountBootAfterSlotSwitch();
+      bootMountedForSwitch = false;
+    }
     success(`Boot switched to slot ${inactiveSlot}`);
 
     // Reboot.
@@ -550,6 +606,9 @@ async function main() {
 
   } catch (err) {
     // Try to clean up on error.
+    if (bootMountedForSwitch) {
+      unmountBootAfterSlotSwitch();
+    }
     unmountInactive();
     throw err;
   } finally {
