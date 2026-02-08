@@ -219,14 +219,36 @@ test.describe('Pipeline Detail View', () => {
       await dialog.dismiss();
     });
 
-    // Track API requests to detect duplicate submissions.
-    const apiRequests = [];
-    page.on('request', request => {
-      const url = request.url();
-      if (url.includes('/api/upload-dithered') || url.includes('/flash')) {
-        apiRequests.push({ url, timestamp: Date.now() });
-      }
-    });
+    // Track API calls to detect duplicate submissions.
+    // Patch `fetch` in-page so we can reliably attribute requests to THIS filename even in parallel E2E runs.
+    const filename = ((await page.locator('#detailFilename').textContent()) || '').trim();
+    await page.evaluate((targetFilename) => {
+      const originalFetch = window.fetch.bind(window);
+      window.__flashRequestCounts = { uploadDithered: 0, flash: 0 };
+
+      window.fetch = async (input, init = {}) => {
+        try {
+          const url = typeof input === 'string' ? input : input.url;
+          const body = init?.body;
+
+          if (url.includes('/api/upload-dithered') && body instanceof FormData) {
+            if (body.get('filename') === targetFilename) {
+              window.__flashRequestCounts.uploadDithered += 1;
+            }
+          }
+
+          if (url.endsWith('/flash') && body instanceof FormData) {
+            if (body.get('submission.filename') === targetFilename) {
+              window.__flashRequestCounts.flash += 1;
+            }
+          }
+        } catch {
+          // Ignore fetch instrumentation errors and let the request proceed.
+        }
+
+        return originalFetch(input, init);
+      };
+    }, filename);
 
     // Verify session ID exists before clicking flash.
     const sessionId = await page.evaluate(() => {
@@ -246,7 +268,8 @@ test.describe('Pipeline Detail View', () => {
       // Log debug info on failure.
       console.log('Alerts captured:', alerts);
       console.log('Console logs:', consoleLogs);
-      console.log('API requests:', apiRequests);
+      const counts = await page.evaluate(() => window.__flashRequestCounts);
+      console.log('API counts:', counts);
       throw err;
     }
 
@@ -257,10 +280,8 @@ test.describe('Pipeline Detail View', () => {
     expect(alerts).toEqual([]);
 
     // Should have exactly 1 upload-dithered and 1 flash request (no duplicates).
-    const uploadDitheredRequests = apiRequests.filter(r => r.url.includes('/api/upload-dithered'));
-    const flashRequests = apiRequests.filter(r => r.url.includes('/flash') && !r.url.includes('/status'));
-    expect(uploadDitheredRequests.length).toBe(1);
-    expect(flashRequests.length).toBe(1);
+    const counts = await page.evaluate(() => window.__flashRequestCounts);
+    expect(counts).toEqual({ uploadDithered: 1, flash: 1 });
   });
 
   test('delete button should actually delete the image', async ({ withImage }) => {

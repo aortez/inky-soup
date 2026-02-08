@@ -13,6 +13,8 @@ use tokio::process::Command;
 use tokio::sync::Mutex;
 use tokio::time;
 
+use crate::display_settings;
+
 /// Shared flash queue state type.
 pub type FlashQueueState = Arc<Mutex<FlashQueue>>;
 
@@ -44,7 +46,7 @@ pub struct FlashJob {
     pub dithered_path: String,
     /// Whether to flash twice.
     pub flash_twice: bool,
-    /// Display rotation to apply at flash time.
+    /// Physical display mounting rotation captured at queue time.
     pub rotation_degrees: u16,
     /// Job state.
     pub status: FlashJobStatus,
@@ -255,14 +257,24 @@ pub fn spawn_flash_worker(queue_state: FlashQueueState) {
             };
 
             if let Some(job) = job {
+                let flash_rotation_degrees =
+                    display_settings::compute_flash_rotation_degrees(job.rotation_degrees);
                 info!(
-                    "Processing flash job {}: {} (flash_twice: {}, rotation: {})",
-                    job.job_id, job.filename, job.flash_twice, job.rotation_degrees
+                    "Processing flash job {}: {} (flash_twice: {}, mount_rotation: {}, flash_rotation: {})",
+                    job.job_id,
+                    job.filename,
+                    job.flash_twice,
+                    job.rotation_degrees,
+                    flash_rotation_degrees
                 );
 
                 // Execute flash operation.
-                let result =
-                    execute_flash(&job.dithered_path, job.flash_twice, job.rotation_degrees).await;
+                let result = execute_flash(
+                    &job.dithered_path,
+                    job.flash_twice,
+                    flash_rotation_degrees,
+                )
+                .await;
                 if let Err(e) = cleanup_flash_snapshot(&job.dithered_path).await {
                     warn!(
                         "Failed to clean flash snapshot for job {} ({}): {}",

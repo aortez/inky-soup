@@ -54,6 +54,22 @@ pub fn compute_logical_dimensions(
     }
 }
 
+/// Computes the clockwise rotation to apply during flashing to compensate for the
+/// physical mounting orientation.
+///
+/// The configured `rotation_degrees` represents how the physical panel is mounted.
+/// To keep UI preview and the flashed output consistent (i.e. upright in the UI),
+/// the flash script should counter-rotate the image buffer.
+pub fn compute_flash_rotation_degrees(mount_rotation_degrees: u16) -> u16 {
+    match mount_rotation_degrees {
+        0 => 0,
+        90 => 270,
+        180 => 180,
+        270 => 90,
+        _ => 0,
+    }
+}
+
 fn load_runtime_settings_from_path(path: &Path) -> RuntimeDisplaySettings {
     if !path.exists() {
         return RuntimeDisplaySettings::default();
@@ -214,6 +230,14 @@ mod tests {
         assert_eq!(compute_logical_dimensions(1600, 1200, 180), (1600, 1200));
         assert_eq!(compute_logical_dimensions(1600, 1200, 90), (1200, 1600));
         assert_eq!(compute_logical_dimensions(1600, 1200, 270), (1200, 1600));
+    }
+
+    #[test]
+    fn test_flash_rotation_compensates_for_mounting_orientation() {
+        assert_eq!(compute_flash_rotation_degrees(0), 0);
+        assert_eq!(compute_flash_rotation_degrees(90), 270);
+        assert_eq!(compute_flash_rotation_degrees(180), 180);
+        assert_eq!(compute_flash_rotation_degrees(270), 90);
     }
 
     #[test]

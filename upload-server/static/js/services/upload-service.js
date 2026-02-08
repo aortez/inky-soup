@@ -6,7 +6,6 @@
 import { DEFAULT_FILTER, DEFAULT_FIT_MODE } from '../core/constants.js';
 import {
   getDisplayWidth, getDisplayHeight, getThumbWidth, getThumbHeight,
-  getRotationDegrees,
   getUploadQueue, setUploadQueue,
   getUploadQueueActive, setUploadQueueActive,
   getUploadQueueCurrentId, setUploadQueueCurrentId,
@@ -18,7 +17,6 @@ import {
   createImageDataFromImage,
   drawImageToFit,
   imageDataToCanvas,
-  rotateImageData,
 } from '../utils/image-utils.js';
 import {
   uploadCache,
@@ -566,9 +564,7 @@ export async function generateThumbnails(dataUrl, filename, options = {}) {
 
   const img = await loadImageFromDataUrl(dataUrl);
   const sourceImageData = createImageDataFromImage(img);
-  const rotationDegrees = getRotationDegrees();
-  const rotatedImageData = rotateImageData(sourceImageData, rotationDegrees);
-  const rotatedSource = imageDataToCanvas(rotatedImageData);
+  const sourceCanvas = imageDataToCanvas(sourceImageData);
 
   const cacheWidth = getDisplayWidth();
   const cacheHeight = getDisplayHeight();
@@ -582,11 +578,11 @@ export async function generateThumbnails(dataUrl, filename, options = {}) {
 
   // Generate cache image with worker filter, fallback to direct draw on worker failure.
   try {
-    const filteredData = await filterImage(rotatedImageData, cacheWidth, cacheHeight, filter, mode);
+    const filteredData = await filterImage(sourceImageData, cacheWidth, cacheHeight, filter, mode);
     cacheCtx.putImageData(filteredData, 0, 0);
   } catch (err) {
     console.error('Filter worker error during upload:', err);
-    drawImageToFit(cacheCtx, rotatedSource, cacheWidth, cacheHeight, mode);
+    drawImageToFit(cacheCtx, sourceCanvas, cacheWidth, cacheHeight, mode);
   }
 
   const cacheBlob = await canvasToBlob(cacheCanvas);
@@ -595,7 +591,7 @@ export async function generateThumbnails(dataUrl, filename, options = {}) {
   thumbCanvas.width = thumbWidth;
   thumbCanvas.height = thumbHeight;
   const thumbCtx = thumbCanvas.getContext('2d');
-  drawImageToFit(thumbCtx, rotatedSource, thumbWidth, thumbHeight, mode);
+  drawImageToFit(thumbCtx, sourceCanvas, thumbWidth, thumbHeight, mode);
   const thumbBlob = await canvasToBlob(thumbCanvas);
 
   const cacheImageData = cacheCtx.getImageData(0, 0, cacheWidth, cacheHeight);

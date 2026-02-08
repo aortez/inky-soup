@@ -23,7 +23,6 @@ import {
   getDisplayHeight,
   getThumbWidth,
   getThumbHeight,
-  getRotationDegrees,
 } from '../core/state.js';
 import { elements, query, queryAll } from '../core/dom.js';
 import { applyDither } from './dither-service.js';
@@ -32,7 +31,6 @@ import { loadOriginal } from './image-loader.js';
 import {
   createImageDataFromImage,
   drawImageToFit,
-  rotateImageData,
 } from '../utils/image-utils.js';
 import { CACHE_VERSION } from '../core/constants.js';
 
@@ -105,8 +103,6 @@ export function applyFilterToCanvas(imageData) {
 
   const filter = getCurrentFilter();
   const fitMode = getCurrentFitMode();
-  const rotationDegrees = getRotationDegrees();
-  const rotatedImageData = rotateImageData(imageData, rotationDegrees);
 
   const targetWidth = getDisplayWidth();
   const targetHeight = getDisplayHeight();
@@ -115,22 +111,22 @@ export function applyFilterToCanvas(imageData) {
   filterStartTime = performance.now();
   filterParams = {
     filter,
-    srcWidth: rotatedImageData.width,
-    srcHeight: rotatedImageData.height,
+    srcWidth: imageData.width,
+    srcHeight: imageData.height,
     targetWidth,
     targetHeight,
     fitMode,
   };
 
   worker.postMessage({
-    data: rotatedImageData.data.buffer,
-    width: rotatedImageData.width,
-    height: rotatedImageData.height,
+    data: imageData.data.buffer,
+    width: imageData.width,
+    height: imageData.height,
     targetWidth,
     targetHeight,
     filter,
     fitMode,
-  }, [rotatedImageData.data.buffer]);
+  }, [imageData.data.buffer]);
 }
 
 /**

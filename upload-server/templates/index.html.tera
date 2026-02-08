@@ -1081,19 +1081,20 @@
         </div>
 
         <fieldset>
-          <legend>Rotation</legend>
+          <legend>Mount orientation</legend>
           <div class="settings-panel">
-            <label for="rotationSelect">Global display rotation</label>
+            <label for="rotationSelect">Display mount rotation (clockwise)</label>
             <select id="rotationSelect">
               <option value="0">0°</option>
               <option value="90">90°</option>
               <option value="180">180°</option>
               <option value="270">270°</option>
             </select>
-            <button id="saveRotationBtn" class="settings-button" type="button">Save rotation</button>
+            <button id="saveRotationBtn" class="settings-button" type="button">Save orientation</button>
             <div id="rotationStatus" class="filter-status"></div>
             <p class="settings-note">
-              Changing rotation clears all derived assets and reloads the page to regenerate cache, thumbnails, and dithered outputs.
+              This represents how the display is mounted. The UI preview stays upright; this setting affects crop/fit behavior and the flashed output.
+              Changing orientation clears all derived assets and reloads the page to regenerate cache, thumbnails, and dithered outputs.
             </p>
           </div>
         </fieldset>

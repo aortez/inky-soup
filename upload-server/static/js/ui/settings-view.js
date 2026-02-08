@@ -1,6 +1,6 @@
 /**
  * Settings view UI module.
- * Manages global display settings (rotation).
+ * Manages global display settings (physical mount orientation).
  */
 
 import { elements } from '../core/dom.js';
@@ -28,14 +28,14 @@ async function saveRotation() {
 
   const rotationDegrees = parseInt(elements.rotationSelect.value, 10);
   elements.saveRotationBtn.disabled = true;
-  setStatus('Saving rotation...');
+  setStatus('Saving orientation...');
 
   try {
     const response = await updateDisplayRotation(rotationDegrees);
     const { removed_assets: removedAssets } = response;
 
     setStatus(
-      `Saved ${response.rotation_degrees}°. Cleared `
+      `Saved mount rotation ${response.rotation_degrees}°. Cleared `
       + `${removedAssets.cache} cache, `
       + `${removedAssets.thumbs} thumbs, `
       + `${removedAssets.dithered} dithered files. Reloading to regenerate...`,

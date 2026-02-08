@@ -448,7 +448,7 @@ fn update_display_rotation(
     Ok(Json(DisplayRotationResponse {
         success: true,
         message: format!(
-            "Rotation updated to {}°. Cleared derived assets; reload to regenerate cache, thumbnails, and dithered outputs.",
+            "Mount rotation updated to {}°. Cleared derived assets; reload to regenerate cache, thumbnails, and dithered outputs.",
             rotation_degrees
         ),
         rotation_degrees,
