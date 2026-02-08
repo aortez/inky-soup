@@ -96,7 +96,7 @@ test.describe('Pipeline Detail View', () => {
     await expect(page.locator('#filterStatus')).toContainText('saved', { timeout: 1000 });
 
     // Go back to gallery (without page reload - typical user flow).
-    await page.locator('.back-button').click();
+    await page.locator('#detailView .back-button').click();
     await expect(page.locator('#galleryView')).toBeVisible();
 
     // Re-open the same image.
@@ -150,7 +150,7 @@ test.describe('Pipeline Detail View', () => {
     await expect(page.locator('#flashStatusBar')).toHaveClass(/visible/, { timeout: 1000 });
 
     // Go back to gallery (without page reload - typical user flow).
-    await page.locator('.back-button').click();
+    await page.locator('#detailView .back-button').click();
     await expect(page.locator('#galleryView')).toBeVisible();
 
     // Re-open the same image.
@@ -307,7 +307,7 @@ test.describe('Pipeline Detail View', () => {
     await expect(page.locator('#deleteConfirmModal')).not.toHaveClass(/active/);
 
     // Go back to gallery.
-    await page.locator('.back-button').click();
+    await page.locator('#detailView .back-button').click();
     await expect(page.locator('#galleryView')).toBeVisible();
 
     // Image should still be in gallery.
@@ -425,7 +425,7 @@ test.describe('Cache Optimization', () => {
     const filename = await page.locator('#detailFilename').textContent();
 
     // Go back to gallery.
-    await page.locator('.back-button').click();
+    await page.locator('#detailView .back-button').click();
     await expect(page.locator('#galleryView')).toBeVisible();
 
     // Clear network requests.

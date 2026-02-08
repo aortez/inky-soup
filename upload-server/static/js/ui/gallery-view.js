@@ -88,6 +88,7 @@ async function generateMissingThumb(filename, path, placeholderEl) {
     // Dynamically import to avoid circular dependencies.
     const { generateThumbnails } = await import('../services/upload-service.js');
     const fitMode = placeholderEl?.dataset.fitMode || 'contain';
+    const filter = placeholderEl?.dataset.filter || 'bicubic';
 
     // Load the original image.
     const img = new Image();
@@ -103,7 +104,7 @@ async function generateMissingThumb(filename, path, placeholderEl) {
       const dataUrl = canvas.toDataURL('image/png');
 
       // Generate and upload thumbnails.
-      generateThumbnails(dataUrl, filename, fitMode);
+      generateThumbnails(dataUrl, filename, { fitMode, filter });
 
       // Continue polling - thumb should appear soon.
       pollThumbStatus(filename, path, placeholderEl);

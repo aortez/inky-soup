@@ -7,6 +7,7 @@ import { DEFAULT_FILTER, DEFAULT_FIT_MODE } from '../core/constants.js';
 import {
   getPendingThumbnails, setPendingThumbnails,
   getDisplayWidth, getDisplayHeight, getThumbWidth, getThumbHeight,
+  getRotationDegrees,
   getUploadQueue, setUploadQueue,
   getUploadQueueActive, setUploadQueueActive,
   getUploadQueueCurrentId, setUploadQueueCurrentId,
@@ -14,7 +15,12 @@ import {
 import { elements } from '../core/dom.js';
 import { formatSize, formatSpeed, formatTime } from '../utils/formatters.js';
 import { generateUUID } from '../utils/uuid.js';
-import { drawImageToFit } from '../utils/image-utils.js';
+import {
+  createImageDataFromImage,
+  drawImageToFit,
+  imageDataToCanvas,
+  rotateImageData,
+} from '../utils/image-utils.js';
 import { uploadCache, uploadThumb, uploadOriginalImage } from './api-client.js';
 
 // Dedicated filter worker for upload processing.
@@ -29,6 +35,11 @@ const UPLOAD_STATUS = {
   COMPLETE: 'complete',
   FAILED: 'failed',
 };
+const VALID_FILTERS = new Set(['bicubic', 'lanczos', 'mitchell', 'bilinear', 'nearest']);
+
+function normalizeFilter(filter) {
+  return VALID_FILTERS.has(filter) ? filter : DEFAULT_FILTER;
+}
 
 function emptyPendingThumbnails() {
   return {
@@ -450,7 +461,10 @@ async function uploadQueueItem(item) {
     return;
   }
 
-  generateThumbnails(previewDataUrl, uploadedFilename, DEFAULT_FIT_MODE);
+  generateThumbnails(previewDataUrl, uploadedFilename, {
+    fitMode: DEFAULT_FIT_MODE,
+    filter: DEFAULT_FILTER,
+  });
   const thumbnailResult = await waitForThumbnailsReady(true);
   if (!thumbnailResult.success) {
     updateQueueItem(item.id, { status: UPLOAD_STATUS.FAILED, message: thumbnailResult.error });
@@ -538,20 +552,21 @@ export function handleFileSelect(selection) {
  * Thumbnail uses simple resize for speed.
  * @param {string} dataUrl - The data URL of the uploaded image.
  * @param {string} filename - The filename.
- * @param {string} fitMode - The fit mode ("contain" or "cover").
+ * @param {object} options - Generation options.
+ * @param {string} [options.fitMode] - The fit mode ("contain" or "cover").
+ * @param {string} [options.filter] - The resize filter.
  */
-export function generateThumbnails(dataUrl, filename, fitMode = DEFAULT_FIT_MODE) {
+export function generateThumbnails(dataUrl, filename, options = {}) {
   const img = new Image();
-  const mode = fitMode === 'cover' ? 'cover' : DEFAULT_FIT_MODE;
+  const mode = options.fitMode === 'cover' ? 'cover' : DEFAULT_FIT_MODE;
+  const filter = normalizeFilter(options.filter);
 
   img.onload = async () => {
     // Get source image data.
-    const srcCanvas = document.createElement('canvas');
-    srcCanvas.width = img.width;
-    srcCanvas.height = img.height;
-    const srcCtx = srcCanvas.getContext('2d');
-    srcCtx.drawImage(img, 0, 0);
-    const srcImageData = srcCtx.getImageData(0, 0, img.width, img.height);
+    const sourceImageData = createImageDataFromImage(img);
+    const rotationDegrees = getRotationDegrees();
+    const rotatedImageData = rotateImageData(sourceImageData, rotationDegrees);
+    const rotatedSource = imageDataToCanvas(rotatedImageData);
 
     // Get current display dimensions from state.
     const cacheWidth = getDisplayWidth();
@@ -562,10 +577,10 @@ export function generateThumbnails(dataUrl, filename, fitMode = DEFAULT_FIT_MODE
     // Generate cache using filter worker with default filter.
     try {
       const filteredData = await filterImage(
-        srcImageData,
+        rotatedImageData,
         cacheWidth,
         cacheHeight,
-        DEFAULT_FILTER,
+        filter,
         mode,
       );
 
@@ -583,7 +598,7 @@ export function generateThumbnails(dataUrl, filename, fitMode = DEFAULT_FIT_MODE
           cache: {
             blob: cacheBlob,
             filename,
-            filter: DEFAULT_FILTER,
+            filter,
             fitMode: mode,
           },
         });
@@ -596,7 +611,7 @@ export function generateThumbnails(dataUrl, filename, fitMode = DEFAULT_FIT_MODE
       cacheCanvas.width = cacheWidth;
       cacheCanvas.height = cacheHeight;
       const cacheCtx = cacheCanvas.getContext('2d');
-      drawImageToFit(cacheCtx, img, cacheWidth, cacheHeight, mode);
+      drawImageToFit(cacheCtx, rotatedSource, cacheWidth, cacheHeight, mode);
 
       cacheCanvas.toBlob((cacheBlob) => {
         const pending = getPendingThumbnails();
@@ -605,7 +620,7 @@ export function generateThumbnails(dataUrl, filename, fitMode = DEFAULT_FIT_MODE
           cache: {
             blob: cacheBlob,
             filename,
-            filter: null,
+            filter,
             fitMode: mode,
           },
         });
@@ -618,7 +633,7 @@ export function generateThumbnails(dataUrl, filename, fitMode = DEFAULT_FIT_MODE
     thumbCanvas.width = thumbWidth;
     thumbCanvas.height = thumbHeight;
     const thumbCtx = thumbCanvas.getContext('2d');
-    drawImageToFit(thumbCtx, img, thumbWidth, thumbHeight, mode);
+    drawImageToFit(thumbCtx, rotatedSource, thumbWidth, thumbHeight, mode);
 
     thumbCanvas.toBlob((thumbBlob) => {
       const pending = getPendingThumbnails();

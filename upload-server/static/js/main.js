@@ -8,9 +8,15 @@ import { initDOMCache } from './core/dom.js';
 import { setDisplayConfig } from './core/state.js';
 
 // UI imports.
-import { initNavigation, showDetailView, showGalleryView } from './ui/navigation.js';
+import {
+  initNavigation,
+  showDetailView,
+  showGalleryView,
+  showSettingsView,
+} from './ui/navigation.js';
 import { initDetailView } from './ui/detail-view.js';
 import { initGalleryView } from './ui/gallery-view.js';
+import { initSettingsView } from './ui/settings-view.js';
 import { initFilterControls, applyFilter } from './ui/filter-controls.js';
 import { initFitModeControls } from './ui/fit-mode-controls.js';
 import { initSaturationControls } from './ui/saturation-controls.js';
@@ -41,11 +47,20 @@ async function loadDisplayConfig() {
     console.log('Display config loaded:', config);
 
     // Store in state (convert snake_case to camelCase).
+    const logicalWidth = config.logical_width ?? config.width;
+    const logicalHeight = config.logical_height ?? config.height;
+    const logicalThumbWidth = config.logical_thumb_width ?? config.thumb_width;
+    const logicalThumbHeight = config.logical_thumb_height ?? config.thumb_height;
     setDisplayConfig({
-      width: config.width,
-      height: config.height,
-      thumbWidth: config.thumb_width,
-      thumbHeight: config.thumb_height,
+      width: logicalWidth,
+      height: logicalHeight,
+      thumbWidth: logicalThumbWidth,
+      thumbHeight: logicalThumbHeight,
+      physicalWidth: config.physical_width ?? logicalWidth,
+      physicalHeight: config.physical_height ?? logicalHeight,
+      physicalThumbWidth: config.physical_thumb_width ?? logicalThumbWidth,
+      physicalThumbHeight: config.physical_thumb_height ?? logicalThumbHeight,
+      rotationDegrees: config.rotation_degrees ?? 0,
       model: config.model,
       color: config.color,
     });
@@ -55,20 +70,20 @@ async function loadDisplayConfig() {
     const ditherCanvas = document.getElementById('ditherCanvas');
 
     if (filterCanvas) {
-      filterCanvas.width = config.width;
-      filterCanvas.height = config.height;
+      filterCanvas.width = logicalWidth;
+      filterCanvas.height = logicalHeight;
     }
     if (ditherCanvas) {
-      ditherCanvas.width = config.width;
-      ditherCanvas.height = config.height;
+      ditherCanvas.width = logicalWidth;
+      ditherCanvas.height = logicalHeight;
     }
 
     // Update dimension labels.
     document.querySelectorAll('.pipeline-stage-label').forEach((label) => {
       if (label.textContent.includes('resized')) {
-        label.textContent = `${config.width} × ${config.height} (resized)`;
+        label.textContent = `${logicalWidth} × ${logicalHeight} (resized)`;
       } else if (label.textContent.includes('colors')) {
-        label.textContent = `${config.width} × ${config.height} (7 colors)`;
+        label.textContent = `${logicalWidth} × ${logicalHeight} (7 colors)`;
       }
     });
   } catch (error) {
@@ -88,6 +103,7 @@ async function init() {
 
   // 3. Initialize UI modules.
   initNavigation();
+  initSettingsView();
   initDetailView();
   initGalleryView();
   initFilterControls();
@@ -114,6 +130,7 @@ if (document.readyState === 'loading') {
 // TODO: Migrate to event delegation to remove these global exports.
 window.showDetailView = showDetailView;
 window.showGalleryView = showGalleryView;
+window.showSettingsView = showSettingsView;
 window.showDeleteConfirmation = showDeleteConfirmation;
 window.closeDeleteConfirmation = closeDeleteConfirmation;
 window.confirmDelete = confirmDelete;

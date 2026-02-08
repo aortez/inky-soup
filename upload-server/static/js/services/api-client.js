@@ -14,16 +14,46 @@ export async function getDisplayConfig() {
   if (!response.ok) {
     console.warn('Failed to fetch display config, using defaults');
     return {
-      width: 600,
-      height: 448,
+      width: 1600,
+      height: 1200,
       thumb_width: 150,
       thumb_height: 112,
-      model: 'impression-5.7-default',
+      logical_width: 1600,
+      logical_height: 1200,
+      logical_thumb_width: 150,
+      logical_thumb_height: 112,
+      physical_width: 1600,
+      physical_height: 1200,
+      physical_thumb_width: 150,
+      physical_thumb_height: 112,
+      rotation_degrees: 0,
+      model: 'impression-13.3-default',
       color: 'multi',
     };
   }
 
   return response.json();
+}
+
+/**
+ * Update global display rotation setting.
+ * @param {number} rotationDegrees - Must be one of 0, 90, 180, 270.
+ * @returns {Promise<Object>} Rotation update response.
+ */
+export async function updateDisplayRotation(rotationDegrees) {
+  const response = await fetch('/api/settings/display-rotation', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rotation_degrees: rotationDegrees }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(payload.message || `Failed to update display rotation (${response.status})`);
+  }
+
+  return payload;
 }
 
 /**

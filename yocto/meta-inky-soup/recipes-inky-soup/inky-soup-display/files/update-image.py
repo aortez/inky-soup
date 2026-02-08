@@ -91,6 +91,13 @@ def main():
         action="store_true",
         help="Skip dithering (image is pre-dithered)",
     )
+    parser.add_argument(
+        "--rotation",
+        type=int,
+        choices=[0, 90, 180, 270],
+        default=0,
+        help="Clockwise rotation to apply before final sizing (default: 0)",
+    )
     args = parser.parse_args()
 
     # Read display configuration.
@@ -111,6 +118,11 @@ def main():
 
     load_start = time.time()
     image = Image.open(args.image)
+
+    if args.rotation:
+        print(f"Applying rotation: {args.rotation}°", flush=True)
+        # PIL rotate is counterclockwise for positive values; negate for clockwise.
+        image = image.rotate(-args.rotation, expand=True)
 
     width, height = image.size
     print(f"Image size: {width}x{height}", flush=True)

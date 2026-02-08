@@ -13,6 +13,7 @@ export function initDOMCache() {
   // View containers.
   elements.galleryView = document.getElementById('galleryView');
   elements.detailView = document.getElementById('detailView');
+  elements.settingsView = document.getElementById('settingsView');
 
   // Detail view elements.
   elements.detailFilename = document.getElementById('detailFilename');
@@ -80,6 +81,11 @@ export function initDOMCache() {
   elements.uploadQueueList = document.getElementById('uploadQueueList');
   elements.uploadQueueStatus = document.getElementById('uploadQueueStatus');
   elements.uploadQueueCount = document.getElementById('uploadQueueCount');
+
+  // Settings view.
+  elements.rotationSelect = document.getElementById('rotationSelect');
+  elements.saveRotationBtn = document.getElementById('saveRotationBtn');
+  elements.rotationStatus = document.getElementById('rotationStatus');
 }
 
 /**

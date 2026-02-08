@@ -9,6 +9,11 @@ let displayConfig = {
   height: 1200,
   thumbWidth: 150,
   thumbHeight: 112,
+  physicalWidth: 1600,
+  physicalHeight: 1200,
+  physicalThumbWidth: 150,
+  physicalThumbHeight: 112,
+  rotationDegrees: 0,
   model: 'impression-13.3-2025',
   color: 'multi',
 };
@@ -146,6 +151,11 @@ export const getDisplayWidth = () => displayConfig.width;
 export const getDisplayHeight = () => displayConfig.height;
 export const getThumbWidth = () => displayConfig.thumbWidth;
 export const getThumbHeight = () => displayConfig.thumbHeight;
+export const getPhysicalDisplayWidth = () => displayConfig.physicalWidth;
+export const getPhysicalDisplayHeight = () => displayConfig.physicalHeight;
+export const getPhysicalThumbWidth = () => displayConfig.physicalThumbWidth;
+export const getPhysicalThumbHeight = () => displayConfig.physicalThumbHeight;
+export const getRotationDegrees = () => displayConfig.rotationDegrees;
 
 // Image lock getters/setters.
 export const getCurrentSessionId = () => currentSessionId;

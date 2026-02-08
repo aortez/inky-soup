@@ -11,6 +11,26 @@ pub static IMAGES_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
     PathBuf::from(env::var("INKY_SOUP_IMAGES_DIR").unwrap_or_else(|_| "static/images".to_string()))
 });
 
+/// Base directory for writable runtime data.
+/// Set via `INKY_SOUP_DATA_DIR`, defaults to parent of `IMAGES_DIR` when possible.
+pub fn data_dir() -> PathBuf {
+    if let Ok(path) = env::var("INKY_SOUP_DATA_DIR") {
+        return PathBuf::from(path);
+    }
+
+    if IMAGES_DIR
+        .file_name()
+        .is_some_and(|name| name.to_string_lossy() == "images")
+    {
+        return IMAGES_DIR
+            .parent()
+            .map(|path| path.to_path_buf())
+            .unwrap_or_else(|| IMAGES_DIR.clone());
+    }
+
+    IMAGES_DIR.clone()
+}
+
 /// Path to the cache directory.
 pub fn cache_dir() -> PathBuf {
     IMAGES_DIR.join("cache")
@@ -29,6 +49,16 @@ pub fn dithered_dir() -> PathBuf {
 /// Path to the metadata directory.
 pub fn metadata_dir() -> PathBuf {
     IMAGES_DIR.join("metadata")
+}
+
+/// Path to the runtime settings directory.
+pub fn settings_dir() -> PathBuf {
+    data_dir().join("settings")
+}
+
+/// Path to persisted runtime display settings.
+pub fn display_runtime_settings_path() -> PathBuf {
+    settings_dir().join("display-runtime.json")
 }
 
 /// Get the full path for a cached image.
@@ -59,6 +89,7 @@ pub fn required_dirs() -> Vec<PathBuf> {
         thumbs_dir(),
         dithered_dir(),
         metadata_dir(),
+        settings_dir(),
     ]
 }
 

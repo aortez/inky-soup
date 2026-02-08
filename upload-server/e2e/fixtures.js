@@ -31,12 +31,8 @@ export const test = base.extend({
     // Read test image into buffer.
     const buffer = fs.readFileSync(testImagePath);
 
-    // Trigger file chooser and upload with unique filename.
-    const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.locator('#dropZone').click();
-    const fileChooser = await fileChooserPromise;
-
-    await fileChooser.setFiles({
+    // Set files directly on the input for deterministic uploads in headless CI.
+    await page.setInputFiles('#fileInput', {
       name: uniqueFilename,
       mimeType: 'image/jpeg',
       buffer,
