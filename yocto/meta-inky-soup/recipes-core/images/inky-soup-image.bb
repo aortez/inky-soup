@@ -54,6 +54,9 @@ IMAGE_INSTALL:append = " \
     networkmanager-wifi \
 "
 
+# BLE WiFi provisioning daemon (Improv WiFi).
+IMAGE_INSTALL:append = " wifi-provisioner"
+
 # SSH access.
 IMAGE_INSTALL:append = " openssh-sshd openssh-sftp-server"
 
