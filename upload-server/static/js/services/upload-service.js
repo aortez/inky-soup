@@ -30,6 +30,16 @@ const UPLOAD_STATUS = {
   FAILED: 'failed',
 };
 
+function emptyPendingThumbnails() {
+  return {
+    cache: null,
+    thumb: null,
+    uploaded: false,
+    failed: false,
+    error: null,
+  };
+}
+
 /**
  * Get or create the upload filter worker.
  * @returns {Worker} The filter worker instance.
@@ -324,8 +334,18 @@ function waitForThumbnailsReady(showProgress) {
           elements.processingProgress.style.width = '100%';
           elements.processingProgress.classList.add('complete');
         }
-        setPendingThumbnails({ cache: null, thumb: null, uploaded: false });
-        resolve();
+        setPendingThumbnails(emptyPendingThumbnails());
+        resolve({ success: true });
+        return;
+      }
+
+      if (pending.failed) {
+        clearInterval(checkInterval);
+        setPendingThumbnails(emptyPendingThumbnails());
+        resolve({
+          success: false,
+          error: pending.error || 'Failed to upload generated thumbnails',
+        });
         return;
       }
 
@@ -359,29 +379,30 @@ async function processUploadQueue() {
 async function uploadQueueItem(item) {
   updateQueueItem(item.id, { status: UPLOAD_STATUS.UPLOADING, message: null });
   setUploadQueueCurrentId(item.id);
-  setPendingThumbnails({ cache: null, thumb: null, uploaded: false });
+  setPendingThumbnails(emptyPendingThumbnails());
 
   resetUploadModalState(item.file);
   elements.uploadModalFilename.textContent = item.name;
   elements.uploadModalImage.src = '';
 
   const currentId = item.id;
-  readFileAsDataURL(item.file)
+  const previewDataUrlPromise = readFileAsDataURL(item.file)
     .then((dataUrl) => {
-      if (getUploadQueueCurrentId() !== currentId) return;
+      if (getUploadQueueCurrentId() !== currentId) return null;
       elements.uploadModalImage.src = dataUrl;
-      generateThumbnails(dataUrl, item.name, DEFAULT_FIT_MODE);
+      return dataUrl;
     })
     .catch((err) => {
       console.error('Failed to read file for preview:', err);
-      setPendingThumbnails({ cache: null, thumb: null, uploaded: true });
+      return null;
     });
 
   const startTime = Date.now();
   let uploadError = null;
+  let uploadResponse = null;
 
   try {
-    await uploadOriginalImageWithProgress(item.file, (e) => {
+    uploadResponse = await uploadOriginalImageWithProgress(item.file, (e) => {
       if (e.lengthComputable) {
         const percent = Math.round((e.loaded / e.total) * 100);
         const elapsed = (Date.now() - startTime) / 1000;
@@ -403,9 +424,13 @@ async function uploadQueueItem(item) {
   if (uploadError) {
     updateQueueItem(item.id, { status: UPLOAD_STATUS.FAILED, message: uploadError.message });
     elements.uploadNote.textContent = `Upload failed for ${item.name}. Continuing...`;
-    await waitForThumbnailsReady(false);
+    setPendingThumbnails(emptyPendingThumbnails());
     return;
   }
+
+  const uploadedFilename = uploadResponse?.filename || item.name;
+  updateQueueItem(item.id, { name: uploadedFilename });
+  elements.uploadModalFilename.textContent = uploadedFilename;
 
   elements.uploadProgress.style.width = '100%';
   elements.uploadProgress.classList.add('complete');
@@ -415,9 +440,25 @@ async function uploadQueueItem(item) {
   elements.processingProgressContainer.style.display = 'block';
   updateQueueItem(item.id, { status: UPLOAD_STATUS.PROCESSING });
 
-  await waitForThumbnailsReady(true);
+  const previewDataUrl = await previewDataUrlPromise;
 
-  updateQueueItem(item.id, { status: UPLOAD_STATUS.COMPLETE });
+  if (!previewDataUrl) {
+    const message = `Missing preview data for ${uploadedFilename}`;
+    updateQueueItem(item.id, { status: UPLOAD_STATUS.FAILED, message });
+    elements.uploadNote.textContent = `Failed to process ${uploadedFilename}. Continuing...`;
+    setPendingThumbnails(emptyPendingThumbnails());
+    return;
+  }
+
+  generateThumbnails(previewDataUrl, uploadedFilename, DEFAULT_FIT_MODE);
+  const thumbnailResult = await waitForThumbnailsReady(true);
+  if (!thumbnailResult.success) {
+    updateQueueItem(item.id, { status: UPLOAD_STATUS.FAILED, message: thumbnailResult.error });
+    elements.uploadNote.textContent = `Failed to finish ${uploadedFilename}. Continuing...`;
+    return;
+  }
+
+  updateQueueItem(item.id, { status: UPLOAD_STATUS.COMPLETE, message: null });
 }
 
 /**
@@ -595,7 +636,11 @@ export function generateThumbnails(dataUrl, filename, fitMode = DEFAULT_FIT_MODE
 
   img.onerror = () => {
     console.error('Failed to load image for thumbnail generation:', filename);
-    setPendingThumbnails({ cache: null, thumb: null, uploaded: true });
+    setPendingThumbnails({
+      ...emptyPendingThumbnails(),
+      failed: true,
+      error: `Failed to decode image for ${filename}`,
+    });
   };
 
   img.src = dataUrl;
@@ -611,6 +656,14 @@ export async function uploadPendingThumbnails(filename) {
   // Wait for both thumbnails to be ready.
   if (!pending.cache || !pending.thumb) return;
   if (pending.cache.filename !== filename || pending.thumb.filename !== filename) return;
+  if (!pending.cache.blob || !pending.thumb.blob) {
+    setPendingThumbnails({
+      ...emptyPendingThumbnails(),
+      failed: true,
+      error: 'Failed to generate cache or thumbnail image',
+    });
+    return;
+  }
 
   try {
     // Upload cache with filter metadata (use defaults for dither settings on upload).
@@ -627,19 +680,41 @@ export async function uploadPendingThumbnails(filename) {
       null, // no session required for new uploads
     );
     if (!cacheData.success) {
-      console.error('Cache upload failed:', cacheData.message);
+      const message = cacheData.message || 'Cache upload failed';
+      console.error('Cache upload failed:', message);
+      setPendingThumbnails({
+        ...emptyPendingThumbnails(),
+        failed: true,
+        error: message,
+      });
+      return;
     }
 
     // Upload thumb.
     const thumbData = await uploadThumb(filename, pending.thumb.blob);
     if (!thumbData.success) {
-      console.error('Thumb upload failed:', thumbData.message);
+      const message = thumbData.message || 'Thumbnail upload failed';
+      console.error('Thumb upload failed:', message);
+      setPendingThumbnails({
+        ...emptyPendingThumbnails(),
+        failed: true,
+        error: message,
+      });
+      return;
     }
 
     // Mark thumbnails as uploaded.
-    setPendingThumbnails({ ...pending, uploaded: true });
+    setPendingThumbnails({
+      ...emptyPendingThumbnails(),
+      uploaded: true,
+    });
   } catch (err) {
     console.error('Error uploading thumbnails:', err);
+    setPendingThumbnails({
+      ...emptyPendingThumbnails(),
+      failed: true,
+      error: err.message || 'Thumbnail upload error',
+    });
   }
 }
 
@@ -651,6 +726,6 @@ export function closeUploadModal() {
   setUploadQueue([]);
   setUploadQueueActive(false);
   setUploadQueueCurrentId(null);
-  setPendingThumbnails({ cache: null, thumb: null, uploaded: false });
+  setPendingThumbnails(emptyPendingThumbnails());
   window.location.reload();
 }

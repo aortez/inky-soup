@@ -155,49 +155,60 @@ test.describe('Image Locking', () => {
     }
   });
 
-  test('should auto-expire locks after timeout', async ({ page }) => {
-    // Upload an image with unique filename.
-    await page.goto('/');
+  test('should auto-expire locks after timeout', async ({ browser }) => {
+    const userA = await browser.newContext();
+    const userB = await browser.newContext();
+    const pageA = await userA.newPage();
+    const pageB = await userB.newPage();
 
-    const uniqueFilename = `test_locking_expiry_${Date.now()}.png`;
-    const buffer = fs.readFileSync(testImagePath);
+    try {
+      // Upload an image as user A.
+      await pageA.goto('/');
 
-    const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.locator('#dropZone').click();
-    const fileChooser = await fileChooserPromise;
-    await fileChooser.setFiles({
-      name: uniqueFilename,
-      mimeType: 'image/jpeg',
-      buffer,
-    });
+      const uniqueFilename = `test_locking_expiry_${Date.now()}.png`;
+      const buffer = fs.readFileSync(testImagePath);
 
-    await expect(page.locator('#uploadModalTitle')).toHaveText('✓ Upload Complete!', { timeout: 30000 });
-    await page.locator('#uploadCloseBtn').click();
-    await page.waitForLoadState('networkidle');
+      const fileChooserPromise = pageA.waitForEvent('filechooser');
+      await pageA.locator('#dropZone').click();
+      const fileChooser = await fileChooserPromise;
+      await fileChooser.setFiles({
+        name: uniqueFilename,
+        mimeType: 'image/jpeg',
+        buffer,
+      });
 
-    // Acquire lock.
-    await clickThumbnail(page, uniqueFilename);
-    await expect(page.locator('#lockStatus')).toContainText('Editing');
+      await expect(pageA.locator('#uploadModalTitle')).toHaveText('✓ Upload Complete!', { timeout: 30000 });
+      await pageA.locator('#uploadCloseBtn').click();
+      await pageA.waitForLoadState('networkidle');
 
-    // Simulate lock expiry by stopping keepalive and waiting for expiration.
-    // (Server configured with LOCK_DURATION_SECS=3 for fast tests).
-    await page.evaluate(() => {
-      // Stop keepalive interval to let lock expire.
-      const intervalId = window._lockKeepaliveInterval;
-      if (intervalId) clearInterval(intervalId);
-    });
+      // User A acquires lock.
+      await clickThumbnail(pageA, uniqueFilename);
+      await expect(pageA.locator('#lockStatus')).toContainText('Editing');
 
-    // Go back to gallery.
-    await page.locator('.back-button').click();
-    await expect(page.locator('#galleryView')).toBeVisible();
+      const lockStatusText = await pageA.locator('#lockStatus').textContent();
+      const remainingSecsMatch = lockStatusText && lockStatusText.match(/(\d+)s/);
+      const waitForExpiryMs = ((parseInt(remainingSecsMatch?.[1] || '30', 10) + 2) * 1000);
 
-    // Wait for lock to expire (3 seconds + buffer for test environment).
-    await page.waitForTimeout(4000);
+      // Block keepalive refreshes from user A so lock can naturally expire.
+      await pageA.route('**/api/lock-image', (route) => route.abort());
 
-    // Another "user" (same browser, new navigation) should be able to acquire lock.
-    await clickThumbnail(page, uniqueFilename);
+      // User B should initially see read-only while lock is still active.
+      await clickThumbnail(pageB, uniqueFilename);
+      await expect(pageB.locator('#lockStatus')).toContainText('Read-only');
+      await pageB.locator('.back-button').click();
+      await expect(pageB.locator('#galleryView')).toBeVisible();
 
-    // Should show editing status (lock was acquired).
-    await expect(page.locator('#lockStatus')).toContainText('Editing');
+      // Wait for lock to expire plus a small buffer.
+      await pageB.waitForTimeout(waitForExpiryMs);
+
+      // User B can now acquire lock.
+      await clickThumbnail(pageB, uniqueFilename);
+      await expect(pageB.locator('#lockStatus')).toContainText('Editing');
+    } finally {
+      await pageA.close();
+      await pageB.close();
+      await userA.close();
+      await userB.close();
+    }
   });
 });

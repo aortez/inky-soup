@@ -273,6 +273,8 @@ fn thumb_status(filename: &str) -> Json<ThumbStatus> {
 struct LockImageRequest {
     filename: String,
     session_id: String,
+    #[serde(default)]
+    refresh_only: bool,
 }
 
 /// Response for image lock requests.
@@ -290,13 +292,26 @@ async fn lock_image(
     request: Json<LockImageRequest>,
     locks_state: &State<ImageLocksState>,
 ) -> Json<LockImageResponse> {
+    let filename = match sanitize_filename(&request.filename) {
+        Some(name) => name,
+        None => {
+            warn!("Rejected invalid lock filename: {}", request.filename);
+            return Json(LockImageResponse {
+                locked: false,
+                expires_in_secs: None,
+                reason: Some("Invalid filename".to_string()),
+            });
+        }
+    };
+
     match image_locks::try_acquire_lock(
         locks_state,
-        &request.filename,
+        &filename,
         &request.session_id,
+        request.refresh_only,
     ).await {
         Ok(true) => {
-            let expires_in = image_locks::get_lock_remaining_secs(locks_state, &request.filename)
+            let expires_in = image_locks::get_lock_remaining_secs(locks_state, &filename)
                 .await
                 .unwrap_or(image_locks::LOCK_DURATION_SECS);
 
@@ -307,7 +322,7 @@ async fn lock_image(
             })
         }
         Ok(false) => {
-            let expires_in = image_locks::get_lock_remaining_secs(locks_state, &request.filename).await;
+            let expires_in = image_locks::get_lock_remaining_secs(locks_state, &filename).await;
             Json(LockImageResponse {
                 locked: false,
                 expires_in_secs: expires_in,
@@ -343,7 +358,15 @@ async fn unlock_image(
     request: Json<UnlockImageRequest>,
     locks_state: &State<ImageLocksState>,
 ) -> Json<UnlockImageResponse> {
-    match image_locks::release_lock(locks_state, &request.filename, &request.session_id).await {
+    let filename = match sanitize_filename(&request.filename) {
+        Some(name) => name,
+        None => {
+            warn!("Rejected invalid unlock filename: {}", request.filename);
+            return Json(UnlockImageResponse { success: false });
+        }
+    };
+
+    match image_locks::release_lock(locks_state, &filename, &request.session_id).await {
         Ok(_) => Json(UnlockImageResponse { success: true }),
         Err(_) => Json(UnlockImageResponse { success: false }),
     }
@@ -764,16 +787,24 @@ async fn submit_flash_image<'r>(
         }
     };
 
-    // Get filename and path from submission.
-    let filename = &submission.submission.filename;
-    let dithered_path = config::dithered_path(filename);
+    // Sanitize filename to prevent path traversal.
+    let filename = match sanitize_filename(&submission.submission.filename) {
+        Some(name) => name,
+        None => {
+            warn!("Rejected invalid flash filename: {}", submission.submission.filename);
+            return Err((Status::BadRequest, "Invalid filename".to_string()));
+        }
+    };
+
+    // Get path from sanitized filename.
+    let dithered_path = config::dithered_path(&filename);
     let flash_twice = submission.submission.flash_twice;
     let session_id = &submission.submission.session_id;
 
     info!("Flash request received: {} (flash_twice: {}, session: {})", filename, flash_twice, session_id);
 
     // Verify lock ownership.
-    let has_lock = image_locks::verify_lock_ownership(locks_state, filename, session_id)
+    let has_lock = image_locks::verify_lock_ownership(locks_state, &filename, session_id)
         .await
         .unwrap_or(false);
 
@@ -790,7 +821,7 @@ async fn submit_flash_image<'r>(
 
     // Add to queue.
     let mut queue = queue_state.lock().await;
-    let job_id = queue.enqueue(filename.to_string(), dithered_path.to_string_lossy().to_string(), flash_twice);
+    let job_id = queue.enqueue(filename.clone(), dithered_path.to_string_lossy().to_string(), flash_twice);
     let queue_position = queue.get_position(job_id).unwrap_or(0);
     drop(queue);
 
@@ -833,16 +864,8 @@ async fn flash_status(queue_state: &State<FlashQueueState>) -> Json<FlashStatusR
 async fn flash_job_status(job_id: u64, queue_state: &State<FlashQueueState>) -> Result<Json<FlashJob>, Status> {
     let queue = queue_state.lock().await;
 
-    // Check current job.
-    if let Some(ref current) = queue.get_current_job() {
-        if current.job_id == job_id {
-            return Ok(Json(current.clone()));
-        }
-    }
-
-    // Check queued jobs.
-    if let Some(job) = queue.get_queued_jobs().iter().find(|j| j.job_id == job_id) {
-        return Ok(Json(job.clone()));
+    if let Some(job) = queue.find_job(job_id) {
+        return Ok(Json(job));
     }
 
     Err(Status::NotFound)

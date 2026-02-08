@@ -185,7 +185,9 @@ export async function getJobStatus(jobId) {
   const response = await fetch(`/api/flash/status/${jobId}`);
 
   if (!response.ok) {
-    throw new Error(`Failed to get job status: ${response.statusText}`);
+    const error = new Error(`Failed to get job status: ${response.status} ${response.statusText}`);
+    error.status = response.status;
+    throw error;
   }
 
   return response.json();
@@ -224,13 +226,20 @@ export async function getThumbStatus(filename) {
  * Acquire or refresh a lock on an image for editing.
  * @param {string} filename - The filename to lock.
  * @param {string} sessionId - The session ID requesting the lock.
+ * @param {boolean} [refreshOnly=false] - True for keepalive refresh without acquiring new lock.
+ * @param {AbortSignal} [signal] - Optional abort signal for request cancellation.
  * @returns {Promise<Object>} Lock response {locked, expires_in_secs, reason}.
  */
-export async function lockImage(filename, sessionId) {
+export async function lockImage(filename, sessionId, refreshOnly = false, signal = undefined) {
   const response = await fetch('/api/lock-image', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filename, session_id: sessionId }),
+    body: JSON.stringify({
+      filename,
+      session_id: sessionId,
+      refresh_only: refreshOnly,
+    }),
+    signal,
   });
 
   if (!response.ok) {

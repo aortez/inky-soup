@@ -40,6 +40,7 @@ pub async fn try_acquire_lock(
     locks: &ImageLocksState,
     filename: &str,
     session_id: &str,
+    refresh_only: bool,
 ) -> Result<bool, String> {
     let mut locks_map = locks.lock().await;
 
@@ -70,6 +71,12 @@ pub async fn try_acquire_lock(
             existing_lock.session_id,
             remaining.as_secs()
         );
+        return Ok(false);
+    }
+
+    // Keepalive refresh should not reacquire a missing lock.
+    if refresh_only {
+        debug!("Lock refresh denied: {} has no active lock", filename);
         return Ok(false);
     }
 

@@ -30,6 +30,8 @@ pub enum FlashJobStatus {
     Failed,
 }
 
+const FINISHED_JOB_RETENTION_MS: u64 = 30_000;
+
 /// A single flash job.
 #[derive(Debug, Clone, Serialize)]
 #[serde(crate = "rocket::serde")]
@@ -61,6 +63,8 @@ pub struct FlashQueue {
     current_job: Option<FlashJob>,
     /// Queued jobs waiting to be processed.
     queue: VecDeque<FlashJob>,
+    /// Recently finished jobs retained briefly for status polling.
+    recent_jobs: VecDeque<FlashJob>,
     /// Monotonically increasing job ID counter.
     next_job_id: u64,
 }
@@ -71,6 +75,7 @@ impl FlashQueue {
         Self {
             current_job: None,
             queue: VecDeque::new(),
+            recent_jobs: VecDeque::new(),
             next_job_id: 1,
         }
     }
@@ -98,6 +103,16 @@ impl FlashQueue {
 
     /// Takes the next job from the queue (if any) and marks it as current.
     fn dequeue(&mut self) -> Option<FlashJob> {
+        if let Some(ref current) = self.current_job {
+            match current.status {
+                FlashJobStatus::Flashing | FlashJobStatus::Queued => return None,
+                FlashJobStatus::Completed | FlashJobStatus::Failed => {
+                    self.recent_jobs.push_back(current.clone());
+                    self.current_job = None;
+                }
+            }
+        }
+
         self.queue.pop_front().map(|mut job| {
             job.status = FlashJobStatus::Flashing;
             job.started_at = Some(current_time_millis());
@@ -125,16 +140,33 @@ impl FlashQueue {
 
     /// Clears completed/failed job from current_job slot after delay.
     fn clear_current_if_finished(&mut self) {
+        self.prune_recent_jobs();
+
         if let Some(ref job) = self.current_job {
             if matches!(job.status, FlashJobStatus::Completed | FlashJobStatus::Failed) {
-                // Only clear if job finished more than 30 seconds ago.
                 if let Some(finished_at) = job.finished_at {
                     let now = current_time_millis();
-                    if now > finished_at && (now - finished_at) > 30_000 {
+                    if now > finished_at && (now - finished_at) > FINISHED_JOB_RETENTION_MS {
                         self.current_job = None;
                     }
                 }
             }
+        }
+    }
+
+    fn prune_recent_jobs(&mut self) {
+        let now = current_time_millis();
+        while let Some(job) = self.recent_jobs.front() {
+            let is_expired = match job.finished_at {
+                Some(finished_at) => now > finished_at && (now - finished_at) > FINISHED_JOB_RETENTION_MS,
+                None => true,
+            };
+
+            if !is_expired {
+                break;
+            }
+
+            self.recent_jobs.pop_front();
         }
     }
 
@@ -160,6 +192,24 @@ impl FlashQueue {
     /// Gets a clone of all queued jobs.
     pub fn get_queued_jobs(&self) -> Vec<FlashJob> {
         self.queue.iter().cloned().collect()
+    }
+
+    /// Finds a job by ID across current, queued, and recently finished jobs.
+    pub fn find_job(&self, job_id: u64) -> Option<FlashJob> {
+        if let Some(ref current) = self.current_job {
+            if current.job_id == job_id {
+                return Some(current.clone());
+            }
+        }
+
+        if let Some(job) = self.queue.iter().find(|job| job.job_id == job_id) {
+            return Some(job.clone());
+        }
+
+        self.recent_jobs
+            .iter()
+            .find(|job| job.job_id == job_id)
+            .cloned()
     }
 }
 
@@ -339,5 +389,24 @@ mod tests {
     fn test_nonexistent_job_position() {
         let queue = FlashQueue::new();
         assert_eq!(queue.get_position(999), None);
+    }
+
+    #[test]
+    fn test_finished_job_retained_while_next_job_flashing() {
+        let mut queue = FlashQueue::new();
+        let first_id = queue.enqueue("first.jpg".into(), "path/first.jpg.png".into(), false);
+        let second_id = queue.enqueue("second.jpg".into(), "path/second.jpg.png".into(), false);
+
+        // Start and complete first job.
+        queue.dequeue();
+        queue.mark_completed();
+
+        // Start second job; first should move to retained jobs.
+        let second = queue.dequeue().unwrap();
+        assert_eq!(second.job_id, second_id);
+        assert_eq!(second.status, FlashJobStatus::Flashing);
+
+        let first = queue.find_job(first_id).expect("first job should still be retained");
+        assert_eq!(first.status, FlashJobStatus::Completed);
     }
 }

@@ -171,11 +171,45 @@ export async function pollJobStatus(jobId, flashTwice) {
       setPollInterval(null);
     }
   } catch (err) {
-    // Job not found - stop polling.
-    console.error('Poll error:', err);
+    // Stop current polling cycle first.
     const interval = getPollInterval();
     if (interval) clearInterval(interval);
     setPollInterval(null);
+
+    // Job may have completed between polls and aged out of per-job lookup.
+    if (err.status === 404) {
+      try {
+        const data = await getFlashStatus();
+        const currentJob = data.current_job;
+
+        // If the same job is still active globally, resume tracking.
+        if (currentJob && currentJob.job_id === jobId) {
+          updateFlashStatus(currentJob, flashTwice);
+          const resumedInterval = setInterval(() => pollJobStatus(jobId, flashTwice), 1000);
+          setPollInterval(resumedInterval);
+          return;
+        }
+      } catch (statusErr) {
+        console.error('Failed to reconcile flash status after 404:', statusErr);
+      }
+
+      // Treat missing job as finished to avoid leaving UI stuck.
+      const filename = getCurrentFilename() || 'image';
+      updateFlashStatus({ status: 'Completed', filename }, flashTwice);
+      return;
+    }
+
+    // Unexpected polling error: surface to user and unblock controls.
+    console.error('Poll error:', err);
+    elements.statusIcon.textContent = '✗';
+    elements.statusText.textContent = `Status error: ${getCurrentFilename() || 'image'}`;
+    elements.statusProgress.style.width = '100%';
+    elements.statusProgress.classList.add('failed');
+    elements.flashModalTitle.textContent = '✗ Flash Status Error';
+    elements.flashModalTitle.style.color = '#ff6b6b';
+    elements.flashModalNote.textContent = err.message || 'Unable to read flash status';
+    elements.flashModalClose.style.display = 'block';
+    elements.flashBtn.disabled = false;
   }
 }
 

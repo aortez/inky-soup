@@ -99,7 +99,7 @@ export async function showDetailView(
   setCurrentSessionId(sessionId);
 
   try {
-    const lockResponse = await lockImage(filename, sessionId);
+    const lockResponse = await lockImage(filename, sessionId, false);
 
     if (!lockResponse.locked) {
       // Failed to acquire lock - switch to read-only mode.
@@ -117,9 +117,16 @@ export async function showDetailView(
       // Start keepalive timer (1 second for testing, will be 10s in production).
       const keepaliveInterval = setInterval(async () => {
         try {
-          const refreshResponse = await lockImage(filename, sessionId);
+          const refreshResponse = await lockImage(filename, sessionId, true);
           if (refreshResponse.locked) {
             updateLockStatus(false, refreshResponse.expires_in_secs);
+          } else {
+            // Lost lock (expired or released). Switch UI to read-only.
+            clearInterval(keepaliveInterval);
+            setLockKeepaliveInterval(null);
+            setIsReadOnly(true);
+            updateLockStatus(true, refreshResponse.expires_in_secs);
+            updateReadOnlyUI();
           }
         } catch (err) {
           console.error('Keepalive failed:', err);
@@ -245,7 +252,8 @@ export function initNavigation() {
     if (sessionId && filename) {
       // Use sendBeacon for reliable delivery during page unload.
       const data = JSON.stringify({ filename, session_id: sessionId });
-      navigator.sendBeacon('/api/unlock-image', data);
+      const body = new Blob([data], { type: 'application/json' });
+      navigator.sendBeacon('/api/unlock-image', body);
     }
   });
 
