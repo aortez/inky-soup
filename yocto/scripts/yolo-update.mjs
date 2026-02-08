@@ -10,6 +10,7 @@
  *   npm run yolo -- --clean         # Force rebuild (cleans image sstate)
  *   npm run yolo -- --clean-all     # Force full rebuild (cleans server + image)
  *   npm run yolo -- --skip-build    # Push existing image (skip kas build)
+ *   npm run yolo -- --skip-arch-check # Skip remote architecture safety check
  *   npm run yolo -- --dry-run       # Show what would happen
  *   npm run yolo -- --help          # Show help
  */
@@ -107,6 +108,62 @@ function getMachine(args) {
   warn('No machine configured. Use --zero1 or --zero2, or run "npm run flash" to set preference.');
   warn('Defaulting to Pi Zero W.');
   return MACHINES.zero1;
+}
+
+/**
+ * Determine target class from remote model/arch.
+ */
+function classifyRemoteMachine(model, uname) {
+  const modelLower = (model || '').toLowerCase();
+  const unameLower = (uname || '').toLowerCase();
+
+  if (modelLower.includes('zero 2')) return MACHINES.zero2;
+
+  if (
+    modelLower.includes('zero w') ||
+    modelLower.includes('raspberry pi zero rev') ||
+    modelLower === 'raspberry pi zero'
+  ) {
+    return MACHINES.zero1;
+  }
+
+  if (unameLower.startsWith('armv6')) return MACHINES.zero1;
+  if (unameLower.startsWith('armv7') || unameLower.startsWith('aarch64')) return MACHINES.zero2;
+
+  return null;
+}
+
+/**
+ * Verify selected machine matches remote hardware architecture.
+ */
+function verifyRemoteArchitecture(machine, skipArchCheck = false) {
+  const model = ssh(`if [ -r /proc/device-tree/model ]; then tr -d '\\0' < /proc/device-tree/model; fi`, { throwOnError: false }) || '';
+  const uname = ssh('uname -m', { throwOnError: false }) || 'unknown';
+
+  if (model) {
+    info(`Remote model: ${model}`);
+  }
+  info(`Remote arch: ${uname}`);
+
+  if (skipArchCheck) {
+    warn('Skipping architecture check (--skip-arch-check)');
+    return;
+  }
+
+  const detectedMachine = classifyRemoteMachine(model, uname);
+  if (!detectedMachine) {
+    throw new Error(
+      `Could not classify remote hardware from model="${model || 'unknown'}", arch="${uname}". Refusing to deploy. Re-run with --skip-arch-check to override.`,
+    );
+  }
+
+  if (detectedMachine.id !== machine.id) {
+    throw new Error(
+      `Architecture mismatch: selected ${machine.name} (${machine.machine}) but remote looks like ${detectedMachine.name} (${detectedMachine.machine}). Refusing to deploy.`,
+    );
+  }
+
+  success(`Architecture check passed (${detectedMachine.name})`);
 }
 
 // ============================================================================
@@ -322,6 +379,7 @@ async function main() {
   const args = process.argv.slice(2);
 
   const skipBuild = args.includes('--skip-build');
+  const skipArchCheck = args.includes('--skip-arch-check');
   const forceClean = args.includes('--clean');
   const forceCleanAll = args.includes('--clean-all');
   const dryRun = args.includes('--dry-run');
@@ -335,6 +393,7 @@ async function main() {
     log('  --zero1          Target Pi Zero W (ARMv6)');
     log('  --zero2          Target Pi Zero 2 W (ARMv7)');
     log('  --skip-build     Skip kas build, use existing tarball');
+    log('  --skip-arch-check Skip remote architecture safety check');
     log('  --clean          Force rebuild by cleaning image sstate first');
     log('  --clean-all      Force full rebuild (cleans server + image sstate)');
     log('  --dry-run        Show what would happen without doing it');
@@ -367,6 +426,9 @@ async function main() {
     process.exit(1);
   }
   success(`${REMOTE_HOST} is reachable`);
+
+  info('Checking remote architecture...');
+  verifyRemoteArchitecture(machine, skipArchCheck);
 
   // Get A/B partition info.
   const inactiveSlot = getInactiveSlot();
