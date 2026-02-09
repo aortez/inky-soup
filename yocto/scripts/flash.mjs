@@ -38,9 +38,11 @@ import {
   configureSSHKey,
   injectSSHKey,
   hasDataPartition,
+  getPartitionDevice,
   backupDataPartition,
   restoreDataPartition,
   cleanupBackup,
+  growDataPartition,
   setHostname,
   getBlockDevices,
   findLatestImage,
@@ -57,6 +59,7 @@ const CONFIG_FILE = join(YOCTO_DIR, '.flash-config.json');
 const WIFI_CREDS_FILE = join(YOCTO_DIR, 'wifi-creds.local');
 const DEFAULT_HOSTNAME = 'inky-soup';
 const IMAGE_SUFFIX = '.wic.gz';
+const DATA_FREE_PERCENT = 10;
 
 // Machine definitions.
 const MACHINES = {
@@ -309,7 +312,7 @@ async function main() {
   let backupDir = null;
   if (!dryRun && hasDataPartition(targetDevice)) {
     log('');
-    info(`Found existing data partition on ${targetDevice}4`);
+    info(`Found existing data partition on ${getPartitionDevice(targetDevice, 4)}`);
     const doBackup = await prompt('Backup /data before flashing? (Y/n): ');
     if (doBackup.toLowerCase() !== 'n') {
       backupDir = backupDataPartition(targetDevice);
@@ -335,6 +338,10 @@ async function main() {
       dryRun,
       bmapPath: existsSync(bmapPath) ? bmapPath : null,
     });
+
+    // Expand /data partition to use the available disk space (leaving some unallocated).
+    // This ensures restores of large /data backups succeed before the first boot.
+    growDataPartition(targetDevice, DATA_FREE_PERCENT, dryRun);
 
     // Inject SSH key after flashing.
     await injectSSHKey(targetDevice, config.ssh_key_path, SSH_USERNAME, SSH_UID, dryRun);

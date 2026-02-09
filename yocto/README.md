@@ -70,11 +70,13 @@ A/B partition scheme for safe OTA updates:
 | Partition | Size    | Label    | Purpose                                    |
 |-----------|---------|----------|--------------------------------------------|
 | 1         | 150 MB  | boot     | Kernel, device tree, config.txt           |
-| 2         | 800 MB  | rootfs_a | Primary system (active on first boot)     |
-| 3         | 800 MB  | rootfs_b | Secondary system (for OTA updates)        |
-| 4         | 100 MB  | data     | Persistent storage (WiFi creds, logs)     |
+| 2         | 1800 MB | rootfs_a | Primary system (active on first boot)     |
+| 3         | 1800 MB | rootfs_b | Secondary system (for OTA updates)        |
+| 4         | ~90% of disk | data | Persistent storage (WiFi creds, logs, images) |
 
 The data partition survives all updates. WiFi credentials configured via `nmcli`/`nmtui` are stored in `/data/NetworkManager/system-connections/` and bind-mounted into place on boot.
+
+When flashing with `npm run flash`, the script expands the `data` partition to fill the available space (leaving 10% of the disk unallocated) and runs `resize2fs` so `/data` is large enough for cached/dithered images. If you flash the `.wic.gz` directly (dd/Etcher), `/data` will stay at the image's initial size.
 
 ### Included Packages
 
