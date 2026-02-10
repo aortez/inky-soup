@@ -5,6 +5,7 @@
 
 import {
   setCurrentView,
+  getCurrentView,
   getCurrentFilename,
   setCurrentFilename,
   setCurrentPath,
@@ -28,11 +29,9 @@ import { updateLockStatus, updateReadOnlyUI } from './detail-view.js';
 import { generateUUID } from '../utils/uuid.js';
 import { applyFilterToCanvas } from '../services/filter-service.js';
 import { applyDither } from '../services/dither-service.js';
+import { syncSettingsForm } from './settings-view.js';
 
-/**
- * Show the gallery view and release any image lock.
- */
-export async function showGalleryView() {
+async function releaseCurrentImageLock() {
   // Release lock if we have one.
   const sessionId = getCurrentSessionId();
   const filename = getCurrentFilename();
@@ -54,13 +53,41 @@ export async function showGalleryView() {
 
   // Reset lock state.
   setCurrentSessionId(null);
+  setCurrentFilename(null);
+  setCurrentPath(null);
   setIsReadOnly(false);
+}
+
+/**
+ * Show the gallery view and release any image lock.
+ */
+export async function showGalleryView() {
+  await releaseCurrentImageLock();
 
   elements.detailView.classList.remove('active');
+  elements.settingsView.classList.remove('active');
   elements.galleryView.classList.add('active');
   setCurrentView('gallery');
   window.scrollTo(0, 0);
   window.history.pushState({ view: 'gallery' }, '', '#');
+}
+
+/**
+ * Show the settings view.
+ * If currently editing an image, release lock before switching.
+ */
+export async function showSettingsView() {
+  if (getCurrentView() === 'detail') {
+    await releaseCurrentImageLock();
+  }
+
+  syncSettingsForm();
+  elements.galleryView.classList.remove('active');
+  elements.detailView.classList.remove('active');
+  elements.settingsView.classList.add('active');
+  setCurrentView('settings');
+  window.scrollTo(0, 0);
+  window.history.pushState({ view: 'settings' }, '', '#settings');
 }
 
 /**
@@ -259,6 +286,11 @@ export function initNavigation() {
 
   // Handle browser back/forward.
   window.addEventListener('popstate', (e) => {
+    if (e.state && e.state.view === 'settings') {
+      showSettingsView();
+      return;
+    }
+
     if (e.state && e.state.view === 'detail' && e.state.filename) {
       // Try to find the thumbnail data.
       const thumb = query(`img[data-filename="${e.state.filename}"]`);

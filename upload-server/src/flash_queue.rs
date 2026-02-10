@@ -4,7 +4,7 @@
 //! This allows the HTTP endpoint to return immediately while the actual
 //! flashing happens asynchronously.
 
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use rocket::serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -12,6 +12,8 @@ use std::time::{Duration, SystemTime};
 use tokio::process::Command;
 use tokio::sync::Mutex;
 use tokio::time;
+
+use crate::display_settings;
 
 /// Shared flash queue state type.
 pub type FlashQueueState = Arc<Mutex<FlashQueue>>;
@@ -40,10 +42,12 @@ pub struct FlashJob {
     pub job_id: u64,
     /// Original filename (for display).
     pub filename: String,
-    /// Path to dithered image file.
+    /// Path to immutable flash snapshot image file.
     pub dithered_path: String,
     /// Whether to flash twice.
     pub flash_twice: bool,
+    /// Physical display mounting rotation captured at queue time.
+    pub rotation_degrees: u16,
     /// Job state.
     pub status: FlashJobStatus,
     /// When the job was created (Unix timestamp in milliseconds).
@@ -81,7 +85,13 @@ impl FlashQueue {
     }
 
     /// Adds a job to the queue and returns the job ID.
-    pub fn enqueue(&mut self, filename: String, dithered_path: String, flash_twice: bool) -> u64 {
+    pub fn enqueue(
+        &mut self,
+        filename: String,
+        dithered_path: String,
+        flash_twice: bool,
+        rotation_degrees: u16,
+    ) -> u64 {
         let job_id = self.next_job_id;
         self.next_job_id += 1;
 
@@ -90,6 +100,7 @@ impl FlashQueue {
             filename,
             dithered_path,
             flash_twice,
+            rotation_degrees,
             status: FlashJobStatus::Queued,
             created_at: current_time_millis(),
             started_at: None,
@@ -143,7 +154,10 @@ impl FlashQueue {
         self.prune_recent_jobs();
 
         if let Some(ref job) = self.current_job {
-            if matches!(job.status, FlashJobStatus::Completed | FlashJobStatus::Failed) {
+            if matches!(
+                job.status,
+                FlashJobStatus::Completed | FlashJobStatus::Failed
+            ) {
                 if let Some(finished_at) = job.finished_at {
                     let now = current_time_millis();
                     if now > finished_at && (now - finished_at) > FINISHED_JOB_RETENTION_MS {
@@ -158,7 +172,9 @@ impl FlashQueue {
         let now = current_time_millis();
         while let Some(job) = self.recent_jobs.front() {
             let is_expired = match job.finished_at {
-                Some(finished_at) => now > finished_at && (now - finished_at) > FINISHED_JOB_RETENTION_MS,
+                Some(finished_at) => {
+                    now > finished_at && (now - finished_at) > FINISHED_JOB_RETENTION_MS
+                }
                 None => true,
             };
 
@@ -241,13 +257,30 @@ pub fn spawn_flash_worker(queue_state: FlashQueueState) {
             };
 
             if let Some(job) = job {
+                let flash_rotation_degrees =
+                    display_settings::compute_flash_rotation_degrees(job.rotation_degrees);
                 info!(
-                    "Processing flash job {}: {} (flash_twice: {})",
-                    job.job_id, job.filename, job.flash_twice
+                    "Processing flash job {}: {} (flash_twice: {}, mount_rotation: {}, flash_rotation: {})",
+                    job.job_id,
+                    job.filename,
+                    job.flash_twice,
+                    job.rotation_degrees,
+                    flash_rotation_degrees
                 );
 
                 // Execute flash operation.
-                let result = execute_flash(&job.dithered_path, job.flash_twice).await;
+                let result = execute_flash(
+                    &job.dithered_path,
+                    job.flash_twice,
+                    flash_rotation_degrees,
+                )
+                .await;
+                if let Err(e) = cleanup_flash_snapshot(&job.dithered_path).await {
+                    warn!(
+                        "Failed to clean flash snapshot for job {} ({}): {}",
+                        job.job_id, job.dithered_path, e
+                    );
+                }
 
                 // Update queue state.
                 let mut queue = queue_state.lock().await;
@@ -270,13 +303,19 @@ pub fn spawn_flash_worker(queue_state: FlashQueueState) {
 }
 
 /// Executes the actual flash operation by running the Python script.
-async fn execute_flash(dithered_path: &str, flash_twice: bool) -> Result<(), String> {
+async fn execute_flash(
+    dithered_path: &str,
+    flash_twice: bool,
+    rotation_degrees: u16,
+) -> Result<(), String> {
     debug!("Executing flash script for {}", dithered_path);
 
     // TODO: Port e2e tests to Docker environment mimicking production.
     let output = Command::new("/usr/bin/inky-soup-update-display")
         .arg(dithered_path)
         .arg("--skip-dither")
+        .arg("--rotation")
+        .arg(rotation_degrees.to_string())
         .output()
         .await
         .map_err(|e| format!("Failed to execute script: {}", e))?;
@@ -298,6 +337,8 @@ async fn execute_flash(dithered_path: &str, flash_twice: bool) -> Result<(), Str
         let output2 = Command::new("/usr/bin/inky-soup-update-display")
             .arg(dithered_path)
             .arg("--skip-dither")
+            .arg("--rotation")
+            .arg(rotation_degrees.to_string())
             .output()
             .await
             .map_err(|e| format!("Failed to execute second flash: {}", e))?;
@@ -316,6 +357,14 @@ async fn execute_flash(dithered_path: &str, flash_twice: bool) -> Result<(), Str
     Ok(())
 }
 
+async fn cleanup_flash_snapshot(path: &str) -> Result<(), String> {
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("cleanup failed: {}", e)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,8 +372,8 @@ mod tests {
     #[test]
     fn test_enqueue_increments_job_id() {
         let mut queue = FlashQueue::new();
-        let id1 = queue.enqueue("a.jpg".into(), "path/a.jpg.png".into(), false);
-        let id2 = queue.enqueue("b.jpg".into(), "path/b.jpg.png".into(), false);
+        let id1 = queue.enqueue("a.jpg".into(), "path/a.jpg.png".into(), false, 0);
+        let id2 = queue.enqueue("b.jpg".into(), "path/b.jpg.png".into(), false, 90);
         assert_eq!(id1, 1);
         assert_eq!(id2, 2);
     }
@@ -332,9 +381,9 @@ mod tests {
     #[test]
     fn test_get_position() {
         let mut queue = FlashQueue::new();
-        let id1 = queue.enqueue("a.jpg".into(), "path/a.jpg.png".into(), false);
-        let id2 = queue.enqueue("b.jpg".into(), "path/b.jpg.png".into(), false);
-        let id3 = queue.enqueue("c.jpg".into(), "path/c.jpg.png".into(), false);
+        let id1 = queue.enqueue("a.jpg".into(), "path/a.jpg.png".into(), false, 0);
+        let id2 = queue.enqueue("b.jpg".into(), "path/b.jpg.png".into(), false, 0);
+        let id3 = queue.enqueue("c.jpg".into(), "path/c.jpg.png".into(), false, 0);
 
         // All in queue, positions are 1, 2, 3.
         assert_eq!(queue.get_position(id1), Some(1));
@@ -351,8 +400,8 @@ mod tests {
     #[test]
     fn test_dequeue_fifo_order() {
         let mut queue = FlashQueue::new();
-        queue.enqueue("first.jpg".into(), "path/first.jpg.png".into(), false);
-        queue.enqueue("second.jpg".into(), "path/second.jpg.png".into(), true);
+        queue.enqueue("first.jpg".into(), "path/first.jpg.png".into(), false, 0);
+        queue.enqueue("second.jpg".into(), "path/second.jpg.png".into(), true, 270);
 
         let job1 = queue.dequeue().unwrap();
         assert_eq!(job1.filename, "first.jpg");
@@ -364,12 +413,13 @@ mod tests {
         let job2 = queue.dequeue().unwrap();
         assert_eq!(job2.filename, "second.jpg");
         assert!(job2.flash_twice);
+        assert_eq!(job2.rotation_degrees, 270);
     }
 
     #[test]
     fn test_job_status_transitions() {
         let mut queue = FlashQueue::new();
-        queue.enqueue("test.jpg".into(), "path/test.jpg.png".into(), false);
+        queue.enqueue("test.jpg".into(), "path/test.jpg.png".into(), false, 180);
 
         // Job starts as Queued.
         let queued_job = queue.queue.front().unwrap();
@@ -394,8 +444,8 @@ mod tests {
     #[test]
     fn test_finished_job_retained_while_next_job_flashing() {
         let mut queue = FlashQueue::new();
-        let first_id = queue.enqueue("first.jpg".into(), "path/first.jpg.png".into(), false);
-        let second_id = queue.enqueue("second.jpg".into(), "path/second.jpg.png".into(), false);
+        let first_id = queue.enqueue("first.jpg".into(), "path/first.jpg.png".into(), false, 0);
+        let second_id = queue.enqueue("second.jpg".into(), "path/second.jpg.png".into(), false, 90);
 
         // Start and complete first job.
         queue.dequeue();
@@ -406,7 +456,9 @@ mod tests {
         assert_eq!(second.job_id, second_id);
         assert_eq!(second.status, FlashJobStatus::Flashing);
 
-        let first = queue.find_job(first_id).expect("first job should still be retained");
+        let first = queue
+            .find_job(first_id)
+            .expect("first job should still be retained");
         assert_eq!(first.status, FlashJobStatus::Completed);
     }
 }

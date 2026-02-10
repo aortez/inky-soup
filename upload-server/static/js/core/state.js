@@ -9,6 +9,15 @@ let displayConfig = {
   height: 1200,
   thumbWidth: 150,
   thumbHeight: 112,
+  logicalWidth: 1600,
+  logicalHeight: 1200,
+  logicalThumbWidth: 150,
+  logicalThumbHeight: 112,
+  physicalWidth: 1600,
+  physicalHeight: 1200,
+  physicalThumbWidth: 150,
+  physicalThumbHeight: 112,
+  rotationDegrees: 0,
   model: 'impression-13.3-2025',
   color: 'multi',
 };
@@ -39,9 +48,6 @@ let pollInterval = null;
 // Upload workers.
 let uploadCacheWorker = null;
 let uploadThumbWorker = null;
-
-// Pending thumbnails (for upload coordination).
-let pendingThumbnails = { cache: null, thumb: null, uploaded: false };
 
 // Upload queue state.
 let uploadQueue = [];
@@ -121,12 +127,6 @@ export const setUploadCacheWorker = (worker) => { uploadCacheWorker = worker; };
 export const getUploadThumbWorker = () => uploadThumbWorker;
 export const setUploadThumbWorker = (worker) => { uploadThumbWorker = worker; };
 
-// Pending thumbnails getters/setters.
-export const getPendingThumbnails = () => pendingThumbnails;
-export const setPendingThumbnails = (thumbnails) => {
-  pendingThumbnails = thumbnails;
-};
-
 // Upload queue getters/setters.
 export const getUploadQueue = () => uploadQueue;
 export const setUploadQueue = (queue) => { uploadQueue = queue; };
@@ -146,6 +146,15 @@ export const getDisplayWidth = () => displayConfig.width;
 export const getDisplayHeight = () => displayConfig.height;
 export const getThumbWidth = () => displayConfig.thumbWidth;
 export const getThumbHeight = () => displayConfig.thumbHeight;
+export const getPhysicalDisplayWidth = () => displayConfig.physicalWidth;
+export const getPhysicalDisplayHeight = () => displayConfig.physicalHeight;
+export const getPhysicalThumbWidth = () => displayConfig.physicalThumbWidth;
+export const getPhysicalThumbHeight = () => displayConfig.physicalThumbHeight;
+export const getLogicalDisplayWidth = () => displayConfig.logicalWidth;
+export const getLogicalDisplayHeight = () => displayConfig.logicalHeight;
+export const getLogicalThumbWidth = () => displayConfig.logicalThumbWidth;
+export const getLogicalThumbHeight = () => displayConfig.logicalThumbHeight;
+export const getRotationDegrees = () => displayConfig.rotationDegrees;
 
 // Image lock getters/setters.
 export const getCurrentSessionId = () => currentSessionId;

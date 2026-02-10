@@ -87,14 +87,14 @@ test.describe('Image Locking', () => {
       await expect(flashBtnB).toBeDisabled();
 
       // User A exits → releases lock.
-      await pageA.locator('.back-button').click();
+      await pageA.locator('#detailView .back-button').click();
       await expect(pageA.locator('#galleryView')).toBeVisible();
 
       // Small delay for unlock to propagate.
       await pageB.waitForTimeout(1000);
 
       // User B goes back and re-enters → should now acquire lock.
-      await pageB.locator('.back-button').click();
+      await pageB.locator('#detailView .back-button').click();
       await expect(pageB.locator('#galleryView')).toBeVisible();
       await clickThumbnail(pageB, uniqueFilename);
 
@@ -124,14 +124,14 @@ test.describe('Image Locking', () => {
       await expect(pageB.locator('#filterStatus')).toContainText('saved', { timeout: 1000 });
 
       // User B exits → releases lock.
-      await pageB.locator('.back-button').click();
+      await pageB.locator('#detailView .back-button').click();
       await expect(pageB.locator('#galleryView')).toBeVisible();
 
       // Small delay for unlock.
       await pageA.waitForTimeout(1000);
 
       // User A goes back and re-enters → should now acquire lock.
-      await pageA.locator('.back-button').click();
+      await pageA.locator('#detailView .back-button').click();
       await expect(pageA.locator('#galleryView')).toBeVisible();
       await clickThumbnail(pageA, uniqueFilename);
 
@@ -144,7 +144,7 @@ test.describe('Image Locking', () => {
       await expect(flashBtnA).toBeEnabled();
 
       // User A exits.
-      await pageA.locator('.back-button').click();
+      await pageA.locator('#detailView .back-button').click();
       await expect(pageA.locator('#galleryView')).toBeVisible();
     } finally {
       // Cleanup.
@@ -195,7 +195,7 @@ test.describe('Image Locking', () => {
       // User B should initially see read-only while lock is still active.
       await clickThumbnail(pageB, uniqueFilename);
       await expect(pageB.locator('#lockStatus')).toContainText('Read-only');
-      await pageB.locator('.back-button').click();
+      await pageB.locator('#detailView .back-button').click();
       await expect(pageB.locator('#galleryView')).toBeVisible();
 
       // Wait for lock to expire plus a small buffer.

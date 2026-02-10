@@ -67,6 +67,11 @@ local_conf_header:
     ROOTFS_SIZE = "1800"
     DATA_SIZE = "100"
 
+    # Persistent /data project directory.
+    PERSISTENT_DATA_APP_DIR = "inky-soup"
+    PERSISTENT_DATA_APP_USER = "inky"
+    PERSISTENT_DATA_APP_GROUP = "inky"
+
     # Faster builds - adjust to your CPU cores.
     BB_NUMBER_THREADS = "8"
     PARALLEL_MAKE = "-j 8"

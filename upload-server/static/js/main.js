@@ -5,12 +5,18 @@
 
 // Core imports.
 import { initDOMCache } from './core/dom.js';
-import { setDisplayConfig } from './core/state.js';
+import { setDisplayConfig, getCurrentSessionId, getIsReadOnly } from './core/state.js';
 
 // UI imports.
-import { initNavigation, showDetailView, showGalleryView } from './ui/navigation.js';
+import {
+  initNavigation,
+  showDetailView,
+  showGalleryView,
+  showSettingsView,
+} from './ui/navigation.js';
 import { initDetailView } from './ui/detail-view.js';
 import { initGalleryView } from './ui/gallery-view.js';
+import { initSettingsView } from './ui/settings-view.js';
 import { initFilterControls, applyFilter } from './ui/filter-controls.js';
 import { initFitModeControls } from './ui/fit-mode-controls.js';
 import { initSaturationControls } from './ui/saturation-controls.js';
@@ -29,7 +35,6 @@ import {
 import { checkGlobalFlashStatus, flashImage } from './services/flash-service.js';
 import { updateSaturation, updateBrightness, updateContrast } from './services/dither-service.js';
 import { getDisplayConfig } from './services/api-client.js';
-import { getCurrentSessionId, getIsReadOnly } from './core/state.js';
 
 /**
  * Load display configuration from server.
@@ -40,12 +45,29 @@ async function loadDisplayConfig() {
     const config = await getDisplayConfig();
     console.log('Display config loaded:', config);
 
-    // Store in state (convert snake_case to camelCase).
+    // UI dimensions remain mount-agnostic (physical panel dimensions).
+    const physicalWidth = config.physical_width ?? config.width;
+    const physicalHeight = config.physical_height ?? config.height;
+    const physicalThumbWidth = config.physical_thumb_width ?? config.thumb_width;
+    const physicalThumbHeight = config.physical_thumb_height ?? config.thumb_height;
+    const logicalWidth = config.logical_width ?? physicalWidth;
+    const logicalHeight = config.logical_height ?? physicalHeight;
+    const logicalThumbWidth = config.logical_thumb_width ?? physicalThumbWidth;
+    const logicalThumbHeight = config.logical_thumb_height ?? physicalThumbHeight;
     setDisplayConfig({
-      width: config.width,
-      height: config.height,
-      thumbWidth: config.thumb_width,
-      thumbHeight: config.thumb_height,
+      width: physicalWidth,
+      height: physicalHeight,
+      thumbWidth: physicalThumbWidth,
+      thumbHeight: physicalThumbHeight,
+      logicalWidth,
+      logicalHeight,
+      logicalThumbWidth,
+      logicalThumbHeight,
+      physicalWidth,
+      physicalHeight,
+      physicalThumbWidth,
+      physicalThumbHeight,
+      rotationDegrees: config.rotation_degrees ?? 0,
       model: config.model,
       color: config.color,
     });
@@ -55,20 +77,20 @@ async function loadDisplayConfig() {
     const ditherCanvas = document.getElementById('ditherCanvas');
 
     if (filterCanvas) {
-      filterCanvas.width = config.width;
-      filterCanvas.height = config.height;
+      filterCanvas.width = physicalWidth;
+      filterCanvas.height = physicalHeight;
     }
     if (ditherCanvas) {
-      ditherCanvas.width = config.width;
-      ditherCanvas.height = config.height;
+      ditherCanvas.width = physicalWidth;
+      ditherCanvas.height = physicalHeight;
     }
 
     // Update dimension labels.
     document.querySelectorAll('.pipeline-stage-label').forEach((label) => {
       if (label.textContent.includes('resized')) {
-        label.textContent = `${config.width} × ${config.height} (resized)`;
+        label.textContent = `${physicalWidth} × ${physicalHeight} (resized)`;
       } else if (label.textContent.includes('colors')) {
-        label.textContent = `${config.width} × ${config.height} (7 colors)`;
+        label.textContent = `${physicalWidth} × ${physicalHeight} (7 colors)`;
       }
     });
   } catch (error) {
@@ -88,6 +110,7 @@ async function init() {
 
   // 3. Initialize UI modules.
   initNavigation();
+  initSettingsView();
   initDetailView();
   initGalleryView();
   initFilterControls();
@@ -114,6 +137,7 @@ if (document.readyState === 'loading') {
 // TODO: Migrate to event delegation to remove these global exports.
 window.showDetailView = showDetailView;
 window.showGalleryView = showGalleryView;
+window.showSettingsView = showSettingsView;
 window.showDeleteConfirmation = showDeleteConfirmation;
 window.closeDeleteConfirmation = closeDeleteConfirmation;
 window.confirmDelete = confirmDelete;

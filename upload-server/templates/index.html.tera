@@ -231,6 +231,37 @@
         background: #8B0000;
         color: #fff;
       }
+      .settings-button {
+        background: #3A2A1F;
+        border: 2px solid #6B8E4E;
+        color: #C9DBBD;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 1em;
+        transition: all 0.2s;
+        white-space: nowrap;
+      }
+      .settings-button:hover {
+        border-color: #B8956A;
+        background: rgba(184, 149, 106, 0.2);
+      }
+      .gallery-header-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 12px;
+      }
+      .settings-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        max-width: 380px;
+      }
+      .settings-note {
+        margin: 0;
+        color: #888;
+        font-size: 0.9em;
+      }
 
       /* Pipeline flow layout. */
       .pipeline {
@@ -835,6 +866,10 @@
     <div class="container">
       <!-- Gallery View -->
       <div id="galleryView" class="view-container active">
+        <div class="gallery-header-actions">
+          <button class="settings-button" onclick="showSettingsView()">Display Settings</button>
+        </div>
+
         {% if errors | length >= 1 %}
           <small class="text-error" style="margin-top: 20px">
             Errors:
@@ -1035,6 +1070,33 @@
             </button>
           </div>
         </div>
+      </div>
+
+      <!-- Settings View -->
+      <div id="settingsView" class="view-container">
+        <div class="detail-header">
+          <button class="back-button" onclick="showGalleryView()">← Back to Gallery</button>
+          <div class="detail-filename">Display Settings</div>
+        </div>
+
+        <fieldset>
+          <legend>Mount orientation</legend>
+          <div class="settings-panel">
+            <label for="rotationSelect">Display mount rotation (clockwise)</label>
+            <select id="rotationSelect">
+              <option value="0">0°</option>
+              <option value="90">90°</option>
+              <option value="180">180°</option>
+              <option value="270">270°</option>
+            </select>
+            <button id="saveRotationBtn" class="settings-button" type="button">Save orientation</button>
+            <div id="rotationStatus" class="filter-status"></div>
+            <p class="settings-note">
+              This represents how the display is mounted. The gallery/detail preview stays upright and existing cache, thumbnails, and dithered assets are preserved.
+              Changing orientation applies on the next flash and may change flash framing for 90°/270° mounts.
+            </p>
+          </div>
+        </fieldset>
       </div>
     </div>
 

@@ -42,7 +42,7 @@ test.describe('Gallery with Images', () => {
     await expect(page.locator('#detailView')).toBeVisible();
 
     // Click back button.
-    await page.locator('.back-button').click();
+    await page.locator('#detailView .back-button').click();
 
     // Should return to gallery.
     await expect(page.locator('#galleryView')).toBeVisible();

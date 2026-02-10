@@ -28,7 +28,10 @@ import { elements, query, queryAll } from '../core/dom.js';
 import { applyDither } from './dither-service.js';
 import { uploadCache, uploadThumb } from './api-client.js';
 import { loadOriginal } from './image-loader.js';
-import { createImageDataFromImage, drawImageToFit } from '../utils/image-utils.js';
+import {
+  createImageDataFromImage,
+  drawImageToFit,
+} from '../utils/image-utils.js';
 import { CACHE_VERSION } from '../core/constants.js';
 
 // Track filter operation start time for logging.

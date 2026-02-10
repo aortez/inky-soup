@@ -26,20 +26,36 @@ The project consists of two components:
 for all the web stuff.
 1. A python script for flashing the images to the screen.
 
-**New:** We're building a complete Yocto Linux image for turnkey deployment. See `yocto/README.md` for the integrated build system (currently in development).
+**Recommended:** Deploy using the Yocto image + tools under `yocto/` (includes fast app-only deploy via `npm run yolo -- --fast`). See `yocto/README.md`.
 
 ## Prerequisites
 
 **On your development machine:**
 - Rust (via rustup)
-- Docker (required for cross-compilation)
+- Node.js (for `upload-server/` tests and `yocto/` tooling)
 
-**On your Pi Zero:**
-- Raspberry Pi OS (tested with Trixie/Bookworm)
-- Python 3 with `pillow` and `inky` libraries
-- SPI and I2C enabled
+**On your device:**
+- Yocto image from this repo (recommended) or Raspberry Pi OS (legacy)
 
-## Pi Zero Setup
+## Deploy (Yocto)
+
+See `yocto/README.md` for full details. Typical workflow:
+
+```bash
+cd yocto
+npm install          # First time only
+npm run build        # Build image
+npm run flash        # Flash to SD card (interactive)
+
+# After the device is flashed and on the network:
+npm run yolo -- --fast  # Fast deploy (app-only, no reboot)
+```
+
+Fast deploy updates `/usr/bin/inky-soup-server` plus `/usr/share/inky-soup/{static,templates}` and restarts `inky-soup-server.service`.
+
+## Legacy: Raspberry Pi OS Setup
+
+If you're not using the Yocto image, you can still run on Raspberry Pi OS with the Python Inky stack.
 
 Enable SPI and I2C in `/boot/firmware/config.txt`:
 
@@ -55,45 +71,6 @@ Install Python dependencies on the Pi:
 sudo apt-get install -y python3-pil python3-numpy python3-spidev python3-smbus2
 pip3 install --break-system-packages inky
 ```
-
-## First-Time Setup (Development Machine)
-
-Set up cross-compilation tools (only needed once):
-
-    ./setup-crosscompile.sh
-
-This installs `cross`, a Docker-based cross-compilation tool that properly supports
-the Pi Zero's ARMv6 architecture.
-
-## Deploy to Your Pi
-
-Use the deploy script to build and deploy to your Pi:
-
-    INKY_SOUP_IP=<your Pi's IP or hostname> ./deploy.sh
-
-For non-default usernames (default is `pi`):
-
-    DEPLOY_USER=oldman INKY_SOUP_IP=inky-soup.local ./deploy.sh
-
-This builds an optimized release binary, deploys it to your Pi, and automatically restarts the service.
-
-To enable the service on first deployment (so it starts on boot):
-
-    ssh <your-pi> "sudo systemctl enable inky-soup.service"
-
-Now, visit your Pi in a web browser (port 8000) over your local network and start uploading images!
-
-To tail logs on the remote Pi:
-
-    DEPLOY_USER=oldman INKY_SOUP_IP=inky-soup.local ./tail_remote_logs.sh
-
-## SD Card Deployment
-
-For initial setup or when the Pi isn't on the network, use the SD card deploy script:
-
-    SDCARD_ROOT=/media/user/rootfs ./deploy-sdcard.sh
-
-This copies files directly to a mounted SD card via a remote machine (useful for headless setup).
 
 ## Development & Testing
 

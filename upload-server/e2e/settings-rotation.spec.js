@@ -1,0 +1,131 @@
+/**
+ * E2E tests for Settings view and global display rotation workflow.
+ */
+
+import { test, expect, openDetailView } from './fixtures.js';
+
+test.describe('Display Settings', () => {
+  test('invalid rotation API values should return 400 with clear message', async ({ request }) => {
+    const response = await request.post('/api/settings/display-rotation', {
+      data: { rotation_degrees: 45 },
+    });
+
+    expect(response.status()).toBe(400);
+    const body = await response.json();
+    expect(body.success).toBe(false);
+    expect(body.message).toContain('rotation_degrees must be one of 0, 90, 180, 270');
+  });
+
+  test('settings view should open from gallery and reflect current rotation', async ({ page, request }) => {
+    const displayConfigResponse = await request.get('/api/display-config');
+    expect(displayConfigResponse.ok()).toBeTruthy();
+    const displayConfig = await displayConfigResponse.json();
+
+    await page.goto('/');
+    await page.locator('#galleryView .settings-button').click();
+
+    await expect(page.locator('#settingsView')).toBeVisible();
+    await expect(page.locator('#galleryView')).not.toBeVisible();
+    await expect(page.locator('#rotationSelect')).toHaveValue(`${displayConfig.rotation_degrees}`);
+
+    await page.locator('#settingsView .back-button').click();
+    await expect(page.locator('#galleryView')).toBeVisible();
+  });
+
+  test('detail view should not show settings entrypoint', async ({ withImage }) => {
+    const page = withImage;
+    await openDetailView(page);
+
+    await expect(page.locator('#detailView .settings-button')).toHaveCount(0);
+    await expect(page.locator('#detailView')).toBeVisible();
+  });
+
+  test('saving rotation from settings should post selected value and show success state', async ({ page }) => {
+    let payload = null;
+    await page.route('**/api/settings/display-rotation', async (route) => {
+      payload = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          message: 'ok',
+          rotation_degrees: 270,
+          removed_assets: { cache: 3, thumbs: 2, dithered: 1 },
+          regenerated_assets: { cache: 0, thumbs: 0, dithered: 0 },
+          originals_to_regenerate: 1,
+        }),
+      });
+    });
+
+    await page.goto('/');
+    await page.locator('#galleryView .settings-button').click();
+    await page.selectOption('#rotationSelect', '270');
+
+    await page.locator('#saveRotationBtn').click();
+
+    expect(payload).toEqual({ rotation_degrees: 270 });
+    await expect(page.locator('#rotationStatus')).toContainText('Saved mount rotation 270°');
+    await expect(page.locator('#rotationStatus')).toContainText('Cleared 3 cache, 2 thumbs, 1 dithered');
+
+    // Success path triggers reload after a short delay.
+    await page.waitForLoadState('domcontentloaded');
+  });
+
+  test('saving rotation with preserved assets should not reload settings view', async ({ page }) => {
+    let payload = null;
+    await page.route('**/api/settings/display-rotation', async (route) => {
+      payload = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          message: 'ok',
+          rotation_degrees: 180,
+          removed_assets: { cache: 0, thumbs: 0, dithered: 0 },
+          regenerated_assets: { cache: 0, thumbs: 0, dithered: 0 },
+          originals_to_regenerate: 0,
+        }),
+      });
+    });
+
+    await page.goto('/');
+    await page.locator('#galleryView .settings-button').click();
+    await page.selectOption('#rotationSelect', '180');
+    await page.locator('#saveRotationBtn').click();
+
+    expect(payload).toEqual({ rotation_degrees: 180 });
+    await expect(page.locator('#rotationStatus')).toContainText(
+      'Existing gallery thumbnails and cache were preserved',
+    );
+
+    await page.waitForTimeout(1100);
+    await expect(page.locator('#settingsView')).toBeVisible();
+  });
+
+  test('failed rotation save should keep settings view visible and show error', async ({ page }) => {
+    await page.route('**/api/settings/display-rotation', async (route) => {
+      await route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: false,
+          message: 'rotation_degrees must be one of 0, 90, 180, 270',
+        }),
+      });
+    });
+
+    await page.goto('/');
+    await page.locator('#galleryView .settings-button').click();
+    await page.selectOption('#rotationSelect', '90');
+    await page.locator('#saveRotationBtn').click();
+
+    await expect(page.locator('#rotationStatus')).toContainText(
+      'Error: rotation_degrees must be one of 0, 90, 180, 270',
+    );
+
+    await page.waitForTimeout(1100);
+    await expect(page.locator('#settingsView')).toBeVisible();
+  });
+});
