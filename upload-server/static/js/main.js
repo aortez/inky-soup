@@ -5,7 +5,7 @@
 
 // Core imports.
 import { initDOMCache } from './core/dom.js';
-import { setDisplayConfig } from './core/state.js';
+import { setDisplayConfig, getCurrentSessionId, getIsReadOnly } from './core/state.js';
 
 // UI imports.
 import {
@@ -35,7 +35,6 @@ import {
 import { checkGlobalFlashStatus, flashImage } from './services/flash-service.js';
 import { updateSaturation, updateBrightness, updateContrast } from './services/dither-service.js';
 import { getDisplayConfig } from './services/api-client.js';
-import { getCurrentSessionId, getIsReadOnly } from './core/state.js';
 
 /**
  * Load display configuration from server.
@@ -46,20 +45,28 @@ async function loadDisplayConfig() {
     const config = await getDisplayConfig();
     console.log('Display config loaded:', config);
 
-    // Store in state (convert snake_case to camelCase).
-    const logicalWidth = config.logical_width ?? config.width;
-    const logicalHeight = config.logical_height ?? config.height;
-    const logicalThumbWidth = config.logical_thumb_width ?? config.thumb_width;
-    const logicalThumbHeight = config.logical_thumb_height ?? config.thumb_height;
+    // UI dimensions remain mount-agnostic (physical panel dimensions).
+    const physicalWidth = config.physical_width ?? config.width;
+    const physicalHeight = config.physical_height ?? config.height;
+    const physicalThumbWidth = config.physical_thumb_width ?? config.thumb_width;
+    const physicalThumbHeight = config.physical_thumb_height ?? config.thumb_height;
+    const logicalWidth = config.logical_width ?? physicalWidth;
+    const logicalHeight = config.logical_height ?? physicalHeight;
+    const logicalThumbWidth = config.logical_thumb_width ?? physicalThumbWidth;
+    const logicalThumbHeight = config.logical_thumb_height ?? physicalThumbHeight;
     setDisplayConfig({
-      width: logicalWidth,
-      height: logicalHeight,
-      thumbWidth: logicalThumbWidth,
-      thumbHeight: logicalThumbHeight,
-      physicalWidth: config.physical_width ?? logicalWidth,
-      physicalHeight: config.physical_height ?? logicalHeight,
-      physicalThumbWidth: config.physical_thumb_width ?? logicalThumbWidth,
-      physicalThumbHeight: config.physical_thumb_height ?? logicalThumbHeight,
+      width: physicalWidth,
+      height: physicalHeight,
+      thumbWidth: physicalThumbWidth,
+      thumbHeight: physicalThumbHeight,
+      logicalWidth,
+      logicalHeight,
+      logicalThumbWidth,
+      logicalThumbHeight,
+      physicalWidth,
+      physicalHeight,
+      physicalThumbWidth,
+      physicalThumbHeight,
       rotationDegrees: config.rotation_degrees ?? 0,
       model: config.model,
       color: config.color,
@@ -70,20 +77,20 @@ async function loadDisplayConfig() {
     const ditherCanvas = document.getElementById('ditherCanvas');
 
     if (filterCanvas) {
-      filterCanvas.width = logicalWidth;
-      filterCanvas.height = logicalHeight;
+      filterCanvas.width = physicalWidth;
+      filterCanvas.height = physicalHeight;
     }
     if (ditherCanvas) {
-      ditherCanvas.width = logicalWidth;
-      ditherCanvas.height = logicalHeight;
+      ditherCanvas.width = physicalWidth;
+      ditherCanvas.height = physicalHeight;
     }
 
     // Update dimension labels.
     document.querySelectorAll('.pipeline-stage-label').forEach((label) => {
       if (label.textContent.includes('resized')) {
-        label.textContent = `${logicalWidth} × ${logicalHeight} (resized)`;
+        label.textContent = `${physicalWidth} × ${physicalHeight} (resized)`;
       } else if (label.textContent.includes('colors')) {
-        label.textContent = `${logicalWidth} × ${logicalHeight} (7 colors)`;
+        label.textContent = `${physicalWidth} × ${physicalHeight} (7 colors)`;
       }
     });
   } catch (error) {

@@ -16,14 +16,140 @@ import {
   getCurrentCacheVersion,
   getCurrentSessionId,
   getIsReadOnly,
+  getRotationDegrees,
+  getPhysicalDisplayWidth,
+  getPhysicalDisplayHeight,
   setCurrentJobId,
   getPollInterval,
   setPollInterval,
 } from '../core/state.js';
 import { elements, query } from '../core/dom.js';
+import { loadOriginal } from './image-loader.js';
+import { createImageDataFromImage } from '../utils/image-utils.js';
 import {
   uploadDithered, submitFlashJob, getJobStatus, getFlashStatus,
 } from './api-client.js';
+
+function canvasToBlob(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('Failed to encode flash image'));
+        return;
+      }
+      resolve(blob);
+    }, 'image/png');
+  });
+}
+
+function runWorkerTask(workerUrl, payload, transferList = []) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(workerUrl);
+
+    worker.onmessage = (e) => {
+      if (e.data.success === false) {
+        worker.terminate();
+        reject(new Error(e.data.error));
+        return;
+      }
+
+      worker.terminate();
+      resolve(e.data);
+    };
+
+    worker.onerror = (e) => {
+      worker.terminate();
+      reject(e);
+    };
+
+    worker.postMessage(payload, transferList);
+  });
+}
+
+function filterImage(imageData, targetWidth, targetHeight, filter, fitMode) {
+  return runWorkerTask('/js/filter-worker.js', {
+    data: imageData.data.buffer,
+    width: imageData.width,
+    height: imageData.height,
+    targetWidth,
+    targetHeight,
+    filter,
+    fitMode,
+  }, [imageData.data.buffer]);
+}
+
+function ditherImage(imageData, saturation, algorithm, brightness, contrast) {
+  return runWorkerTask('/js/dither-worker.js', {
+    data: imageData.data.buffer,
+    width: imageData.width,
+    height: imageData.height,
+    saturation,
+    algorithm,
+    brightness,
+    contrast,
+  }, [imageData.data.buffer]);
+}
+
+/**
+ * Compute the dither buffer dimensions to upload for flashing.
+ * 90/270 mount rotations use swapped dimensions to avoid rotation-time distortion.
+ * @param {number} rotationDegrees - Display mount rotation.
+ * @param {number} physicalWidth - Physical display width.
+ * @param {number} physicalHeight - Physical display height.
+ * @returns {{width:number,height:number}} Flash source dimensions.
+ */
+export function computeFlashBufferDimensions(rotationDegrees, physicalWidth, physicalHeight) {
+  if (rotationDegrees === 90 || rotationDegrees === 270) {
+    return { width: physicalHeight, height: physicalWidth };
+  }
+  return { width: physicalWidth, height: physicalHeight };
+}
+
+async function buildFlashUploadBlob(
+  filename,
+  filter,
+  fitMode,
+  saturation,
+  brightness,
+  contrast,
+  ditherAlgorithm,
+) {
+  const rotationDegrees = getRotationDegrees();
+
+  // Only quarter-turn mounts need a logical-dimension source buffer.
+  if (rotationDegrees !== 90 && rotationDegrees !== 270) {
+    return canvasToBlob(elements.ditherCanvas);
+  }
+
+  const { width: targetWidth, height: targetHeight } = computeFlashBufferDimensions(
+    rotationDegrees,
+    getPhysicalDisplayWidth(),
+    getPhysicalDisplayHeight(),
+  );
+
+  const original = await loadOriginal(filename);
+  const sourceImageData = createImageDataFromImage(original);
+  const filteredData = await filterImage(
+    sourceImageData,
+    targetWidth,
+    targetHeight,
+    filter,
+    fitMode,
+  );
+  const ditheredData = await ditherImage(
+    filteredData,
+    saturation,
+    ditherAlgorithm,
+    brightness,
+    contrast,
+  );
+
+  const flashCanvas = document.createElement('canvas');
+  flashCanvas.width = targetWidth;
+  flashCanvas.height = targetHeight;
+  flashCanvas.getContext('2d').putImageData(ditheredData, 0, 0);
+  return canvasToBlob(flashCanvas);
+}
 
 /**
  * Flash the current dithered image to the e-ink display.
@@ -55,10 +181,16 @@ export async function flashImage() {
   const ditherAlgorithm = getCurrentDitherAlgorithm();
 
   try {
-    // Convert dithered canvas to blob.
-    const blob = await new Promise((resolve) => {
-      elements.ditherCanvas.toBlob(resolve, 'image/png');
-    });
+    // Build a flash-only payload for rotated mounts; UI previews remain physical-dimensioned.
+    const blob = await buildFlashUploadBlob(
+      filename,
+      filter,
+      fitMode,
+      saturation,
+      brightness,
+      contrast,
+      ditherAlgorithm,
+    );
 
     // Upload dithered image with all settings.
     const uploadData = await uploadDithered(

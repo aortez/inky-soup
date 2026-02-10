@@ -30,7 +30,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
-use derived_assets::{invalidate_all_derived_assets, DerivedAssetCounts};
+use derived_assets::DerivedAssetCounts;
 use flash_queue::{FlashJob, FlashQueue, FlashQueueState};
 use image_locks::ImageLocksState;
 
@@ -106,16 +106,17 @@ struct ThumbStatus {
 #[derive(Serialize)]
 #[serde(crate = "rocket::serde")]
 struct DisplayConfig {
-    // Logical dimensions (after applying rotation). Kept as canonical and legacy fields.
+    // Canonical dimensions used by UI/cache generation (physical panel orientation).
     width: u32,
     height: u32,
     thumb_width: u32,
     thumb_height: u32,
+    // Logical dimensions after applying mount rotation (used for flash-only processing).
     logical_width: u32,
     logical_height: u32,
     logical_thumb_width: u32,
     logical_thumb_height: u32,
-    // Physical panel dimensions from base display config.
+    // Explicit physical panel dimensions from base display config.
     physical_width: u32,
     physical_height: u32,
     physical_thumb_width: u32,
@@ -214,11 +215,11 @@ fn get_display_config() -> DisplayConfig {
     );
 
     DisplayConfig {
-        // Legacy fields continue to represent logical dimensions.
-        width: logical_width,
-        height: logical_height,
-        thumb_width: logical_thumb_width,
-        thumb_height: logical_thumb_height,
+        // Legacy/canonical fields remain physical so UI preview is mount-agnostic.
+        width: base.width,
+        height: base.height,
+        thumb_width: base.thumb_width,
+        thumb_height: base.thumb_height,
         logical_width,
         logical_height,
         logical_thumb_width,
@@ -337,30 +338,6 @@ struct ErrorResponse {
     message: String,
 }
 
-fn count_original_images() -> usize {
-    let mut count = 0usize;
-    let glob_pattern = format!("{}/*", config::IMAGES_DIR.display());
-    for entry in glob(&glob_pattern).expect("Failed to read glob pattern") {
-        if let Ok(path) = entry {
-            if path.is_dir() {
-                continue;
-            }
-
-            let filename = path
-                .file_name()
-                .and_then(|f| f.to_str())
-                .unwrap_or_default();
-            if filename.starts_with("metadata.json") {
-                continue;
-            }
-
-            count += 1;
-        }
-    }
-
-    count
-}
-
 fn create_flash_job_snapshot(source_path: &Path) -> Result<PathBuf, String> {
     let snapshots_dir = config::flash_jobs_dir();
     fs::create_dir_all(&snapshots_dir).map_err(|e| {
@@ -420,7 +397,7 @@ fn update_display_rotation(
             rotation_degrees,
             removed_assets: DerivedAssetCounts::default(),
             regenerated_assets: DerivedAssetCounts::default(),
-            originals_to_regenerate: count_original_images(),
+            originals_to_regenerate: 0,
         }));
     }
 
@@ -438,23 +415,16 @@ fn update_display_rotation(
         ));
     }
 
-    let removed_assets = invalidate_all_derived_assets(
-        &config::cache_dir(),
-        &config::thumbs_dir(),
-        &config::dithered_dir(),
-    );
-    let originals_to_regenerate = count_original_images();
-
     Ok(Json(DisplayRotationResponse {
         success: true,
         message: format!(
-            "Mount rotation updated to {}°. Cleared derived assets; reload to regenerate cache, thumbnails, and dithered outputs.",
+            "Mount rotation updated to {}°. Existing gallery/cache assets were preserved; new orientation applies on next flash.",
             rotation_degrees
         ),
         rotation_degrees,
-        removed_assets,
+        removed_assets: DerivedAssetCounts::default(),
         regenerated_assets: DerivedAssetCounts::default(),
-        originals_to_regenerate,
+        originals_to_regenerate: 0,
     }))
 }
 
@@ -1286,7 +1256,7 @@ mod tests {
     }
 
     #[test]
-    fn test_display_config_swaps_logical_dimensions_for_rotation_90() {
+    fn test_display_config_keeps_physical_dimensions_and_reports_logical_rotation() {
         let _guard = ENV_LOCK.lock().unwrap();
         let previous_data_dir = std::env::var("INKY_SOUP_DATA_DIR").ok();
         let temp_data_dir = unique_temp_dir("inky_soup_display_config_test");
@@ -1296,10 +1266,14 @@ mod tests {
         let config = get_display_config();
 
         assert_eq!(config.rotation_degrees, 90);
-        assert_eq!(config.width, config.physical_height);
-        assert_eq!(config.height, config.physical_width);
-        assert_eq!(config.thumb_width, config.physical_thumb_height);
-        assert_eq!(config.thumb_height, config.physical_thumb_width);
+        assert_eq!(config.width, config.physical_width);
+        assert_eq!(config.height, config.physical_height);
+        assert_eq!(config.thumb_width, config.physical_thumb_width);
+        assert_eq!(config.thumb_height, config.physical_thumb_height);
+        assert_eq!(config.logical_width, config.physical_height);
+        assert_eq!(config.logical_height, config.physical_width);
+        assert_eq!(config.logical_thumb_width, config.physical_thumb_height);
+        assert_eq!(config.logical_thumb_height, config.physical_thumb_width);
 
         if let Some(value) = previous_data_dir {
             std::env::set_var("INKY_SOUP_DATA_DIR", value);
@@ -1324,9 +1298,57 @@ mod tests {
                 assert_eq!(body.rotation_degrees, 0);
                 assert_eq!(body.removed_assets, DerivedAssetCounts::default());
                 assert_eq!(body.regenerated_assets, DerivedAssetCounts::default());
+                assert_eq!(body.originals_to_regenerate, 0);
             }
             Err(_) => panic!("unchanged rotation should succeed"),
         }
+
+        if let Some(value) = previous_data_dir {
+            std::env::set_var("INKY_SOUP_DATA_DIR", value);
+        } else {
+            std::env::remove_var("INKY_SOUP_DATA_DIR");
+        }
+        fs::remove_dir_all(temp_data_dir).unwrap();
+    }
+
+    #[test]
+    fn test_update_display_rotation_changed_preserves_derived_assets() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let previous_data_dir = std::env::var("INKY_SOUP_DATA_DIR").ok();
+        let temp_data_dir = unique_temp_dir("inky_soup_rotation_preserve_assets_test");
+        std::env::set_var("INKY_SOUP_DATA_DIR", &temp_data_dir);
+
+        fs::create_dir_all(config::cache_dir()).unwrap();
+        fs::create_dir_all(config::thumbs_dir()).unwrap();
+        fs::create_dir_all(config::dithered_dir()).unwrap();
+
+        let cache_path = config::cache_path("rotation-preserve.jpg");
+        let thumb_path = config::thumb_path("rotation-preserve.jpg");
+        let dithered_path = config::dithered_path("rotation-preserve.jpg");
+
+        fs::write(&cache_path, b"cache").unwrap();
+        fs::write(&thumb_path, b"thumb").unwrap();
+        fs::write(&dithered_path, b"dithered").unwrap();
+
+        display_settings::save_rotation_degrees(0).unwrap();
+        let response = update_display_rotation(Json(UpdateDisplayRotationRequest {
+            rotation_degrees: 180,
+        }));
+
+        match response {
+            Ok(body) => {
+                assert!(body.success);
+                assert_eq!(body.rotation_degrees, 180);
+                assert_eq!(body.removed_assets, DerivedAssetCounts::default());
+                assert_eq!(body.regenerated_assets, DerivedAssetCounts::default());
+                assert_eq!(body.originals_to_regenerate, 0);
+            }
+            Err(_) => panic!("rotation update should succeed"),
+        }
+
+        assert!(cache_path.exists());
+        assert!(thumb_path.exists());
+        assert!(dithered_path.exists());
 
         if let Some(value) = previous_data_dir {
             std::env::set_var("INKY_SOUP_DATA_DIR", value);

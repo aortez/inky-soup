@@ -9,6 +9,10 @@ let displayConfig = {
   height: 1200,
   thumbWidth: 150,
   thumbHeight: 112,
+  logicalWidth: 1600,
+  logicalHeight: 1200,
+  logicalThumbWidth: 150,
+  logicalThumbHeight: 112,
   physicalWidth: 1600,
   physicalHeight: 1200,
   physicalThumbWidth: 150,
@@ -146,6 +150,10 @@ export const getPhysicalDisplayWidth = () => displayConfig.physicalWidth;
 export const getPhysicalDisplayHeight = () => displayConfig.physicalHeight;
 export const getPhysicalThumbWidth = () => displayConfig.physicalThumbWidth;
 export const getPhysicalThumbHeight = () => displayConfig.physicalThumbHeight;
+export const getLogicalDisplayWidth = () => displayConfig.logicalWidth;
+export const getLogicalDisplayHeight = () => displayConfig.logicalHeight;
+export const getLogicalThumbWidth = () => displayConfig.logicalThumbWidth;
+export const getLogicalThumbHeight = () => displayConfig.logicalThumbHeight;
 export const getRotationDegrees = () => displayConfig.rotationDegrees;
 
 // Image lock getters/setters.

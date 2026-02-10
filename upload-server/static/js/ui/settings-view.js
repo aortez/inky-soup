@@ -4,7 +4,7 @@
  */
 
 import { elements } from '../core/dom.js';
-import { getDisplayConfig } from '../core/state.js';
+import { getDisplayConfig, setDisplayConfig } from '../core/state.js';
 import { updateDisplayRotation } from '../services/api-client.js';
 
 function setStatus(message, color = '#C9DBBD') {
@@ -32,19 +32,34 @@ async function saveRotation() {
 
   try {
     const response = await updateDisplayRotation(rotationDegrees);
-    const { removed_assets: removedAssets } = response;
+    const removedAssets = response.removed_assets || {};
+    const removedCache = Number(removedAssets.cache || 0);
+    const removedThumbs = Number(removedAssets.thumbs || 0);
+    const removedDithered = Number(removedAssets.dithered || 0);
+    const removedTotal = removedCache + removedThumbs + removedDithered;
 
-    setStatus(
-      `Saved mount rotation ${response.rotation_degrees}°. Cleared `
-      + `${removedAssets.cache} cache, `
-      + `${removedAssets.thumbs} thumbs, `
-      + `${removedAssets.dithered} dithered files. Reloading to regenerate...`,
-      '#6B8E4E',
-    );
+    setDisplayConfig({ rotationDegrees: response.rotation_degrees });
+    syncSettingsForm();
 
-    setTimeout(() => {
-      window.location.reload();
-    }, 900);
+    if (removedTotal > 0) {
+      setStatus(
+        `Saved mount rotation ${response.rotation_degrees}°. Cleared `
+        + `${removedCache} cache, `
+        + `${removedThumbs} thumbs, `
+        + `${removedDithered} dithered files. Reloading to regenerate...`,
+        '#6B8E4E',
+      );
+
+      setTimeout(() => {
+        window.location.reload();
+      }, 900);
+    } else {
+      setStatus(
+        `Saved mount rotation ${response.rotation_degrees}°. Existing gallery thumbnails `
+        + 'and cache were preserved; new orientation applies on next flash.',
+        '#6B8E4E',
+      );
+    }
   } catch (err) {
     setStatus(`Error: ${err.message}`, '#ff6b6b');
   } finally {

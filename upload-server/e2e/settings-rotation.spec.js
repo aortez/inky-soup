@@ -84,11 +84,43 @@ test.describe('Display Settings', () => {
     await page.locator('#saveRotationBtn').click();
 
     expect(payload).toEqual({ rotation_degrees: 270 });
-    await expect(page.locator('#rotationStatus')).toContainText('Saved 270°');
+    await expect(page.locator('#rotationStatus')).toContainText('Saved mount rotation 270°');
     await expect(page.locator('#rotationStatus')).toContainText('Cleared 3 cache, 2 thumbs, 1 dithered');
 
     // Success path triggers reload after a short delay.
     await page.waitForLoadState('domcontentloaded');
+  });
+
+  test('saving rotation with preserved assets should not reload settings view', async ({ page }) => {
+    let payload = null;
+    await page.route('**/api/settings/display-rotation', async (route) => {
+      payload = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          message: 'ok',
+          rotation_degrees: 180,
+          removed_assets: { cache: 0, thumbs: 0, dithered: 0 },
+          regenerated_assets: { cache: 0, thumbs: 0, dithered: 0 },
+          originals_to_regenerate: 0,
+        }),
+      });
+    });
+
+    await page.goto('/');
+    await page.locator('#galleryView .settings-button').click();
+    await page.selectOption('#rotationSelect', '180');
+    await page.locator('#saveRotationBtn').click();
+
+    expect(payload).toEqual({ rotation_degrees: 180 });
+    await expect(page.locator('#rotationStatus')).toContainText(
+      'Existing gallery thumbnails and cache were preserved',
+    );
+
+    await page.waitForTimeout(1100);
+    await expect(page.locator('#settingsView')).toBeVisible();
   });
 
   test('failed rotation save should keep settings view visible and show error', async ({ page }) => {
