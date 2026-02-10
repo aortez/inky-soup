@@ -986,7 +986,6 @@
       <div id="detailView" class="view-container">
         <div class="detail-header">
           <button class="back-button" onclick="showGalleryView()">← Back to Gallery</button>
-          <button class="settings-button" onclick="showSettingsView()">Settings</button>
           <div id="detailFilename" class="detail-filename"></div>
           <div id="lockStatus" class="lock-status" style="display: none;"></div>
           <button class="delete-button" onclick="showDeleteConfirmation()">Delete</button>
@@ -1093,8 +1092,8 @@
             <button id="saveRotationBtn" class="settings-button" type="button">Save orientation</button>
             <div id="rotationStatus" class="filter-status"></div>
             <p class="settings-note">
-              This represents how the display is mounted. The UI preview stays upright; this setting affects crop/fit behavior and the flashed output.
-              Changing orientation clears all derived assets and reloads the page to regenerate cache, thumbnails, and dithered outputs.
+              This represents how the display is mounted. The gallery/detail preview stays upright and existing cache, thumbnails, and dithered assets are preserved.
+              Changing orientation applies on the next flash and may change flash framing for 90°/270° mounts.
             </p>
           </div>
         </fieldset>

@@ -32,31 +32,12 @@ test.describe('Display Settings', () => {
     await expect(page.locator('#galleryView')).toBeVisible();
   });
 
-  test('opening settings from detail view should release lock first', async ({ withImage }) => {
+  test('detail view should not show settings entrypoint', async ({ withImage }) => {
     const page = withImage;
     await openDetailView(page);
 
-    const filename = await page.locator('#detailFilename').textContent();
-    const unlockRequestPromise = page.waitForRequest(
-      (req) => req.url().includes('/api/unlock-image') && req.method() === 'POST',
-    );
-
-    await page.locator('#detailView .settings-button').click();
-
-    const unlockRequest = await unlockRequestPromise;
-    const unlockPayload = JSON.parse(unlockRequest.postData() || '{}');
-
-    expect(unlockPayload.filename).toBe(filename);
-    expect(typeof unlockPayload.session_id).toBe('string');
-    expect(unlockPayload.session_id.length).toBeGreaterThan(5);
-
-    await expect(page.locator('#settingsView')).toBeVisible();
-    await expect(page.locator('#detailView')).not.toBeVisible();
-
-    const sessionId = await page.evaluate(() => (
-      window.getCurrentSessionId ? window.getCurrentSessionId() : null
-    ));
-    expect(sessionId).toBeNull();
+    await expect(page.locator('#detailView .settings-button')).toHaveCount(0);
+    await expect(page.locator('#detailView')).toBeVisible();
   });
 
   test('saving rotation from settings should post selected value and show success state', async ({ page }) => {
