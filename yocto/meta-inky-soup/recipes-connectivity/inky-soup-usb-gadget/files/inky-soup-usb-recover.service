@@ -1,5 +1,5 @@
 [Unit]
-Description=Recover an Inky Soup USB gadget startup stall
+Description=Recover a stalled Inky Soup USB Ethernet link
 After=inky-soup-usb-gadget.service NetworkManager.service
 Requires=inky-soup-usb-gadget.service
 

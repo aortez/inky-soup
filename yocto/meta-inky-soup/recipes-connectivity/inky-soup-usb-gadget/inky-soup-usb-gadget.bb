@@ -14,7 +14,7 @@ SRC_URI = " \
 
 inherit systemd
 
-RDEPENDS:${PN} = "kernel-module-dwc2 kernel-module-g-ether kmod networkmanager iputils-ping"
+RDEPENDS:${PN} = "kernel-module-dwc2 kernel-module-g-ether kmod networkmanager iputils-arping"
 SYSTEMD_SERVICE:${PN} = "inky-soup-usb-gadget.service inky-soup-usb-recover.timer"
 SYSTEMD_AUTO_ENABLE = "enable"
 

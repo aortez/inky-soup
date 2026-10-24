@@ -181,13 +181,18 @@ there prevents the persistent `/data` bind mount from hiding it. A NetworkManage
 configuration override explicitly manages `usb0`, which its default udev rules
 otherwise leave unmanaged.
 
-A recovery timer checks for a connected gadget that has received zero packets,
-starting 45 seconds after boot and at most once a minute afterward. It probes the
-host and reloads `g_ether` only if the receive count stays at zero. This mitigates
+A recovery timer checks the connected gadget starting 45 seconds after boot and
+at most once a minute afterward. It sends an ARP probe to the configured host at
+`10.55.0.2` and reloads `g_ether` only if the host does not answer and no other
+packets arrive during the probe. ARP works even when the host blocks ICMP echo.
+This also detects a link that stalls after receiving its first packets, rather
+than treating any past traffic as proof of a healthy link. It mitigates
 the [reported dwc2 startup stall](https://github.com/raspberrypi/rpi-usb-gadget/pull/31)
 that was also observed on the attached Pi Zero W with kernel 6.6.63. It does not
-reset an idle link that has already received traffic. Check recovery activity with
+reset a healthy idle link whose host answers ARP. Check recovery activity with
 `journalctl -u inky-soup-usb-recover.service`.
+
+Run `npm run test:usb` from `yocto/` for the recovery script's regression checks.
 
 For an existing image, installing the package alone is insufficient: the shared
 boot partition's `config.txt` also needs `dtoverlay=dwc2,dr_mode=peripheral` in the

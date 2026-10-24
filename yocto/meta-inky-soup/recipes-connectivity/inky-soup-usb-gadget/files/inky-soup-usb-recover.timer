@@ -1,5 +1,5 @@
 [Unit]
-Description=Check for an Inky Soup USB gadget startup stall
+Description=Check the Inky Soup USB Ethernet link
 
 [Timer]
 OnBootSec=45s
