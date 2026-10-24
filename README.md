@@ -1,148 +1,85 @@
 # Inky Soup
 
-## Intro
-Inky Soup is automation for displaying images on the Pimoroni Inky Impression e-ink screen.
-It provides users with a web app that they can use to flash images to their Inky Impression.
+Inky Soup is a web app for displaying photos on Pimoroni Inky Impression e-ink
+screens, running on a Raspberry Pi Zero W or Zero 2 W.
 
-![Example of Web Page](./inky-soup-uploader.png "Example of Web Page")
+Upload photos, choose how they fit the screen, adjust color and dithering, and
+send the result to the display. The browser performs image processing; the Pi
+stores originals and derived images and runs the display update queue.
 
-I suggest using a Pi Zero W, as it has low compute requirements and when combined with the e-ink display, it has very low power utilization (~1 watt peak).
+![Web app](inky-soup-uploader.png)
+![Example display build](inky-soup-display.jpg)
 
-The web app mostly keeps computation client side and maintains caches to avoid recomputing things.
+## Device setup and access
 
-It provides a nice gallery for viewing/managing/processing and of course flashing your images.
+The deployment path is a complete Yocto Linux image. Follow the
+[build, SD card flash, and update guide](yocto/README.md). It includes SSH key
+injection, WiFi setup, persistent storage, and A/B root filesystem updates.
 
-## Example Display Build
+With a configured device:
 
-![Example of Inky Impression Display](./inky-soup-display.jpg "Example of Display")
+- WiFi: open `http://inky-soup.local:8000` or run `ssh inky@inky-soup.local`.
+- USB: follow the [USB Ethernet setup](yocto/README.md#usb-ethernet-pi-zero-w--zero-2-w),
+  then open `http://10.55.0.1:8000` or run `ssh inky@10.55.0.1`.
 
-![A Goose](./upload-server/static/favicon.ico "A Goose")
+The display code supports the 5.7-inch (600 × 448) and 13.3-inch 2025
+(1600 × 1200) Inky Impression models. The display configuration API provides the
+dimensions used by the browser.
 
-# Instructions
+## Local development
 
-The project consists of two components:
-
-1. A web page - this component is written in Rust using the fine library Rocket
-for all the web stuff.
-1. A python script for flashing the images to the screen.
-
-**New:** We're building a complete Yocto Linux image for turnkey deployment. See `yocto/README.md` for the integrated build system (currently in development).
-
-## Prerequisites
-
-**On your development machine:**
-- Rust (via rustup)
-- Docker (required for cross-compilation)
-
-**On your Pi Zero:**
-- Raspberry Pi OS (tested with Trixie/Bookworm)
-- Python 3 with `pillow` and `inky` libraries
-- SPI and I2C enabled
-
-## Pi Zero Setup
-
-Enable SPI and I2C in `/boot/firmware/config.txt`:
-
-```
-dtparam=i2c_arm=on
-dtparam=spi=on
-dtoverlay=spi0-0cs
-```
-
-Install Python dependencies on the Pi:
+Install Rust and Node.js (CI uses Rust 1.85.0 and Node.js 24), then:
 
 ```bash
-sudo apt-get install -y python3-pil python3-numpy python3-spidev python3-smbus2
-pip3 install --break-system-packages inky
+git submodule update --init --recursive
+cd upload-server
+npm ci
+cargo run --locked
 ```
 
-## First-Time Setup (Development Machine)
+Open `http://localhost:8000`. A local server supports gallery and image-processing
+development; updating a physical display requires the Pi's hardware and installed
+display script. See the [server development guide](upload-server/README.md) for
+configuration, Docker, and browser tests.
 
-Set up cross-compilation tools (only needed once):
+## Checks
 
-    ./setup-crosscompile.sh
+```bash
+cd upload-server
+npm run lint
+npm test
+npm run test:coverage
+cargo test --locked
+```
 
-This installs `cross`, a Docker-based cross-compilation tool that properly supports
-the Pi Zero's ARMv6 architecture.
+USB script tests run without a connected device:
 
-## Deploy to Your Pi
+```bash
+cd yocto
+npm run test:usb
+```
 
-Use the deploy script to build and deploy to your Pi:
+GitHub Actions runs frontend lint/unit tests, Rust unit tests, and USB script
+checks on pull requests and pushes to `main`. Yocto builds, browser E2E tests,
+and physical display checks are separate validation steps.
 
-    INKY_SOUP_IP=<your Pi's IP or hostname> ./deploy.sh
+## Project layout
 
-For non-default usernames (default is `pi`):
+- `upload-server/`: Rust/Rocket server, browser JavaScript, templates, and tests.
+- `update-image.py`: display update script; the packaged copy lives under
+  `yocto/meta-inky-soup/recipes-inky-soup/inky-soup-display/files/`.
+- `yocto/`: KAS configurations, image recipes, build/flash/update helpers.
+- `yocto/pi-base/`: shared infrastructure submodule.
+- [JS_STYLE_GUIDE.md](JS_STYLE_GUIDE.md): JavaScript conventions.
+- [CLAUDE.md](CLAUDE.md): architecture and implementation notes.
 
-    DEPLOY_USER=oldman INKY_SOUP_IP=inky-soup.local ./deploy.sh
+## Planned work
 
-This builds an optimized release binary, deploys it to your Pi, and automatically restarts the service.
+- [Settings and display mounting orientation (#3)](https://github.com/aortez/inky-soup/issues/3),
+  with implementation parked in [PR #5](https://github.com/aortez/inky-soup/pull/5).
+- [Favorites and scheduled image cycling (#4)](https://github.com/aortez/inky-soup/issues/4).
 
-To enable the service on first deployment (so it starts on boot):
+These features are separate from the current manual photo-display workflow.
 
-    ssh <your-pi> "sudo systemctl enable inky-soup.service"
-
-Now, visit your Pi in a web browser (port 8000) over your local network and start uploading images!
-
-To tail logs on the remote Pi:
-
-    DEPLOY_USER=oldman INKY_SOUP_IP=inky-soup.local ./tail_remote_logs.sh
-
-## SD Card Deployment
-
-For initial setup or when the Pi isn't on the network, use the SD card deploy script:
-
-    SDCARD_ROOT=/media/user/rootfs ./deploy-sdcard.sh
-
-This copies files directly to a mounted SD card via a remote machine (useful for headless setup).
-
-## Development & Testing
-
-### Running the Test Suite
-
-The project includes a test suite with linting, unit tests, and E2E tests:
-
-    cd upload-server
-    ./run-tests.sh
-
-This script runs:
-1. **ESLint** - Code style checks (Airbnb config)
-2. **Unit tests** (Vitest) - JavaScript functions and modules
-3. **E2E tests** (Playwright) - Complete user workflows
-
-### Manual Testing
-
-**Start the development server:**
-
-    cd upload-server
-    cargo run
-
-**Run individual test suites:**
-
-    cd upload-server
-    npm run lint         # Code style only
-    npm test             # Unit tests only
-    npm run test:e2e     # E2E tests only (requires server running)
-
-**Frontend development:**
-
-    npm install          # First time only
-    npm run lint:fix     # Auto-fix style issues
-
-See [JS_STYLE_GUIDE.md](./JS_STYLE_GUIDE.md) for JavaScript conventions.
-
-# TODO
-
-## FIX
-- [ ] If viewing a read-only instance of a Details page and the edit instance deletes the image, the the read-only viewer should get notified via a modal dialog that, once confirmed, takes them back to the gallery
-
-## Image Gallery
-- [ ] Arbitrary hard limit on number of uploaded images.
-
-## Image Rotation
-- [ ] Show a random image at a fixed interval.
-- [ ] Allow user to assign values to each image's likely hood of being in the rotation.  The default value is zero.
-- [ ] Configure the change interval.
-
-## Advanced
-- [ ] Remember last image parameters and re-use - allows users to tune already showing image! (consider user stories here)
-- [ ] Interactive cropping sometime before flashing... when?
+Older UX backlog items to reassess include notifying read-only viewers when an
+image is deleted, limiting gallery size, and interactive cropping.
