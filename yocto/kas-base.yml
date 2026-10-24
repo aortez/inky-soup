@@ -95,6 +95,9 @@ local_conf_header:
     # Enable HDMI console output for boot messages and kernel logs.
     CMDLINE:append = " console=tty1"
 
+    # Use the Zero's USB data port for SSH and HTTP over USB Ethernet.
+    ENABLE_DWC2_PERIPHERAL = "1"
+
   # Display configuration for e-ink.
   display: |
     # Enable SPI bus for e-ink display communication.

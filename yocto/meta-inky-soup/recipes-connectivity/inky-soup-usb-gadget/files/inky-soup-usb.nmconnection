@@ -1,0 +1,17 @@
+[connection]
+id=Inky Soup USB
+type=ethernet
+interface-name=usb0
+autoconnect=true
+autoconnect-priority=100
+
+[ethernet]
+
+[ipv4]
+method=manual
+address1=10.55.0.1/24
+never-default=true
+
+[ipv6]
+method=link-local
+never-default=true

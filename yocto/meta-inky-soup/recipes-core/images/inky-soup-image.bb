@@ -60,6 +60,9 @@ IMAGE_INSTALL:append = " wifi-provisioner"
 # SSH access.
 IMAGE_INSTALL:append = " openssh-sshd openssh-sftp-server"
 
+# Direct USB Ethernet access on the Pi Zero W and Zero 2 W.
+IMAGE_INSTALL:append = " inky-soup-usb-gadget"
+
 # mDNS/DNS-SD for hostname.local discovery.
 IMAGE_INSTALL:append = " avahi-daemon"
 

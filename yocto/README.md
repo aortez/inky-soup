@@ -146,6 +146,66 @@ Your SSH key was injected during flash, so no password needed. The `inky` user h
 
 ## Network Configuration
 
+### USB Ethernet (Pi Zero W / Zero 2 W)
+
+Images built from this configuration enable Ethernet over the micro-USB socket
+labeled **USB**. Connect it to the computer with a data-capable cable. The Pi uses
+`10.55.0.1/24`; configure the computer's USB network interface as `10.55.0.2/24`,
+with no gateway or DNS server. WiFi remains available and keeps its default route.
+
+On a Linux computer using NetworkManager, find the new Ethernet interface with
+`nmcli device status`, then create a persistent profile:
+
+```bash
+# Replace this with the USB interface shown on your computer.
+INKY_USB_IFACE=enx0600f41b6883
+nmcli connection add type ethernet ifname "$INKY_USB_IFACE" \
+  con-name "Inky Soup USB" \
+  ipv4.method manual ipv4.addresses 10.55.0.2/24 ipv4.never-default yes \
+  ipv6.method link-local ipv6.never-default yes
+nmcli connection up "Inky Soup USB"
+
+ssh inky@10.55.0.1
+# Web app: http://10.55.0.1:8000
+```
+
+Use the USB IP explicitly when testing: `inky-soup.local` can also resolve to the
+WiFi address. SSH uses the same injected key and `inky` user on both interfaces.
+This static subnet supports one attached Inky Soup unit at a time; additional
+units need separate subnets.
+
+The `inky-soup-usb-gadget` package loads `dwc2` and `g_ether` at boot, derives stable
+MAC addresses from the board serial number, and installs the NetworkManager
+profile under `/usr/lib/NetworkManager/system-connections`. Keeping the profile
+there prevents the persistent `/data` bind mount from hiding it. A NetworkManager
+configuration override explicitly manages `usb0`, which its default udev rules
+otherwise leave unmanaged.
+
+A recovery timer checks the connected gadget starting 45 seconds after boot and
+at most once a minute afterward. It sends an ARP probe to the configured host at
+`10.55.0.2` and reloads `g_ether` only if the host does not answer and no other
+packets arrive during the probe. ARP works even when the host blocks ICMP echo.
+This also detects a link that stalls after receiving its first packets, rather
+than treating any past traffic as proof of a healthy link. It mitigates
+the [reported dwc2 startup stall](https://github.com/raspberrypi/rpi-usb-gadget/pull/31)
+that was also observed on the attached Pi Zero W with kernel 6.6.63. It does not
+reset a healthy idle link whose host answers ARP. Check recovery activity with
+`journalctl -u inky-soup-usb-recover.service`.
+
+Run `npm run test:usb` from `yocto/` for the recovery script's regression checks.
+
+For an existing image, installing the package alone is insufficient: the shared
+boot partition's `config.txt` also needs `dtoverlay=dwc2,dr_mode=peripheral` in the
+`[all]` section, followed by a reboot. The A/B rootfs updater does not install this
+boot configuration change. New SD card images include it through
+`ENABLE_DWC2_PERIPHERAL` in `kas-base.yml`.
+
+To diagnose a connection, check `systemctl status inky-soup-usb-gadget`,
+`ip addr show usb0`, and `ls /sys/class/udc` on the Pi, and `lsusb` / `nmcli device
+status` on the host. The Pi should have `10.55.0.1` on `usb0` and the host should
+show an Ethernet gadget. This setup uses the kernel's
+[USB Ethernet gadget](https://github.com/raspberrypi/rpi-usb-gadget) support.
+
 ### WiFi Setup at Flash Time (Recommended)
 
 **Option 1: Credentials file (recommended for repeated flashing)**
