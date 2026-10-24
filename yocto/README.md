@@ -107,6 +107,33 @@ A/B updates replace the inactive root filesystem and leave `/data` intact. The
 library; automatic expansion in the flash helper is part of the parked settings
 branch, not this branch. An existing device's data partition may already be larger.
 
+## Bluetooth WiFi setup
+
+Scan the [printable 70 × 85 mm label](../docs/inky-soup-setup-label.svg), or open
+[allan.pizza/setup/](https://allan.pizza/setup/) in a supported Chrome/Edge browser.
+An unconnected frame opens setup for five minutes after startup. A frame already
+connected to WiFi stays closed. Setup closes on success, timeout, or Stop.
+
+From a USB/SSH console, use:
+
+```sh
+wifi-provisioner --start   # Open a five-minute setup window.
+wifi-provisioner --status
+wifi-provisioner --stop
+```
+
+The existing loopback WebSocket API also accepts a `start` timeout of 1–300
+seconds. It rejects browser Origins. This is a bounded provisioning window, not a
+Bluetooth ownership/bonding system. Stopping cancels the pending command, but does
+not roll back a network change NetworkManager has already accepted.
+
+Inky Soup packages `/etc/default/wifi-provisioner` with
+`WIFI_PROVISIONER_WEB_PORT=8000`; the successful setup link uses the device hostname
+and this port. Credentials remain on the phone and device, with no website upload.
+
+Regenerate the label with `python3 tools/make-setup-label.py` from the repository
+root (requires `qrcode`). The QR contains only the stable setup URL, no secrets.
+
 ## Access and WiFi
 
 ```bash

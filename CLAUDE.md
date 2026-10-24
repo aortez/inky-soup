@@ -124,3 +124,15 @@ them. A timer checks ARP/received traffic and reloads `g_ether` for a stalled li
 
 Use the explicit USB IP to verify the transport; mDNS can resolve to WiFi instead.
 The USB setup and diagnostics are documented in the Yocto guide.
+
+## Bluetooth provisioning
+
+The shared `yocto/pi-base/wifi-provisioner` daemon implements Improv BLE. Its
+recipe pins the daemon source separately from the submodule revision: update
+both when taking provisioner changes. Inky's recipe append sets the success URL
+port to 8000. The client lives in the standalone `aortez.github.io` checkout under
+`setup/`, published at https://allan.pizza/setup/; `/wifi/` redirects there.
+
+The setup window is closed when already connected, and bounded to five minutes
+when opened. Use `wifi-provisioner --start|--stop|--status` over USB/SSH. The client
+handles explicit notifications and polls older firmware as a compatibility path.
