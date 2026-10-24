@@ -1,18 +1,89 @@
-TODO - this is out of date and we use yocto now instead.
+# Server and frontend development
 
-# Cross compiler setup
-Adapted from this SU answer:
-https://superuser.com/a/396667
+The Rust/Rocket server stores images, serves the browser app, and queues physical
+display updates. Image resizing and dithering run in browser Web Workers.
+For device builds and deployment, use the [Yocto guide](../yocto/README.md).
 
-$ rustup target add arm-unknown-linux-gnueabihf
-$ sudo apt-get install gcc-arm-linux-gnueabihf
-$ echo '[target.arm-unknown-linux-gnueabihf]' >> ~/.cargo/config
-$ echo 'linker = "arm-linux-gnueabihf-gcc"' >> ~/.cargo/config
-$ cd <project dir>
-$ cargo build --target=arm-unknown-linux-gnueabihf
+## Run locally
 
-# Build pi zero target like so
-    cargo build --target=arm-unknown-linux-gnueabihf
+From this directory, with Rust and Node.js installed:
 
-# The binary will be here:
-    target/arm-unknown-linux-gnueabihf/debug/upload-server
+```bash
+npm ci
+cargo run --locked
+```
+
+The app listens on port 8000. Run from this directory so Rocket can find
+`Rocket.toml`, `templates/`, and `static/`.
+
+`INKY_SOUP_IMAGES_DIR` overrides image storage, which defaults to `static/images`.
+The server creates `cache/`, `thumbs/`, `dithered/`, and `metadata/` beneath it.
+On the Pi, storage is `/data/inky-soup/images`.
+
+`Rocket.toml` sets a 20 MiB file upload limit and a 21 MiB multipart form limit.
+The Pi runs the `inky-soup-server.service` systemd unit and invokes
+`/usr/bin/inky-soup-update-display` to update the screen. That executable is not
+installed by `cargo run`, so physical flash requests cannot complete on a normal
+development computer.
+
+## Unit tests and lint
+
+```bash
+npm run lint
+npm test
+npm run test:watch
+npm run test:coverage
+cargo test --locked
+```
+
+Vitest tests live in `tests/`; coverage output is written to `coverage/` and is
+ignored by Git. Rust unit tests live in the source modules. CI uses the image's
+Rust 1.85.0 toolchain and Node.js 24.
+
+Coverage totals have a known limitation: the legacy filter and dither libraries
+are executed through a VM test helper and their exercised code is not attributed
+by the current V8 report. Use the test results alongside the coverage report.
+
+## Browser tests
+
+Install Chromium once after installing npm dependencies:
+
+```bash
+npx playwright install chromium
+```
+
+On Linux, `npx playwright install --with-deps chromium` also installs the required
+system libraries. The E2E suite creates and deletes images; use a disposable test
+server or test device.
+
+```bash
+npm run test:e2e
+```
+
+The local Playwright configuration starts `test-server.sh` itself on port 8000,
+with a short image-lock timeout. Stop an existing local server before running it.
+Release compilation must finish within the configured startup timeout; build
+first with `cargo build --release --locked` if needed.
+
+The Docker environment mirrors the Pi's application and data paths:
+
+```bash
+npm run docker:build
+npm run docker:up
+npm run test:docker
+npm run docker:down
+```
+
+`docker:down` removes the Docker test data volume. Docker does not contain the
+physical display driver or hardware, so it does not validate screen output.
+`./run-tests.sh` combines lint, JS unit tests, and Docker E2E tests, and removes
+the Docker test volume when it exits. Rust tests are run separately.
+
+To target a disposable Pi instead:
+
+```bash
+REMOTE_URL=http://10.55.0.1:8000 npm run test:remote
+```
+
+The remote configuration starts no server; without `REMOTE_URL`, it targets
+`http://inky-soup.local:8000`.
