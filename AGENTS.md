@@ -10,6 +10,7 @@
 ## Build, Test, and Development Commands
 - `cd upload-server && cargo run`: run the local server on port 8000.
 - `cd upload-server && cargo test --locked`: Rust tests.
+- `python3 -m unittest discover -s tests -v`: display image decoding tests (Pillow and NumPy required).
 - `cd upload-server && npm ci`: install the locked JS dependencies.
 - `cd upload-server && ./run-tests.sh`: lint + JS unit + Docker E2E suite; removes the Docker test volume on exit.
 - `cd upload-server && npm run lint|lint:fix|test|test:e2e`: targeted JS checks.
@@ -30,7 +31,7 @@
 - Unit tests: `upload-server/tests/**/*.test.js` (Vitest) and Rust source modules.
 - E2E: `upload-server/e2e/*.spec.js` (Playwright). Local config starts its server; remote config requires one already running. Use disposable test data.
 - Use `npm run test:coverage` when assessing coverage.
-- GitHub Actions runs lint, JS/Rust unit tests, and USB checks. E2E, full Yocto builds, and physical display tests are separate.
+- GitHub Actions runs lint, JS/Rust unit tests, Python display decoding tests, and USB checks. E2E, full Yocto builds, and physical display tests are separate.
 
 ## Commit & Pull Request Guidelines
 - Commit messages are short, imperative, sentence case (e.g., “Add …”, “Fix …”).

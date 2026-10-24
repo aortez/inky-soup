@@ -48,6 +48,18 @@ jobs:
         run: rustup toolchain install 1.85.0 --profile minimal
       - run: cargo +1.85.0 test --locked
 
+  display:
+    name: Display image decoding
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - run: python3 -m venv /tmp/inky-display-tests
+      - run: /tmp/inky-display-tests/bin/pip install Pillow==12.1.1 numpy==2.3.5
+      - run: /tmp/inky-display-tests/bin/python -m unittest discover -s tests -v
+
   usb:
     name: USB scripts
     runs-on: ubuntu-24.04

@@ -12,6 +12,7 @@ SRC_URI = "file://update-image.py"
 RDEPENDS:${PN} = " \
     python3 \
     python3-pillow \
+    python3-numpy \
     python3-inky \
 "
 

@@ -68,7 +68,8 @@ async function loadDisplayConfig() {
       if (label.textContent.includes('resized')) {
         label.textContent = `${config.width} × ${config.height} (resized)`;
       } else if (label.textContent.includes('colors')) {
-        label.textContent = `${config.width} × ${config.height} (7 colors)`;
+        const colors = config.model === 'impression-13.3-2025' ? 6 : 7;
+        label.textContent = `${config.width} × ${config.height} (${colors} colors)`;
       }
     });
   } catch (error) {

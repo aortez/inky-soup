@@ -21,57 +21,25 @@ const {
 
 describe('Dither Library', () => {
   describe('generatePalette', () => {
-    it('should return 8 colors', () => {
-      const palette = generatePalette(0.5);
-      expect(palette).toHaveLength(8);
+    it('defaults to the six inks on the 13.3-inch Spectra 6 panel', () => {
+      expect(generatePalette(0)).toEqual([
+        [0, 0, 0], [255, 255, 255], [255, 255, 0],
+        [255, 0, 0], [0, 0, 255], [0, 255, 0],
+      ]);
+      expect(generatePalette(1)[1]).toEqual([161, 164, 165]);
+      expect(generatePalette(0.5)[1]).toEqual([208, 210, 210]);
     });
 
-    it('should return saturated palette at saturation 1.0', () => {
-      const palette = generatePalette(1.0);
-
-      // Black should be [57, 48, 57] at full saturation.
-      expect(palette[0]).toEqual([57, 48, 57]);
-
-      // White should be [255, 255, 255].
-      expect(palette[1]).toEqual([255, 255, 255]);
+    it('retains orange for the seven-color 5.7-inch panel', () => {
+      const model = 'impression-5.7';
+      expect(generatePalette(0, model)).toHaveLength(7);
+      expect(generatePalette(0, model)[6]).toEqual([255, 140, 0]);
+      expect(generatePalette(1, model)[0]).toEqual([57, 48, 57]);
+      expect(generatePalette('0.5', model)[0]).toEqual([29, 24, 29]);
     });
 
-    it('should return desaturated palette at saturation 0.0', () => {
-      const palette = generatePalette(0.0);
-
-      // Black should be [0, 0, 0] at zero saturation.
-      expect(palette[0]).toEqual([0, 0, 0]);
-
-      // White should be [255, 255, 255].
-      expect(palette[1]).toEqual([255, 255, 255]);
-
-      // Green should be [0, 255, 0].
-      expect(palette[2]).toEqual([0, 255, 0]);
-
-      // Blue should be [0, 0, 255].
-      expect(palette[3]).toEqual([0, 0, 255]);
-
-      // Red should be [255, 0, 0].
-      expect(palette[4]).toEqual([255, 0, 0]);
-    });
-
-    it('should blend colors at saturation 0.5', () => {
-      const palette = generatePalette(0.5);
-
-      // Black: (57*0.5 + 0*0.5, 48*0.5 + 0*0.5, 57*0.5 + 0*0.5) = (29, 24, 29).
-      expect(palette[0]).toEqual([29, 24, 29]);
-    });
-
-    it('should always have white as the last color (CLEAN)', () => {
-      expect(generatePalette(0.0)[7]).toEqual([255, 255, 255]);
-      expect(generatePalette(0.5)[7]).toEqual([255, 255, 255]);
-      expect(generatePalette(1.0)[7]).toEqual([255, 255, 255]);
-    });
-
-    it('should parse string saturation values', () => {
-      const palette = generatePalette('0.5');
-      expect(palette).toHaveLength(8);
-      expect(palette[0]).toEqual([29, 24, 29]);
+    it('rejects an unknown model instead of silently choosing the wrong inks', () => {
+      expect(() => generatePalette(0.5, 'unknown')).toThrow('Unsupported display model');
     });
   });
 
@@ -221,6 +189,41 @@ describe('Dither Library', () => {
   });
 
   describe('ditherForEInk', () => {
+    it('composites transparency on white before selecting ink colors', () => {
+      const transparent = new ImageData(new Uint8ClampedArray([0, 0, 0, 0]), 1, 1);
+      expect(Array.from(ditherForEInk(transparent, 0).data)).toEqual([255, 255, 255, 255]);
+      const partial = new ImageData(new Uint8ClampedArray([255, 0, 0, 128]), 1, 1);
+      const composited = new ImageData(new Uint8ClampedArray([255, 127, 127, 255]), 1, 1);
+      expect(ditherForEInk(partial).data).toEqual(ditherForEInk(composited).data);
+      expect(partial.data[3]).toBe(128);
+    });
+
+    for (const model of ['impression-13.3-2025', 'impression-5.7']) {
+      for (const algorithm of ['floyd-steinberg', 'atkinson', 'ordered']) {
+        it(`${model} ${algorithm} encodes only exact ink colors at every saturation`, () => {
+          const inks = generatePalette(0, model);
+          const allowed = new Set(inks.map((color) => color.join(',')));
+          for (const saturation of [0, 0.5, 1]) {
+            const data = new Uint8ClampedArray(32 * 32 * 4);
+            for (let i = 0; i < data.length; i += 4) {
+              data.set([(i * 7) % 256, (i * 11 + 50) % 256, (i * 13 + 90) % 256, 255], i);
+            }
+            const result = ditherForEInk(new ImageData(data, 32, 32), saturation, algorithm, model);
+            for (let i = 0; i < result.data.length; i += 4) {
+              expect(allowed.has(Array.from(result.data.slice(i, i + 3)).join(','))).toBe(true);
+              expect(result.data[i + 3]).toBe(255);
+            }
+          }
+        });
+
+        it(`${model} ${algorithm} preserves each ink identity`, () => {
+          const inks = generatePalette(0, model);
+          const source = new ImageData(new Uint8ClampedArray(inks.flatMap((c) => [...c, 255])), inks.length, 1);
+          expect(ditherForEInk(source, 0, algorithm, model).data).toEqual(source.data);
+        });
+      }
+    }
+
     function createSolidImage(width, height, r, g, b, a = 255) {
       const data = new Uint8ClampedArray(width * height * 4);
       for (let i = 0; i < data.length; i += 4) {
@@ -253,7 +256,7 @@ describe('Dither Library', () => {
       expect(result.height).toBe(100);
     });
 
-    it('should produce 7-color output', () => {
+    it('should produce six-color output by default', () => {
       // Create a gradient-ish image to trigger different palette colors.
       const data = new Uint8ClampedArray(600 * 448 * 4);
       for (let i = 0; i < 600 * 448; i++) {
@@ -273,8 +276,8 @@ describe('Dither Library', () => {
         colors.add(key);
       }
 
-      // Should have at most 8 colors (7 colors + CLEAN white).
-      expect(colors.size).toBeLessThanOrEqual(8);
+      // The default panel has six inks and no orange or CLEAN image color.
+      expect(colors.size).toBeLessThanOrEqual(6);
     });
 
     it('should accept algorithm parameter', () => {
