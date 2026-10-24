@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+# Some dwc2 boots enumerate successfully but never receive host packets.
+# Once any packet arrives, leave the connection alone, even when it is idle.
+net_dir=/sys/class/net/usb0
+[ -r "$net_dir/statistics/rx_packets" ] || exit 0
+carrier=$(cat "$net_dir/carrier" 2>/dev/null || true)
+[ "$carrier" = "1" ] || exit 0
+[ "$(cat "$net_dir/statistics/rx_packets")" = "0" ] || exit 0
+
+# Give the configured host a chance to respond before resetting the gadget.
+ping -I usb0 -c 1 -W 2 10.55.0.2 >/dev/null 2>&1 || true
+[ "$(cat "$net_dir/statistics/rx_packets")" = "0" ] || exit 0
+
+echo "USB carrier is up but no host packets arrived; reloading g_ether"
+modprobe -r g_ether
+exec "$(dirname "$0")/inky-soup-usb-gadget"

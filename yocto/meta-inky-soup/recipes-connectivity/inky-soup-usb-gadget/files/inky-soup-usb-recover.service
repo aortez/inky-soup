@@ -1,0 +1,8 @@
+[Unit]
+Description=Recover an Inky Soup USB gadget startup stall
+After=inky-soup-usb-gadget.service NetworkManager.service
+Requires=inky-soup-usb-gadget.service
+
+[Service]
+Type=oneshot
+ExecStart=@SBINDIR@/inky-soup-usb-recover
