@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use image::{DynamicImage, ImageFormat};
 use reqwest::blocking::{multipart, Client, Response};
 use reqwest::Url;
@@ -36,6 +36,13 @@ struct Args {
 enum Command {
     /// Display configuration and current queue.
     Status,
+    /// Open, close, or inspect the Bluetooth WiFi setup window over SSH.
+    WifiSetup {
+        #[arg(value_enum)]
+        action: SetupAction,
+        #[arg(long, default_value = "inky")]
+        ssh_user: String,
+    },
     /// Check whether the device permits a browser app origin.
     BrowserCheck {
         #[arg(long, default_value = "https://allan.pizza")]
@@ -78,6 +85,13 @@ enum Command {
         #[arg(long, default_value_t = 180, value_parser = clap::value_parser!(u64).range(1..))]
         timeout: u64,
     },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum SetupAction {
+    Start,
+    Stop,
+    Status,
 }
 
 struct Frame {
@@ -289,6 +303,57 @@ fn run(args: &Args) -> Result<Value> {
         Command::Status => Ok(
             json!({"device":frame.base.as_str(),"display":frame.get("api/display-config")?,"flash":frame.get("api/flash/status")?}),
         ),
+        Command::WifiSetup { action, ssh_user } => {
+            if ssh_user.is_empty()
+                || !ssh_user
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || b"_-".contains(&c))
+            {
+                bail!("SSH user must contain only letters, digits, underscores, or hyphens");
+            }
+            let host = frame
+                .base
+                .host_str()
+                .context("Missing device host")?
+                .trim_matches(['[', ']']);
+            let target = format!("{ssh_user}@{host}");
+            let flag = match action {
+                SetupAction::Start => "--start",
+                SetupAction::Stop => "--stop",
+                SetupAction::Status => "--status",
+            };
+            let output = std::process::Command::new("ssh")
+                .args([
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "ConnectTimeout=5",
+                    "-o",
+                    "ServerAliveInterval=5",
+                    "-o",
+                    "ServerAliveCountMax=2",
+                    "--",
+                    &target,
+                    "sudo",
+                    "-n",
+                    "wifi-provisioner",
+                    flag,
+                ])
+                .output()
+                .context("Could not run ssh; install OpenSSH and configure device key access")?;
+            if !output.status.success() {
+                bail!(
+                    "WiFi setup SSH command failed: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                );
+            }
+            let status: Value = serde_json::from_slice(&output.stdout)
+                .context("Provisioner returned invalid JSON")?;
+            if status["ok"] != true {
+                bail!("WiFi setup command failed: {status}");
+            }
+            Ok(status)
+        }
         Command::BrowserCheck { origin } => {
             let url = Url::parse(origin).context("Use a complete HTTP(S) browser origin")?;
             if !matches!(url.scheme(), "http" | "https")

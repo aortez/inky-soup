@@ -24,6 +24,21 @@ inky-cli --help
 `http://10.55.0.1:8000` (USB Ethernet). Hostnames without a port use 8000.
 WiFi uses `http://inky-soup.local:8000` or the Pi’s local IP address.
 
+## Bluetooth WiFi setup window
+
+```bash
+./inky-cli wifi-setup status --json
+./inky-cli wifi-setup start
+./inky-cli wifi-setup stop
+```
+
+These commands call the existing `wifi-provisioner` helper over SSH on the selected
+frame’s hostname, using the `inky` account by default (`--ssh-user` overrides it).
+They require OpenSSH, existing key access and noninteractive sudo. Start opens the
+bounded Bluetooth setup window; stop closes it. WiFi credentials are still entered
+in the Bluetooth browser setup UI, never passed through this CLI. The device URL’s
+port applies to HTTP; SSH uses port 22 or your SSH config.
+
 ## Browser connectivity diagnostics
 
 ```bash
@@ -73,7 +88,7 @@ normal help/error output. Without `--json`, results are pretty-printed JSON.
 
 The device API is intended for a trusted local network; it has no client
 authentication. `images` requires the new `/api/images` endpoint. Other commands
-use existing endpoints. The CLI never installs firmware or changes WiFi settings.
+use existing endpoints. The CLI never installs firmware or submits WiFi credentials.
 
 ## Checks
 
