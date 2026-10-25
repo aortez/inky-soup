@@ -104,9 +104,10 @@ export async function savePhoto({base, draft, prepared, session, onProgress = ()
       if (uploaded.filename !== filename) throw new Error('The frame returned an unexpected image name.');
       await onStored({base, filename, photo_rotation_revision:0, pending_photo_rotation:null});
     }
+    // A copied original starts at revision zero on its destination frame.
+    let revision = existing ? settings.photo_rotation_revision : 0;
     if (prepared.photo_rotation_supported) {
       if (prepared.photo_rotation_degrees !== settings.photo_rotation_degrees) throw new Error('The photo changed. Wait for a new preview.');
-      let revision = existing ? settings.photo_rotation_revision : 0;
       const pending = existing ? pendingPhotoRotation(draft, base, filename) : null;
       const applyRotation = async operation => {
         // Persist before sending: the response can be lost after the server commits.
@@ -124,7 +125,7 @@ export async function savePhoto({base, draft, prepared, session, onProgress = ()
           photo_rotation_degrees:settings.photo_rotation_degrees, expected_revision:revision});
       }
       metadata.photo_rotation_revision = revision;
-    } else if (settings.photo_rotation_degrees || settings.photo_rotation_revision) {
+    } else if (settings.photo_rotation_degrees || revision) {
       throw new Error('Update the frame software before saving a rotated photo.');
     }
     for (const [path, blob, label] of [
