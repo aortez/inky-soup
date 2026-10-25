@@ -25,8 +25,8 @@ import {
   prompt,
   loadConfig,
   saveConfig,
-  run,
 } from '../pi-base/scripts/lib/index.mjs';
+import { runKas } from './kas-runner.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -105,10 +105,10 @@ async function getMachine(args) {
 /**
  * Run clean command.
  */
-async function clean(kasFile, cleanAll = false) {
+async function clean(kasFile, cleanAll = false, host = false) {
   const target = cleanAll ? 'inky-soup-server inky-soup-image' : 'inky-soup-image';
   info(`Cleaning ${target} sstate...`);
-  await run('kas', ['shell', kasFile, '-c', `bitbake -c cleansstate ${target}`], { cwd: YOCTO_DIR });
+  await runKas(['shell', kasFile, '-c', `bitbake -c cleansstate ${target}`], YOCTO_DIR, { host });
   success('Clean complete!');
 }
 
@@ -126,6 +126,7 @@ Options:
   --zero2        Build for Pi Zero 2 W (ARMv7)
   --clean        Clean image sstate before build
   --clean-all    Clean server + image sstate before build
+  --host         Use host kas/toolchain instead of the Debian 12 Docker container
   -h, --help     Show this help
 
 Your machine preference is saved in .flash-config.json.
@@ -150,16 +151,19 @@ async function main() {
   info(`KAS config: ${machine.kasFile}`);
   log('');
 
+  const host = args.includes('--host');
+  info(host ? 'Build environment: host kas' : 'Build environment: KAS 5.4 / Debian 12 (Docker)');
+
   // Handle clean flags.
   if (args.includes('--clean-all')) {
-    await clean(machine.kasFile, true);
+    await clean(machine.kasFile, true, host);
   } else if (args.includes('--clean')) {
-    await clean(machine.kasFile, false);
+    await clean(machine.kasFile, false, host);
   }
 
   // Run build.
   info('Starting build...');
-  await run('kas', ['build', machine.kasFile], { cwd: YOCTO_DIR });
+  await runKas(['build', machine.kasFile], YOCTO_DIR, { host });
 
   log('');
   success('Build complete!');

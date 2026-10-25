@@ -16,7 +16,7 @@ import numpy
 from PIL import Image
 
 # Configuration file path.
-CONFIG_FILE = "/etc/inky-soup/display.conf"
+CONFIG_FILE = os.environ.get("INKY_SOUP_DISPLAY_CONFIG", "/etc/inky-soup/display.conf")
 
 # Default dimensions (13.3" Inky Impression 2025).
 DEFAULT_WIDTH = 1600
@@ -28,6 +28,7 @@ def read_display_config():
     config = {
         "width": DEFAULT_WIDTH,
         "height": DEFAULT_HEIGHT,
+        "model": "impression-13.3-2025",
     }
 
     if os.path.exists(CONFIG_FILE):
@@ -45,6 +46,8 @@ def read_display_config():
                         config["width"] = int(value)
                     elif key == "DISPLAY_HEIGHT":
                         config["height"] = int(value)
+                    elif key == "DISPLAY_MODEL":
+                        config["model"] = value
         except Exception as e:
             print(f"Warning: Could not read config file: {e}", flush=True)
 
@@ -57,16 +60,25 @@ def get_display():
         # Try auto-detection first.
         from inky.auto import auto
         display = auto()
+        if display is None:
+            raise ValueError("No supported display EEPROM found")
         print(f"Auto-detected display: {display.width}x{display.height}", flush=True)
         return display
     except Exception as e:
         print(f"Auto-detection failed ({e}), falling back to manual init...", flush=True)
 
-    # Fall back to 13.3" Inky Impression 2025 Edition.
+    # Respect the configured panel if its EEPROM cannot be read.
     try:
-        from inky import InkyEL133UF1
-        display = InkyEL133UF1()
-        print(f"Using InkyEL133UF1: {display.width}x{display.height}", flush=True)
+        model = read_display_config()["model"]
+        if model == "impression-5.7":
+            from inky.inky_uc8159 import Inky
+            display = Inky(resolution=(600, 448))
+        elif model == "impression-13.3-2025":
+            from inky import InkyEL133UF1
+            display = InkyEL133UF1()
+        else:
+            raise ValueError(f"Unsupported display model: {model}")
+        print(f"Using {model}: {display.width}x{display.height}", flush=True)
         return display
     except Exception as e:
         print(f"Failed to initialize display: {e}", file=sys.stderr)
@@ -196,7 +208,11 @@ def main():
     show_start = time.time()
     # Driver timeouts must fail the job instead of reporting a successful flash.
     with warnings.catch_warnings():
-        warnings.filterwarnings("error", message=r"^(Busy|Refresh) Wait:", category=UserWarning)
+        # UC8159 also warns when BUSY is already high and it deliberately waits
+        # the full interval. That fallback is not a timeout failure.
+        warnings.filterwarnings(
+            "error", message=r"^(Busy|Refresh) Wait: Timed out", category=UserWarning
+        )
         inky.show()
     print(f"Display refresh complete in {time.time() - show_start:.1f}s", flush=True)
 

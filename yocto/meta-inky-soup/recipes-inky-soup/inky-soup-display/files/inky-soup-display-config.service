@@ -1,0 +1,13 @@
+[Unit]
+Description=Identify the Inky display for the app
+After=systemd-modules-load.service
+Before=inky-soup-server.service
+ConditionPathExists=!/etc/inky-soup/display.conf
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/inky-soup-configure-display
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

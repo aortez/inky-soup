@@ -18,11 +18,26 @@ The `pi-base` submodule supplies shared recipes and JavaScript helpers. KAS
 fetches the other Yocto layers. User preferences in `.flash-config.json`, WiFi
 credentials in `wifi-creds.local`, and build/cache directories are ignored by Git.
 
-Builds use Yocto Scarthgap and KAS. The validated Pi Zero W image was built with
-KAS 5.4 in a Debian 12 container; use a compatible Yocto build environment rather
-than assuming any host distribution's Python and system tools will work. See the
+Builds use Yocto Scarthgap and KAS 5.4. The npm build commands run in the
+`ghcr.io/siemens/kas/kas:5.4-debian-bookworm` Docker image by default. Install Docker
+and ensure your account can run it; a host KAS installation is not needed. The
+runner preserves the checkout paths and mounts the real targets of the
+`downloads/` and `sstate-cache/` directories, including external cache symlinks.
+Build output belongs to your user and stays under `yocto/build/`. The `yolo`
+helper uses the same container for its build and clean steps.
+
+Ubuntu 26.04's host toolchain fails building `elfutils-native` in this Scarthgap
+checkout (`bsearch` discards a const qualifier); its glibc is also newer than the
+uninative runtime. Use the container. If switching an existing host build, stop
+BitBake first and move `build/tmp` aside before the first container build; keep
+downloads and sstate caches. Do not share a running build directory between host
+and container builds.
+
+For an already-compatible native build environment, use
+`npm run build:zero2 -- --host`. `KAS_CONTAINER_IMAGE` can select a different
+compatible KAS image. See the
 [KAS container guide](https://kas.readthedocs.io/en/5.4/userguide/kas-container.html)
-for container setup.
+for upstream container details.
 
 ## Select hardware and build
 
@@ -32,10 +47,12 @@ for container setup.
 | Pi Zero 2 W | ARMv7 userspace, Cortex-A53 | `kas-inky-soup-zero2.yml` | `raspberrypi0-2w/` |
 
 Both configurations include `kas-base.yml`. The Pi Zero W has been tested on
-hardware with kernel 6.6.63; the Zero 2 W target still needs a current hardware
-validation pass.
+hardware with kernel 6.6.63. The Zero 2 W image builds in the Debian 12 container
+and passed first-boot detection, browser processing, and a physical seven-color
+refresh with a 5.7-inch panel; see the
+[hardware validation record](../docs/validation/inky-impression-5-7.md).
 
-From `yocto/`, with `kas` installed in the build environment:
+From `yocto/`, with Docker available:
 
 ```bash
 npm run build:zero1
@@ -43,7 +60,8 @@ npm run build:zero1
 npm run build:zero2
 ```
 
-`npm run build` uses a saved target preference or prompts. Direct KAS equivalents:
+`npm run build` uses a saved target preference or prompts. In a compatible native
+environment, the direct KAS equivalents are:
 
 ```bash
 kas build kas-inky-soup-zero1.yml
@@ -106,6 +124,48 @@ A/B updates replace the inactive root filesystem and leave `/data` intact. The
 100 MiB data partition in a freshly flashed image may need expanding for a photo
 library; automatic expansion in the flash helper is part of the parked settings
 branch, not this branch. An existing device's data partition may already be larger.
+
+## Display selection
+
+The same firmware supports the 5.7-inch seven-color Inky Impression (600 × 448)
+and the 13.3-inch 2025 six-color panel (1600 × 1200). The Pi model and display
+model are independent: use `build:zero2` for a Pi Zero 2 W with either panel.
+
+`inky-soup-display-config.service` reads the identification EEPROM before the
+server starts and creates `/etc/inky-soup/display.conf` when it is missing.
+It leaves an existing configuration alone. Detection reads no image pixels and
+does not refresh the display. Unknown panels or an unreadable EEPROM stop
+initial setup rather than selecting the wrong dimensions; inspect
+`journalctl -u inky-soup-display-config.service` on the Pi.
+
+The image loads `i2c-dev` at boot for EEPROM access and enables the bundled
+`spi0-0cs` device-tree overlay. Inky drives chip select itself; the default SPI
+overlay otherwise reserves GPIO 8 and prevents the display driver from starting.
+Both panel sizes use this configuration. These boot changes require a new SD
+image or a matching boot-partition update; a rootfs-only A/B update is insufficient.
+
+For the image built before this helper was added, configure the fresh frame
+from the repository root:
+
+```bash
+./inky-cli --device smaller-frame.local display-setup impression-5.7
+./inky-cli --device smaller-frame.local display --json
+```
+
+Replace the hostname with the second Pi's address. The setup command works over
+SSH and carries its own helper. On new firmware where automatic detection failed,
+run `sudo systemctl restart inky-soup-server.service` on the Pi after manual setup.
+Reload the phone app after setup. On-device equivalents are
+`sudo inky-soup-configure-display` (automatic) or
+`sudo inky-soup-configure-display --model impression-5.7`.
+
+The display script also respects the configured model when EEPROM detection is
+unavailable. Its timeout handling allows the UC8159 driver's deliberate fixed
+wait while still failing actual timeouts. Older images need the updated
+`inky-soup-update-display` script as well as the configuration.
+
+See the [5.7-inch validation procedure](../docs/validation/inky-impression-5-7.md)
+for a native-color test card and the remaining hardware checks.
 
 ## Bluetooth WiFi setup
 
@@ -174,7 +234,21 @@ ssh inky@10.55.0.1
 Use the USB IP explicitly when testing: `inky-soup.local` can also resolve to the
 WiFi address. SSH uses the same injected key and `inky` user on both interfaces.
 This static subnet supports one attached Inky Soup unit at a time; additional
-units need separate subnets.
+units need separate subnets for IPv4. With two attached units, even a distinct
+mDNS hostname can resolve to `10.55.0.1` and reach the wrong Pi. Verify `hostname`
+over SSH before making changes. Use the device's WiFi address, or its IPv6
+link-local address scoped to the correct USB interface. For example:
+
+```bash
+# Replace the address, interface, and host alias with the target Pi's values.
+ssh -o HostKeyAlias=inky-soup-small.local \
+  'inky@fe80::1ff:fe29:fbf1%enx06000129fbf1' hostname
+# The server listens on IPv4; forward it through that unique USB connection.
+ssh -o HostKeyAlias=inky-soup-small.local -N \
+  -L 127.0.0.1:18117:127.0.0.1:8000 \
+  'inky@fe80::1ff:fe29:fbf1%enx06000129fbf1'
+# In another terminal: ./inky-cli --device http://127.0.0.1:18117 status
+```
 
 The `inky-soup-usb-gadget` package loads `dwc2` and `g_ether` at boot, derives stable
 MAC addresses from the board serial number, and installs the NetworkManager

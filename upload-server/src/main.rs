@@ -127,7 +127,8 @@ struct DisplayConfig {
 /// Read display configuration from /etc/inky-soup/display.conf.
 /// Falls back to 13.3" Inky Impression 2025 defaults if file doesn't exist.
 fn get_display_config() -> DisplayConfig {
-    let config_path = "/etc/inky-soup/display.conf";
+    let config_path = std::env::var("INKY_SOUP_DISPLAY_CONFIG")
+        .unwrap_or_else(|_| "/etc/inky-soup/display.conf".to_string());
 
     // Default values for 13.3" Inky Impression 2025.
     let mut config = DisplayConfig {
@@ -144,7 +145,7 @@ fn get_display_config() -> DisplayConfig {
     };
 
     // Try to read config file.
-    if let Ok(contents) = fs::read_to_string(config_path) {
+    if let Ok(contents) = fs::read_to_string(&config_path) {
         for line in contents.lines() {
             let line = line.trim();
             if line.starts_with('#') || line.is_empty() {

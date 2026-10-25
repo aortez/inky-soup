@@ -108,13 +108,15 @@ local_conf_header:
     # Enable SPI bus for e-ink display communication.
     # The Inky Impression uses SPI0 with manual chip select via GPIO.
     ENABLE_SPI_BUS = "1"
+    RPI_KERNEL_DEVICETREE_OVERLAYS:append = " overlays/spi0-0cs.dtbo"
 
     # Enable I2C for display EEPROM (used to detect display model).
     ENABLE_I2C = "1"
 
     # Extra config.txt settings.
     # Critical: disable_fw_kms_setup=1 is required when using VC4 graphics.
-    RPI_EXTRA_CONFIG = "\ndisable_fw_kms_setup=1\n"
+    # Leave chip select GPIOs available to the Inky userspace driver.
+    RPI_EXTRA_CONFIG = "\ndisable_fw_kms_setup=1\ndtoverlay=spi0-0cs\n"
 
 # Target image to build.
 target: inky-soup-image

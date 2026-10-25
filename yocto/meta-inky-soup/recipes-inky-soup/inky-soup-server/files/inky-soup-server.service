@@ -1,8 +1,8 @@
 [Unit]
 Description=Inky Soup web server
 Documentation=https://github.com/yourorg/inky-soup
-After=network.target data.mount inky-soup-data-init.service
-Requires=inky-soup-data-init.service
+After=network.target data.mount inky-soup-data-init.service inky-soup-display-config.service
+Requires=inky-soup-data-init.service inky-soup-display-config.service
 
 [Service]
 Type=simple
