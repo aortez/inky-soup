@@ -1,6 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure
+- `cli/`: local Rust client for device control over USB Ethernet or WiFi; `inky-cli` is the checkout wrapper.
 - `upload-server/`: Rust Rocket server plus frontend JS (`static/js/`), templates (`templates/`), and tests (`tests/`, `e2e/`).
 - `update-image.py`: Python script that flashes pre-dithered images to the Inky display.
 - `yocto/`: Yocto/KAS image build system and flash tooling (`scripts/`).
@@ -8,6 +9,8 @@
 - `upload-server/static/images/`: originals plus derived outputs (`cache/`, `thumbs/`, `dithered/`).
 
 ## Build, Test, and Development Commands
+- `./inky-cli --help`: discover device commands; see `cli/README.md` for usage and JSON output.
+- `cargo test --locked --manifest-path cli/Cargo.toml`: CLI unit and HTTP integration tests.
 - `cd upload-server && cargo run`: run the local server on port 8000.
 - `cd upload-server && cargo test --locked`: Rust tests.
 - `python3 -m unittest discover -s tests -v`: display image decoding tests (Pillow and NumPy required).
@@ -40,4 +43,5 @@
 
 ## Agent Notes
 - Work in the existing standalone checkout; do not create linked worktrees unless requested.
+- Grow the Rust CLI alongside new device work: when an operation is likely to be useful again, add it as a reusable CLI command and document its usage. Prefer existing CLI commands for supported operations.
 - See `CLAUDE.md` for architecture, pipeline details, and deployment notes.
