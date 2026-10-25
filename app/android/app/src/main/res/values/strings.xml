@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Sparkle Duck</string>
+    <string name="title_activity_main">Sparkle Duck</string>
+    <string name="package_name">pizza.allan.frame</string>
+    <string name="custom_url_scheme">pizza.allan.frame</string>
+</resources>

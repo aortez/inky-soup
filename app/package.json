@@ -1,0 +1,29 @@
+{
+  "name": "@inky-soup/frame-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "GPL-3.0-only",
+  "engines": {"node": ">=22.12.0"},
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 8080",
+    "build": "vite build",
+    "build:android": "vite build --mode android && cap sync android && node tools/android-build.mjs",
+    "build:android:assets": "vite build --mode android",
+    "preview": "vite preview",
+    "test:unit": "node --test unit/*.test.js",
+    "test": "playwright test",
+    "test:android:web": "npm run build:android:assets && playwright test --config=playwright.android.config.js",
+    "test:pwa": "npm run build && playwright test --config=playwright.pwa.config.js"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3",
+    "@playwright/test": "^1.58.2",
+    "vite": "8.3.5"
+  }
+}

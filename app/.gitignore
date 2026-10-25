@@ -1,0 +1,7 @@
+dist-android/
+android/local.properties
+android/.gradle/
+*.apk
+*.keystore
+*.jks
+docs/screenshots/

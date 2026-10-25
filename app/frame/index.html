@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f6f3eb">
+  <meta name="description" content="Choose a photo. Make it yours. Send it straight to your Sparkle Duck frame.">
+  <link rel="manifest" href="/frame/manifest.webmanifest">
+  <link rel="icon" href="/frame/icon.svg" type="image/svg+xml">
+  <title>Sparkle Duck · Your frame</title>
+  <script type="module" src="./main.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <a class="brand" href="/frame/" aria-label="Sparkle Duck home"><img src="/frame/icon.svg" alt="" width="38" height="38"><span>Sparkle Duck<small>A little room for your photos.</small></span></a>
+      <button id="install" class="quiet" hidden>Install app</button>
+    </header>
+    <section id="app-update" class="app-update" hidden aria-label="App update">
+      <div role="status"><strong>Update available</strong><p id="app-update-detail"></p></div>
+      <button id="reload-app" type="button">Reload</button>
+    </section>
+    <main>
+      <details id="connection" class="connection" open>
+        <summary><span class="connection-light" aria-hidden="true"></span><span><strong id="frame-name">Your frame</strong><small id="frame-detail">Connect once. Keep it close.</small></span><span class="chevron" aria-hidden="true">⌄</span></summary>
+        <form id="connect-form">
+          <label for="address">Frame address</label>
+          <div class="address-row"><input id="address" type="text" inputmode="url" value="inky-soup.local:8000" autocomplete="off" autocapitalize="none" spellcheck="false" required><button id="connect" type="submit">Connect</button></div>
+          <p id="connection-status" role="status">Keep your phone and frame on the same WiFi.</p>
+        </form>
+        <div class="connection-actions"><a id="setup-link" href="/setup/?return=frame">Set up WiFi over Bluetooth</a><button id="forget" class="text-button" type="button" hidden>Forget frame</button></div>
+        <details class="help"><summary>Need a hand connecting?</summary><p>Allow the browser to access devices on your local network. On Android, Chrome also needs Nearby devices permission. Guest WiFi may prevent your phone and frame from finding each other.</p><p>Your frame may need a software update to connect here. You can still open its address directly to use the original interface.</p></details>
+      </details>
+      <section id="editor-panel" aria-labelledby="editor-heading">
+        <div class="section-heading"><div><p class="eyebrow">MAKE IT YOURS</p><h1 id="editor-heading">A new view.</h1></div><button id="pick-photo" class="secondary" disabled>Choose photo <span aria-hidden="true">＋</span></button></div>
+        <input id="photo" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>
+        <div id="preview-tabs" class="preview-tabs" role="group" aria-label="Photo preview" hidden><button id="preview-before" aria-pressed="false">Before dithering</button><button id="preview-display" aria-pressed="true">Display colors</button></div>
+        <div id="photo-stage" class="photo-stage">
+          <div id="preview-empty" class="empty-preview"><svg viewBox="0 0 180 120" aria-hidden="true"><rect x="9" y="9" width="162" height="102" rx="4"/><circle cx="120" cy="38" r="12"/><path d="M22 98 67 51 98 82 121 62 158 98"/></svg><h2>Something worth looking at.</h2><p>Choose a photo for your frame.<br>The color preview is made on your phone.</p></div>
+          <img id="preview" alt="Preview of the image that will be sent to your frame" hidden>
+        </div>
+        <div class="preview-caption"><span id="draft-name">Your next favorite view</span><span id="dimensions"></span></div>
+        <p id="preview-status" class="status" role="status"></p>
+        <div id="editor" hidden>
+          <div id="lock-notice" class="lock-notice" hidden><p id="lock-status" role="status"></p><button id="retry-edit" class="text-button" hidden>Try editing again</button></div>
+          <div class="adjustments">
+            <label>Composition<select id="fit"><option value="contain">Show whole photo</option><option value="cover">Fill the frame</option></select></label>
+            <label for="saturation">Color matching <output id="saturation-value">0.5</output><input id="saturation" type="range" min="0" max="1" step="0.1" value="0.5"></label>
+            <label for="brightness">Brightness <output id="brightness-value">0</output><input id="brightness" type="range" min="-100" max="100" step="5" value="0"></label>
+            <label for="contrast">Contrast <output id="contrast-value">0</output><input id="contrast" type="range" min="-100" max="100" step="5" value="0"></label>
+          </div>
+          <details id="advanced" class="advanced"><summary>More image controls</summary><div class="adjustments">
+            <label>Resize filter<select id="filter"><option value="bicubic">Bicubic</option><option value="lanczos">Lanczos</option><option value="mitchell">Mitchell</option><option value="bilinear">Bilinear</option><option value="nearest">Nearest neighbor</option></select></label>
+            <label>Dithering<select id="dither"><option value="floyd-steinberg">Floyd–Steinberg</option><option value="atkinson">Atkinson</option><option value="ordered">Ordered</option></select></label>
+          </div></details>
+        </div>
+        <div id="send-panel" class="send-panel">
+          <div id="photo-actions" hidden>
+            <button id="send" class="primary send" disabled><span id="send-label">Display this photo</span><span aria-hidden="true">↗</span></button>
+          </div>
+          <section id="activity" class="activity" hidden aria-live="polite" aria-atomic="true">
+            <div id="send-progress" class="refresh-progress" role="progressbar" aria-label="Photo transfer and display refresh" aria-valuemin="0" aria-valuemax="1" hidden><span aria-hidden="true"></span></div>
+            <strong id="activity-title"></strong><p id="activity-detail"></p>
+            <details id="job-details" hidden><summary>Refresh details</summary><p id="job-info"></p></details>
+            <button id="retry-status" class="text-button" hidden>Check again</button>
+          </section>
+          <div id="library-actions" class="library-actions" hidden><button id="save" class="secondary" disabled>Save to frame</button><button id="delete" class="text-button danger" hidden>Delete photo</button></div>
+          <p class="privacy">Processed on your phone. Sent directly to your frame.</p>
+        </div>
+      </section>
+      <section id="gallery-panel" hidden aria-labelledby="gallery-heading">
+        <div class="section-heading"><div><p class="eyebrow">ON YOUR FRAME</p><h1 id="gallery-heading">Your photos.</h1></div><div class="gallery-actions"><button id="add-photos" class="secondary" disabled>Add photos</button><button id="refresh-gallery" class="quiet" disabled>Refresh</button></div></div>
+        <input id="import-photos" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>
+        <p id="gallery-status" class="status" role="status"></p>
+        <section id="imports" class="imports" hidden aria-labelledby="import-heading"><strong id="import-heading">Adding photos</strong><p id="import-summary" role="status"></p><progress id="import-progress" max="1" value="0" aria-label="Photos saved"></progress><ul id="import-list"></ul><button id="retry-imports" class="secondary" hidden>Retry failed photos</button></section>
+        <p id="gallery-empty" class="gallery-empty">Connect your frame to see its photos.</p><div id="gallery" class="gallery"></div>
+      </section>
+      <section id="settings-panel" hidden aria-labelledby="settings-heading">
+        <div class="section-heading"><div><p class="eyebrow">YOUR FRAME</p><h1 id="settings-heading">Make it fit.</h1></div></div>
+        <div id="preview-profile" class="orientation-card" hidden>
+          <h2>Preview display</h2>
+          <p>Choose your screen to preview its ink colors. Your photo and adjustments stay on this phone.</p>
+          <div class="adjustments">
+            <label>Display<select id="preview-model"><option value="impression-5.7">5.7-inch · Seven colors</option><option value="impression-13.3-2025">13.3-inch · Six colors</option></select></label>
+            <label>Layout<select id="preview-layout"><option value="landscape">Landscape</option><option value="portrait">Portrait</option></select></label>
+          </div>
+        </div>
+        <div class="orientation-card">
+          <h2>Mounting orientation</h2>
+          <p>Looking at the front, how far have you turned the frame clockwise from its normal landscape position? Your photo preview always stays upright.</p>
+          <div class="orientation-illustration" aria-hidden="true"><div id="orientation-diagram"><span>TOP ↑</span></div></div>
+          <label for="orientation">Frame position</label>
+          <select id="orientation" disabled><option value="0">Landscape · 0°</option><option value="90">Portrait · 90° clockwise</option><option value="180">Landscape · 180°</option><option value="270">Portrait · 270° clockwise</option></select>
+          <p id="orientation-size" class="status">Connect your frame to choose its orientation.</p>
+          <p>Saved photos are rebuilt on this device using their existing adjustments. Keep the app open until it finishes. The screen changes only when you display a photo.</p>
+          <button id="save-orientation" class="primary" disabled>Save orientation</button>
+          <p id="orientation-status" class="status" role="status"></p>
+        </div>
+      </section>
+    </main>
+    <nav class="bottom-nav" aria-label="App views"><button id="choose-tab" aria-current="page"><span aria-hidden="true">▧</span> Create</button><button id="gallery-tab"><span aria-hidden="true">▦</span> On frame</button><button id="settings-tab"><span aria-hidden="true">⚙</span> Settings</button></nav>
+  </div>
+  <dialog id="delete-dialog" aria-labelledby="delete-heading"><h2 id="delete-heading">Delete this photo?</h2><p id="delete-name"></p><p>This removes the photo and its saved versions from the frame. The image currently on the display stays until the next refresh.</p><div class="dialog-actions"><button id="cancel-delete" class="secondary">Keep photo</button><button id="confirm-delete" class="danger-button">Delete photo</button></div></dialog>
+</body>
+</html>

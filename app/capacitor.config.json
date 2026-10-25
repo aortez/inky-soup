@@ -1,0 +1,11 @@
+{
+  "appId": "pizza.allan.frame",
+  "appName": "Sparkle Duck",
+  "webDir": "dist-android",
+  "android": {
+    "backgroundColor": "#f6f3eb"
+  },
+  "plugins": {
+    "SystemBars": {"style": "LIGHT"}
+  }
+}

@@ -1,0 +1,29 @@
+:root { color-scheme: light; font-family: ui-sans-serif, system-ui, sans-serif; color: #283c32; background: #f4f0e6; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 540px; margin: auto; padding: 32px 24px 44px; }
+header { display: flex; align-items: center; gap: 12px; font-weight: 700; margin-bottom: 48px; }
+header img { object-fit: contain; }
+.eyebrow { letter-spacing: .18em; font-size: 12px; font-weight: 700; }
+h1 { font-size: clamp(36px, 8vw, 48px); line-height: 1.08; letter-spacing: -.045em; margin: 16px 0; }
+.intro { color: #55675b; font-size: 18px; line-height: 1.6; margin-bottom: 28px; }
+.card { background: #fffefa; border: 1px solid #d8ddd1; border-radius: 20px; padding: 24px; box-shadow: 0 8px 28px #283c3208; }
+.device-name { font-weight: 750; margin: 0; }
+#status { line-height: 1.5; margin: 8px 0 24px; color: #526357; }
+button, .primary-link { border: 0; border-radius: 10px; background: #284d39; color: white; font: inherit; font-weight: 650; min-height: 48px; width: 100%; padding: 14px 18px; cursor: pointer; }
+button span { float: right; }
+button:disabled { opacity: .55; cursor: wait; }
+button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid #b78220; outline-offset: 4px; }
+label { display: block; font-weight: 650; margin: 16px 0 8px; }
+input:not([type=checkbox]) { width: 100%; min-height: 48px; font: inherit; border: 1px solid #87968b; border-radius: 8px; padding: 10px; background: white; }
+.check { font-size: 14px; font-weight: 400; display: flex; align-items: center; gap: 8px; margin: 12px 0 24px; }
+.check input { width: 18px; height: 18px; }
+.hint { font-size: 13px; color: #55675b; }
+.secondary { color: #284d39; background: transparent; margin-top: 10px; }
+.primary-link { display: block; text-align: center; text-decoration: none; }
+[hidden] { display: none !important; }
+details { margin: 24px 0; line-height: 1.6; font-size: 14px; }
+summary { cursor: pointer; font-weight: 650; }
+footer { margin-top: 36px; font-size: 13px; color: #55675b; line-height: 1.7; }
+a { color: inherit; }
+@media (max-width: 400px) { main { padding: 24px 18px; } header { margin-bottom: 32px; } .card { padding: 20px; } }
