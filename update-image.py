@@ -11,6 +11,7 @@ import os
 import sys
 import time
 
+import numpy
 from PIL import Image
 
 # Configuration file path.
@@ -71,6 +72,47 @@ def get_display():
         sys.exit(1)
 
 
+def set_pre_dithered_image(display, image):
+    """Decode browser ink colors exactly, without another quantization pass."""
+    if image.size != (display.width, display.height):
+        raise ValueError("Pre-dithered image dimensions must match the display")
+
+    driver = type(display).__module__.rsplit(".", 1)[-1]
+    if driver == "inky_el133uf1":
+        colors = [
+            (0, 0, 0), (255, 255, 255), (255, 255, 0),
+            (255, 0, 0), (0, 0, 255), (0, 255, 0),
+        ]
+        # EL133UF1's wire format skips code 4, unlike its Python color constants.
+        codes = [0, 1, 2, 3, 5, 6]
+    elif driver == "inky_uc8159":
+        colors = [
+            (0, 0, 0), (255, 255, 255), (0, 255, 0), (0, 0, 255),
+            (255, 0, 0), (255, 255, 0), (255, 140, 0),
+        ]
+        codes = list(range(7))
+    else:
+        raise ValueError(f"Unsupported pre-dithered display driver: {driver}")
+
+    rgba = numpy.asarray(image.convert("RGBA"))
+    if numpy.any(rgba[:, :, 3] != 255):
+        raise ValueError("Pre-dithered image must be opaque")
+
+    rgb = rgba[:, :, :3]
+    buffer = numpy.full((display.height, display.width), 255, dtype=numpy.uint8)
+    for color, code in zip(colors, codes):
+        buffer[numpy.all(rgb == color, axis=2)] = code
+
+    if numpy.any(buffer == 255):
+        raise ValueError(
+            "Image contains colors outside the display palette; "
+            "reload the web app and regenerate the preview"
+        )
+
+    # Both supported drivers consume native ink codes from this buffer in show().
+    display.buf = buffer
+
+
 def main():
     start_time = time.time()
 
@@ -116,6 +158,8 @@ def main():
     print(f"Image size: {width}x{height}", flush=True)
 
     if width != target_width or height != target_height:
+        if args.skip_dither:
+            raise ValueError("Pre-dithered image dimensions must match the display")
         print(f"Resizing to {target_width}x{target_height}...", flush=True)
         image = image.resize((target_width, target_height), Image.Resampling.BICUBIC)
         print(f"Resize complete in {time.time() - load_start:.1f}s", flush=True)
@@ -127,16 +171,7 @@ def main():
 
     if args.skip_dither:
         print("Using pre-dithered image, sending directly to display...", flush=True)
-        # Load pre-dithered palette image directly into buffer.
-        # Convert to RGB first in case it's a palette image.
-        if image.mode == "P":
-            # Convert palette indices to RGB using the palette.
-            rgb_image = image.convert("RGB")
-            # Re-quantize to the Inky palette to get palette indices.
-            inky.set_image(rgb_image, saturation=1.0)
-        else:
-            # If already RGB, convert to palette using Inky's palette.
-            inky.set_image(image, saturation=1.0)
+        set_pre_dithered_image(inky, image)
     else:
         print(f"Dithering with saturation={args.saturation}...", flush=True)
         dither_start = time.time()

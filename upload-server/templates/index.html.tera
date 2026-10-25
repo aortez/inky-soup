@@ -1013,7 +1013,7 @@
           <!-- Stage 2: Dithered Image -->
           <div class="pipeline-stage">
             <canvas id="ditherCanvas" width="1600" height="1200"></canvas>
-            <div class="pipeline-stage-label">1600 × 1200 (7 colors)</div>
+            <div class="pipeline-stage-label">1600 × 1200 (6 colors)</div>
             <span id="ditherProcessing" class="processing-indicator"></span>
           </div>
 

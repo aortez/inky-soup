@@ -26,9 +26,17 @@ from `/etc/inky-soup/display.conf`, with defaults when the file is absent.
    thumbnail PNGs, which are uploaded to the server.
 3. The detail view applies fit mode, filter, saturation, brightness, contrast, and
    dithering settings. Metadata is saved per image.
-4. The browser uploads a pre-dithered PNG before submitting a flash request.
+4. The browser selects the model's six-color (13.3-inch 2025) or seven-color
+   (5.7-inch) palette and uploads a pre-dithered PNG before submitting a flash
+   request. Saturation changes color matching; output pixels encode ink identities
+   using fixed RGB colors so the device can decode them without quantization.
 5. The server queues the request; its worker invokes the Python script with
    `--skip-dither`. The browser polls status while the display updates.
+
+The `--skip-dither` path validates dimensions, opacity, and exact palette colors,
+then writes native ink codes to the driver buffer. EL133UF1 blue/green use codes
+5/6; UC8159 uses 3/2. Invalid or old blended-palette images must be regenerated in
+the browser. Deploy the frontend and display script together.
 
 Processing stays in the browser to reduce work on the Pi Zero. The server does
 not provide a fallback for missing pre-dithered assets. The optional second flash

@@ -1,7 +1,7 @@
 /**
  * E-Ink Dithering Library
  *
- * Implements dithering algorithms for 7-color e-ink displays (Inky Impression).
+ * Implements dithering algorithms for six- and seven-color Inky Impression displays.
  * Supports Floyd-Steinberg, Atkinson, and Ordered (Bayer) dithering.
  *
  * Based on: https://github.com/pimoroni/inky/blob/main/inky/inky_uc8159.py
@@ -15,52 +15,61 @@
 const USE_WEIGHTED_RGB = true;
 // ===========================================================================
 
-// 7-color palette constants from Inky library.
-// Colors: BLACK, WHITE, GREEN, BLUE, RED, YELLOW, ORANGE, CLEAN.
-const SATURATED_PALETTE = [
-    [57, 48, 57],      // BLACK
-    [255, 255, 255],   // WHITE
-    [58, 91, 70],      // GREEN
-    [61, 59, 94],      // BLUE
-    [156, 72, 75],     // RED
-    [208, 190, 71],    // YELLOW
-    [177, 106, 73],    // ORANGE
-    [255, 255, 255]    // CLEAN
-];
+// Matching colors come from Pimoroni's UC8159 and EL133UF1 drivers.
+// Output colors encode ink identities independently of the saturation setting.
+// CLEAN is a refresh command, not an additional image color.
+const DISPLAY_PALETTES = {
+    'impression-5.7': {
+        saturated: [
+            [57, 48, 57], [255, 255, 255], [58, 91, 70], [61, 59, 94],
+            [156, 72, 75], [208, 190, 71], [177, 106, 73]
+        ],
+        output: [
+            [0, 0, 0], [255, 255, 255], [0, 255, 0], [0, 0, 255],
+            [255, 0, 0], [255, 255, 0], [255, 140, 0]
+        ]
+    },
+    'impression-13.3-2025': {
+        saturated: [
+            [0, 0, 0], [161, 164, 165], [208, 190, 71],
+            [156, 72, 75], [61, 59, 94], [58, 91, 70]
+        ],
+        output: [
+            [0, 0, 0], [255, 255, 255], [255, 255, 0],
+            [255, 0, 0], [0, 0, 255], [0, 255, 0]
+        ]
+    }
+};
 
-const DESATURATED_PALETTE = [
-    [0, 0, 0],         // BLACK
-    [255, 255, 255],   // WHITE
-    [0, 255, 0],       // GREEN
-    [0, 0, 255],       // BLUE
-    [255, 0, 0],       // RED
-    [255, 255, 0],     // YELLOW
-    [255, 140, 0],     // ORANGE
-    [255, 255, 255]    // CLEAN
-];
+function getDisplayPalette(model) {
+    const profile = DISPLAY_PALETTES[model];
+    if (!profile) throw new Error(`Unsupported display model: ${model}`);
+    return profile;
+}
 
 /**
  * Generate a blended palette based on saturation level.
  *
- * Exactly replicates the Inky library's _palette_blend() method.
+ * Uses the Inky library's palette blending formula.
  * Formula: color = (saturated * sat) + (desaturated * (1 - sat))
  *
  * @param {number} saturation - Saturation level (0.0 to 1.0)
+ * @param {string} model - Display model from /api/display-config.
  * @returns {Array<Array<number>>} Array of [r, g, b] color values
  */
-function generatePalette(saturation) {
+function generatePalette(saturation, model = 'impression-13.3-2025') {
     saturation = parseFloat(saturation);
+    const profile = getDisplayPalette(model);
     const palette = [];
 
-    // Blend first 7 colors.
-    for (let i = 0; i < 7; i++) {
-        const rs = SATURATED_PALETTE[i][0] * saturation;
-        const gs = SATURATED_PALETTE[i][1] * saturation;
-        const bs = SATURATED_PALETTE[i][2] * saturation;
+    for (let i = 0; i < profile.output.length; i++) {
+        const rs = profile.saturated[i][0] * saturation;
+        const gs = profile.saturated[i][1] * saturation;
+        const bs = profile.saturated[i][2] * saturation;
 
-        const rd = DESATURATED_PALETTE[i][0] * (1.0 - saturation);
-        const gd = DESATURATED_PALETTE[i][1] * (1.0 - saturation);
-        const bd = DESATURATED_PALETTE[i][2] * (1.0 - saturation);
+        const rd = profile.output[i][0] * (1.0 - saturation);
+        const gd = profile.output[i][1] * (1.0 - saturation);
+        const bd = profile.output[i][2] * (1.0 - saturation);
 
         palette.push([
             Math.round(rs + rd),
@@ -68,9 +77,6 @@ function generatePalette(saturation) {
             Math.round(bs + bd)
         ]);
     }
-
-    // Add CLEAN color (always white).
-    palette.push([255, 255, 255]);
 
     return palette;
 }
@@ -178,10 +184,11 @@ function findClosestPaletteColor(r, g, b, palette) {
  * Where X is the current pixel being processed.
  *
  * @param {ImageData} imageData - Input image (RGBA format).
- * @param {Array<Array<number>>} palette - 8-color palette
+ * @param {Array<Array<number>>} palette - Colors used for matching and error diffusion.
+ * @param {Array<Array<number>>} outputPalette - Ink colors written to the result.
  * @returns {ImageData} Dithered image
  */
-function floydSteinbergDither(imageData, palette) {
+function floydSteinbergDither(imageData, palette, outputPalette = palette) {
     const width = imageData.width;
     const height = imageData.height;
     const data = new Uint8ClampedArray(imageData.data);
@@ -203,9 +210,9 @@ function floydSteinbergDither(imageData, palette) {
             const newB = palette[paletteIndex][2];
 
             // Set pixel to palette color.
-            data[idx] = newR;
-            data[idx + 1] = newG;
-            data[idx + 2] = newB;
+            data[idx] = outputPalette[paletteIndex][0];
+            data[idx + 1] = outputPalette[paletteIndex][1];
+            data[idx + 2] = outputPalette[paletteIndex][2];
             // Alpha stays the same.
 
             // Calculate quantization error.
@@ -266,10 +273,11 @@ function floydSteinbergDither(imageData, palette) {
  *        1/8
  *
  * @param {ImageData} imageData - Input image (RGBA format).
- * @param {Array<Array<number>>} palette - 8-color palette
+ * @param {Array<Array<number>>} palette - Colors used for matching and error diffusion.
+ * @param {Array<Array<number>>} outputPalette - Ink colors written to the result.
  * @returns {ImageData} Dithered image
  */
-function atkinsonDither(imageData, palette) {
+function atkinsonDither(imageData, palette, outputPalette = palette) {
     const width = imageData.width;
     const height = imageData.height;
     const data = new Uint8ClampedArray(imageData.data);
@@ -287,9 +295,9 @@ function atkinsonDither(imageData, palette) {
             const newG = palette[paletteIndex][1];
             const newB = palette[paletteIndex][2];
 
-            data[idx] = newR;
-            data[idx + 1] = newG;
-            data[idx + 2] = newB;
+            data[idx] = outputPalette[paletteIndex][0];
+            data[idx + 1] = outputPalette[paletteIndex][1];
+            data[idx + 2] = outputPalette[paletteIndex][2];
 
             // Calculate error (only 6/8 = 75% is distributed).
             const errR = (oldR - newR) / 8;
@@ -336,10 +344,11 @@ const BAYER_4X4 = [
  * Unlike error diffusion, it doesn't spread errors to neighboring pixels.
  *
  * @param {ImageData} imageData - Input image (RGBA format).
- * @param {Array<Array<number>>} palette - 8-color palette
+ * @param {Array<Array<number>>} palette - Colors used for matching and error diffusion.
+ * @param {Array<Array<number>>} outputPalette - Ink colors written to the result.
  * @returns {ImageData} Dithered image
  */
-function orderedDither(imageData, palette) {
+function orderedDither(imageData, palette, outputPalette = palette) {
     const width = imageData.width;
     const height = imageData.height;
     const data = new Uint8ClampedArray(imageData.data);
@@ -365,9 +374,9 @@ function orderedDither(imageData, palette) {
             // Find closest palette color for adjusted pixel.
             const paletteIndex = findClosestPaletteColor(r, g, b, palette);
 
-            data[idx] = palette[paletteIndex][0];
-            data[idx + 1] = palette[paletteIndex][1];
-            data[idx + 2] = palette[paletteIndex][2];
+            data[idx] = outputPalette[paletteIndex][0];
+            data[idx + 1] = outputPalette[paletteIndex][1];
+            data[idx + 2] = outputPalette[paletteIndex][2];
         }
     }
 
@@ -387,12 +396,25 @@ const DITHER_ALGORITHMS = {
  * @param {ImageData} imageData - Input image (dimensions should match target display).
  * @param {number} saturation - Saturation level (0.0 to 1.0, default 0.5).
  * @param {string} algorithm - Dithering algorithm: 'floyd-steinberg', 'atkinson', or 'ordered'.
+ * @param {string} model - Display model from /api/display-config.
  * @returns {ImageData} Dithered image ready for e-ink display.
  */
-function ditherForEInk(imageData, saturation = 0.5, algorithm = 'floyd-steinberg') {
-    const palette = generatePalette(saturation);
+function ditherForEInk(imageData, saturation = 0.5, algorithm = 'floyd-steinberg', model = 'impression-13.3-2025') {
+    const palette = generatePalette(saturation, model);
     const ditherFn = DITHER_ALGORITHMS[algorithm] || floydSteinbergDither;
-    return ditherFn(imageData, palette);
+
+    // The panel has no alpha channel. Composite on white before choosing inks,
+    // so exporting the canvas cannot alter RGB codes through alpha rounding.
+    const data = new Uint8ClampedArray(imageData.data);
+    for (let i = 0; i < data.length; i += 4) {
+        const alpha = data[i + 3] / 255;
+        for (let channel = 0; channel < 3; channel++) {
+            data[i + channel] = Math.round(data[i + channel] * alpha + 255 * (1 - alpha));
+        }
+        data[i + 3] = 255;
+    }
+    const opaque = new ImageData(data, imageData.width, imageData.height);
+    return ditherFn(opaque, palette, getDisplayPalette(model).output);
 }
 
 // Export functions for use in other scripts and Web Workers.

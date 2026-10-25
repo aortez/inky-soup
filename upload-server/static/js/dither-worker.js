@@ -13,6 +13,7 @@ self.onmessage = function(e) {
     height,
     saturation,
     algorithm,
+    model,
     brightness = 0,
     contrast = 0,
   } = e.data;
@@ -25,7 +26,7 @@ self.onmessage = function(e) {
     applyBrightnessContrast(imageData, brightness, contrast);
 
     // Perform the dithering operation with the specified algorithm.
-    const result = ditherForEInk(imageData, saturation, algorithm || 'floyd-steinberg');
+    const result = ditherForEInk(imageData, saturation, algorithm || 'floyd-steinberg', model);
 
     // Send the result back to the main thread (transfer the buffer).
     self.postMessage(result, [result.data.buffer]);

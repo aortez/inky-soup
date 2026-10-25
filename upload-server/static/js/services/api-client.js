@@ -103,7 +103,7 @@ export async function uploadThumb(filename, blob) {
 }
 
 /**
- * Upload a dithered image (7-color PNG) to the server.
+ * Upload a dithered image (display-palette PNG) to the server.
  * @param {string} filename - Original filename (without .png extension).
  * @param {Blob} blob - PNG blob data.
  * @param {string} filter - Filter name used for the cached image.
