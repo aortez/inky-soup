@@ -3,8 +3,10 @@ import {androidApp} from './core/platform.js';
 import {previewConfig, savedPreviewConfig, rememberPreviewConfig} from './core/preview-profile.js';
 import {elements as el} from './core/dom.js';
 import {state, sessionReady, rememberFrame, savedFrame, rememberJob, savedJob} from './core/state.js';
-import {normalizeAddress, request, validateConfig, savePhoto, deletePhoto, jsonPost, getPhoto} from './services/frame-client.js';
+import {normalizeAddress, request, validateConfig, savePhoto, deletePhoto, jsonPost, getPhoto, sendTestCard} from './services/frame-client.js';
 import {imageSettings, settingIds, validatePhoto} from './core/settings.js';
+import {pendingPhotoRotation} from './core/photo-rotation.js';
+import {orientationTestCard} from './services/test-card.js';
 import {processPhoto} from './services/processor.js';
 import {saveDraft, readDraft} from './services/drafts.js';
 import {watchAppUpdates, reloadApp} from './services/app-updates.js';
@@ -45,7 +47,7 @@ async function connectFrame() {
     renderGallery(selectPhoto);
     if (state.draft) {await acquireEditLock(); prepare();}
     const previous = savedJob();
-    if (previous?.base === base) { rememberJob(previous); pollJob(); }
+    if (previous?.base === base) { rememberJob(previous); if (previous.kind === 'test-card') showView('settings'); pollJob(); }
     if (!state.job) await regenerateGallery();
   } catch (error) {
     state.connected = false;
@@ -159,8 +161,8 @@ async function storeCurrentPhoto(display) {
   try {
     const result = await savePhoto({base: state.frame.base, draft: state.draft, prepared: state.prepared,
       session: state.session, display, keepLock: true,
-      onStored: async ({base, filename}) => {
-        state.draft = {...state.draft, sourceFrame: base, sourceFilename: filename};
+      onStored: async ({base, filename, ...checkpoint}) => {
+        state.draft = {...state.draft, sourceFrame: base, sourceFilename: filename, ...checkpoint};
         await saveDraft(state.draft).catch(() => {});
       },
       onProgress: message => {
@@ -192,7 +194,10 @@ function syncOrientation() {
 }
 
 async function regenerateGallery() {
-  const pending = state.images.filter(image => image.needs_processing);
+  // Keep an uncertain save's receipt available for retry instead of superseding it
+  // with background regeneration (including after closing/reopening the app).
+  const pending = state.images.filter(image => image.needs_processing
+    && !pendingPhotoRotation(state.draft, state.frame.base, image.filename));
   if (!pending.length || state.busy || state.job || !state.connected) return;
   state.busy = true; controls();
   await releaseEditLock();
@@ -266,7 +271,7 @@ async function runImports() {
       if (lockError) throw lockError;
       clearInterval(lockTimer);
       const saved = await savePhoto({base, draft: item.draft, prepared, session: state.session, keepLock:owned,
-        onStored: ({base, filename}) => {item.draft.sourceFrame = base; item.draft.sourceFilename = filename;},
+        onStored: ({base, filename, ...checkpoint}) => {Object.assign(item.draft, {sourceFrame:base, sourceFilename:filename}, checkpoint);},
         onProgress: message => {item.status = message; renderImports();}});
       item.draft.sourceFrame = saved.base; item.draft.sourceFilename = saved.filename; item.status = 'Saved';
     } catch (error) {item.status = 'Failed'; item.error = error.message;}
@@ -313,6 +318,8 @@ async function pollJob() {
   clearTimeout(state.pollTimer);
   const job = state.job;
   if (!job) return;
+  const jobActivity = (title, detail = '', error = false, progress = 'none') => activity(title, detail, error, progress, job.kind);
+  el['test-retry-status'].hidden = true;
   el['retry-status'].hidden = true;
   try {
     const current = await request(job.base, `/api/flash/status/${job.id}`);
@@ -325,19 +332,20 @@ async function pollJob() {
     const elapsed = current.started_at ? Math.max(0, Math.round(((current.finished_at || Date.now()) - current.started_at) / 1000)) : null;
     el['job-info'].textContent = `Job ${job.id} · ${current.status}${elapsed === null ? '' : ` · ${elapsed}s since refresh started`} · ${current.filename}`;
     if (current.status === 'Completed') {
-      activity('Your new view is ready.', 'The frame has finished refreshing.', false, 'complete');
+      jobActivity(job.kind === 'test-card' ? 'Orientation test card displayed.' : 'Your new view is ready.', 'The frame has finished refreshing.', false, 'complete');
       await finishJob(job); return;
     }
     if (current.status === 'Failed') {
       const timeout = /Wait:.*Timed out/.test(current.error_message || '');
-      activity('The display could not refresh.', timeout ? 'The panel did not respond. Check its connection before trying again.' : 'The frame reported a display error. Check the device before trying again.', true);
+      jobActivity('The display could not refresh.', timeout ? 'The panel did not respond. Check its connection before trying again.' : 'The frame reported a display error. Check the device before trying again.', true);
       await finishJob(job); return;
     }
-    activity(current.status === 'Queued' ? 'Waiting for your frame…' : 'Refreshing your frame…', 'The screen may flash several times. Keep the frame powered on.', false, 'busy');
+    jobActivity(current.status === 'Queued' ? 'Waiting for your frame…' : 'Refreshing your frame…', 'The screen may flash several times. Keep the frame powered on.', false, 'busy');
     state.pollTimer = setTimeout(pollJob, 2000);
   } catch (error) {
-    activity('Refresh status unavailable', `${error.message} The job may still be running.`, true);
+    jobActivity('Refresh status unavailable', `${error.message} The job may still be running.`, true);
     el['retry-status'].hidden = false;
+    el['test-retry-status'].hidden = false;
     // A lost response must never cause an automatic second flash.
     if (error.status === 404 || error.message.includes('restarted')) await finishJob(job);
     controls();
@@ -352,7 +360,7 @@ el.photo.addEventListener('change', async () => {
 });
 for (const id of settingIds) el[id].addEventListener('change', () => {
   if (!state.draft || el[id].disabled) return;
-  const settings = Object.fromEntries(settingIds.map(key => [key, ['saturation', 'brightness', 'contrast'].includes(key) ? Number(el[key].value) : el[key].value]));
+  const settings = Object.fromEntries(settingIds.map(key => [key, ['saturation', 'brightness', 'contrast', 'photo_rotation_degrees'].includes(key) ? Number(el[key].value) : el[key].value]));
   useDraft({...state.draft, ...settings});
 });
 for (const id of ['saturation', 'brightness', 'contrast']) el[id].addEventListener('input', () => {el[`${id}-value`].value = el[id].value;});
@@ -371,6 +379,22 @@ el.orientation.addEventListener('change', () => {
   controls();
 });
 el['save-orientation'].addEventListener('click', changeOrientation);
+el['test-orientation'].addEventListener('click', async () => {
+  if (el['test-orientation'].disabled) return;
+  state.busy = true; controls();
+  el['test-retry-status'].hidden = true;
+  activity('Preparing the orientation card…', '', false, 'busy', 'test-card');
+  el['test-activity'].scrollIntoView({block:'nearest'});
+  try {
+    const config = state.config;
+    const blob = await orientationTestCard(config);
+    const job = await sendTestCard(state.frame.base, blob, config);
+    rememberJob(job); pollJob();
+  } catch (error) {
+    activity('Could not start the test card.', `${error.message} If the connection was lost, check the display before trying again.`, true, 'none', 'test-card');
+  } finally {state.busy = false; controls();}
+});
+el['test-retry-status'].addEventListener('click', pollJob);
 el['preview-before'].addEventListener('click', () => {state.previewMode = 'before'; renderPreview();});
 el['preview-display'].addEventListener('click', () => {state.previewMode = 'display'; renderPreview();});
 el['retry-edit'].addEventListener('click', async () => {
@@ -400,7 +424,8 @@ el['confirm-delete'].addEventListener('click', async () => {
   try {
     const deleted = await deletePhoto(state.frame.base, state.draft.sourceFilename, state.session);
     await releaseEditLock();
-    state.draft = {...state.draft, sourceFrame: null, sourceFilename: null};
+    state.draft = {...state.draft, sourceFrame: null, sourceFilename: null,
+      photo_rotation_revision:0, pending_photo_rotation:null};
     await saveDraft(state.draft).catch(() => {});
     activity('Photo deleted from the frame.', deleted.warnings?.length ? 'The original was deleted, but some saved versions could not be removed.' : 'A copy remains in your phone’s draft. The display has not changed.');
     await refreshGallery();

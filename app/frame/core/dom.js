@@ -12,6 +12,7 @@ export const elements = Object.fromEntries([
   'forget', 'setup-link', 'choose-tab', 'gallery-tab', 'gallery-panel', 'editor-panel',
   'settings-tab', 'settings-panel', 'orientation', 'save-orientation', 'orientation-status',
   'orientation-size', 'orientation-diagram', 'import-heading',
+  'photo_rotation_degrees', 'test-orientation', 'test-activity', 'test-activity-title', 'test-activity-detail', 'test-send-progress', 'test-retry-status',
   'app-update', 'app-update-detail', 'reload-app',
   'preview-profile', 'preview-model', 'preview-layout', 'settings-heading',
 ].map(id => [id, document.getElementById(id)]));

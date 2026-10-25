@@ -1,0 +1,58 @@
+{
+  "package": "pizza.allan.frame",
+  "model": "Pixel 9 Pro XL",
+  "android": "17",
+  "sdk": "37",
+  "checks": [
+    "System photo-picker cancellation preserves the selected draft.",
+    "impression-5.7 landscape: 600 × 448 native worker preview and Back navigation.",
+    "impression-5.7 landscape: all four source rotations process without changing output dimensions.",
+    "impression-5.7 portrait: 448 × 600 native worker preview and Back navigation.",
+    "impression-5.7 portrait: all four source rotations process without changing output dimensions.",
+    "impression-13.3-2025 landscape: 1600 × 1200 native worker preview and Back navigation.",
+    "impression-13.3-2025 landscape: all four source rotations process without changing output dimensions.",
+    "impression-13.3-2025 portrait: 1200 × 1600 native worker preview and Back navigation.",
+    "impression-13.3-2025 portrait: all four source rotations process without changing output dimensions.",
+    "Back from Create saves the draft and minimizes the app.",
+    "Cold launch with Wi-Fi and mobile data disabled restores the draft, profile, and adjustments."
+  ],
+  "initial": {
+    "origin": "https://localhost",
+    "platform": "android",
+    "userAgent": "Mozilla/5.0 (Linux; Android 17; Pixel 9 Pro XL Build/CP2A.260605.016; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/155.0.8059.39 Mobile Safari/537.36",
+    "name": "inky-android-shell-colors.png",
+    "dimensions": [
+      1200,
+      1600
+    ],
+    "fit": "cover",
+    "brightness": "25",
+    "photoRotation": "0",
+    "model": "impression-13.3-2025",
+    "layout": "portrait",
+    "viewport": 448,
+    "contentWidth": 448,
+    "workers": []
+  },
+  "final": {
+    "origin": "https://localhost",
+    "platform": "android",
+    "userAgent": "Mozilla/5.0 (Linux; Android 17; Pixel 9 Pro XL Build/CP2A.260605.016; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/155.0.8059.39 Mobile Safari/537.36",
+    "name": "inky-android-shell-colors.png",
+    "dimensions": [
+      1200,
+      1600
+    ],
+    "fit": "cover",
+    "brightness": "25",
+    "photoRotation": "270",
+    "model": "impression-13.3-2025",
+    "layout": "portrait",
+    "viewport": 448,
+    "contentWidth": 448,
+    "workers": []
+  },
+  "externalRequests": [],
+  "pageErrors": [],
+  "passed": true
+}

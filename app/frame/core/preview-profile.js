@@ -12,6 +12,7 @@ export function previewConfig(model = 'impression-5.7', portrait = false) {
     thumb_width: portrait ? size.thumb_height : size.thumb_width,
     thumb_height: portrait ? size.thumb_width : size.thumb_height,
     rotation_degrees: portrait ? 90 : 0, rotation_revision: 0, orientation_supported: false,
+    photo_rotation_supported: true, orientation_test_supported: false,
   };
 }
 
