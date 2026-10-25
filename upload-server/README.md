@@ -26,6 +26,31 @@ The Pi runs the `inky-soup-server.service` systemd unit and invokes
 installed by `cargo run`, so physical flash requests cannot complete on a normal
 development computer.
 
+Orientation changes require a matching server and `inky-soup-update-display`
+script. For an isolated device test, set `INKY_SOUP_IMAGES_DIR` and
+`INKY_SOUP_DATA_DIR` to a disposable directory, choose a different `ROCKET_PORT`,
+and point `INKY_SOUP_DISPLAY_COMMAND` at the matching copied executable. Avoid
+concurrent physical jobs from the normal and test servers. The
+[CLI orientation command](../cli/README.md#mounting-orientation) controls either
+server through its chosen `--device` URL.
+
+The original Pi Zero W needs ARMv6 **including the linker startup objects**.
+`-C target-cpu=arm1176jzf-s` alone does not fix a host cross-GCC that ships ARMv7
+startup objects. The orientation preview was built with Rust 1.85.0 and a Zig
+0.14.1 linker wrapper running `zig cc -target arm-linux-gnueabihf
+-mcpu=arm1176jzf_s`, selected via
+`CARGO_TARGET_ARM_UNKNOWN_LINUX_GNUEABIHF_LINKER`, with
+`RUSTFLAGS='-C target-cpu=arm1176jzf-s'`. `readelf -A` must report ARMv6 and VFPv2;
+verify startup on the Pi before replacing its installed server. Production images
+continue to use the Yocto toolchain.
+
+Orientation validation on 2026-10-25 used the original Pi Zero W and 13.3-inch
+2025 display over USB Ethernet. The new app rebuilt a disposable photo at all
+four angles and completed a 90° physical refresh, confirmed visually by the user.
+CLI orientation, restart persistence, and prepared portrait upload/delete passed.
+The normal service and its 15 photos were preserved; the temporary service was
+stopped. See [results](../docs/validation/frame-orientation-pi-zero-w.json).
+
 ## Unit tests and lint
 
 ```bash

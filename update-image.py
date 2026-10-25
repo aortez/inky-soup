@@ -114,6 +114,17 @@ def set_pre_dithered_image(display, image):
     display.buf = buffer
 
 
+def rotate_image(image, clockwise_degrees):
+    """Turn whole pixels without resampling the encoded ink colors."""
+    turns = {90: Image.Transpose.ROTATE_270, 180: Image.Transpose.ROTATE_180,
+             270: Image.Transpose.ROTATE_90}
+    if clockwise_degrees == 0:
+        return image
+    if clockwise_degrees not in turns:
+        raise ValueError("Rotation must be 0, 90, 180, or 270")
+    return image.transpose(turns[clockwise_degrees])
+
+
 def main():
     start_time = time.time()
 
@@ -134,6 +145,8 @@ def main():
         action="store_true",
         help="Skip dithering (image is pre-dithered)",
     )
+    parser.add_argument("--rotation", type=int, choices=[0, 90, 180, 270], default=0,
+                        help="Clockwise buffer rotation to compensate for mounting")
     args = parser.parse_args()
 
     # Read display configuration.
@@ -153,7 +166,7 @@ def main():
         print(f"Using display dimensions: {target_width}x{target_height}", flush=True)
 
     load_start = time.time()
-    image = Image.open(args.image)
+    image = rotate_image(Image.open(args.image), args.rotation)
 
     width, height = image.size
     print(f"Image size: {width}x{height}", flush=True)

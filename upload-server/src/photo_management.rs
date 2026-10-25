@@ -176,7 +176,7 @@ mod tests {
         queue
             .lock()
             .await
-            .enqueue("photo.png".into(), "unused".into(), false);
+            .enqueue("photo.png".into(), "unused".into(), false, 0);
         assert_eq!(
             delete_from(&root, &request, &locks, &queue)
                 .await

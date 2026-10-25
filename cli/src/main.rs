@@ -64,6 +64,11 @@ enum Command {
     },
     /// Display model and exact pixel dimensions.
     Display,
+    /// Read or set the clockwise mounting orientation (0, 90, 180, 270).
+    Orientation {
+        #[arg(value_parser = parse_orientation)]
+        degrees: Option<u16>,
+    },
     /// List images and their saved settings.
     Images,
     /// Delete an original and its saved versions; refuses locked or pending photos.
@@ -149,6 +154,13 @@ fn device_url(input: &str) -> Result<Url> {
     Ok(url)
 }
 
+fn parse_orientation(input: &str) -> std::result::Result<u16, String> {
+    match input.parse::<u16>() {
+        Ok(value @ (0 | 90 | 180 | 270)) => Ok(value),
+        _ => Err("Choose 0, 90, 180, or 270 degrees".into()),
+    }
+}
+
 fn decoded(response: Response) -> Result<Value> {
     let status = response.status();
     let bytes = response.bytes()?;
@@ -216,7 +228,9 @@ impl Frame {
         }
     }
     fn queue(&self, filename: &str, session: &str, twice: bool) -> Result<Value> {
+        let config = self.get("api/display-config")?;
         self.multipart("flash", multipart::Form::new()
+            .text("submission.rotation_revision", config["rotation_revision"].as_u64().unwrap_or(0).to_string())
             .text("submission.filename", filename.to_owned())
             .text("submission.image_file_path", format!("images/dithered/{filename}.png"))
             .text("submission.session_id", session.to_owned())
@@ -458,6 +472,21 @@ fn run(args: &Args) -> Result<Value> {
             )
         }
         Command::Display => frame.get("api/display-config"),
+        Command::Orientation { degrees } => {
+            let config = frame.get("api/display-config")?;
+            match degrees {
+                None => Ok(config),
+                Some(degrees) => {
+                    let revision = config["rotation_revision"]
+                        .as_u64()
+                        .context("Update the frame server to support orientation")?;
+                    frame.json_post(
+                        "api/settings/display-rotation",
+                        &json!({"rotation_degrees":degrees,"expected_revision":revision}),
+                    )
+                }
+            }
+        }
         Command::Images => frame.get("api/images"),
         Command::Delete { filename } => {
             valid_filename(filename)?;
@@ -526,6 +555,12 @@ fn run(args: &Args) -> Result<Value> {
             };
             let filename = format!("{}.{}", uuid::Uuid::new_v4(), extension);
             valid_filename(&filename)?;
+            let session = uuid::Uuid::new_v4().to_string();
+            if *prepared {
+                // Reserve the name before the original becomes visible to
+                // clients that rebuild missing derived images automatically.
+                frame.lock(&filename, &session)?;
+            }
             let upload = frame.multipart(
                 "upload",
                 multipart::Form::new().part(
@@ -539,13 +574,18 @@ fn run(args: &Args) -> Result<Value> {
                             _ => "image/jpeg",
                         })?,
                 ),
-            )?;
-            if upload["filename"] != filename {
-                bail!("Device returned an unexpected filename");
-            }
+            );
+            let upload = match upload {
+                Ok(upload) if upload["filename"] == filename => upload,
+                result => {
+                    if *prepared {
+                        frame.unlock(&filename, &session);
+                    }
+                    result?;
+                    bail!("Device returned an unexpected filename");
+                }
+            };
             if let (Some(image), Some(config)) = (ready, config) {
-                let session = uuid::Uuid::new_v4().to_string();
-                frame.lock(&filename, &session)?;
                 let result = (|| -> Result<Value> {
                     let mut thumb = Cursor::new(Vec::new());
                     image
@@ -569,6 +609,13 @@ fn run(args: &Args) -> Result<Value> {
                         frame.multipart(
                             path,
                             multipart::Form::new()
+                                .text(
+                                    "rotation_revision",
+                                    config["rotation_revision"]
+                                        .as_u64()
+                                        .unwrap_or(0)
+                                        .to_string(),
+                                )
                                 .text("filename", filename.clone())
                                 .text("session_id", session.clone())
                                 .text("filter", "bicubic")

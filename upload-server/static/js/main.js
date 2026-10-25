@@ -48,6 +48,8 @@ async function loadDisplayConfig() {
       thumbHeight: config.thumb_height,
       model: config.model,
       color: config.color,
+      rotationDegrees: config.rotation_degrees || 0,
+      rotationRevision: config.rotation_revision || 0,
     });
 
     // Update canvas sizes if they exist.

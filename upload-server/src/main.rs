@@ -4,10 +4,15 @@ mod browser_access;
 mod cache_worker;
 mod cleanup;
 mod config;
+mod derived_assets;
+mod display_settings;
 mod flash_queue;
 mod image_locks;
 mod metadata;
+mod orientation;
 mod photo_management;
+#[cfg(test)]
+mod orientation_tests;
 
 use glob::glob;
 use log::{debug, error, info, warn};
@@ -44,6 +49,7 @@ struct FlashSubmission {
     image_file_path: String,
     session_id: String,
     flash_twice: bool,
+    rotation_revision: Option<u64>,
 }
 
 #[derive(Debug, FromForm)]
@@ -76,6 +82,7 @@ struct GalleryImage {
     path: String,
     filename: String,
     thumb_ready: bool,
+    needs_processing: bool,
     filter: String,
     fit_mode: String,
     cache_version: u32,
@@ -111,6 +118,10 @@ struct DisplayConfig {
     thumb_height: u32,
     model: String,
     color: String,
+    physical_width: u32,
+    physical_height: u32,
+    rotation_degrees: u16,
+    rotation_revision: u64,
 }
 
 /// Read display configuration from /etc/inky-soup/display.conf.
@@ -126,6 +137,10 @@ fn get_display_config() -> DisplayConfig {
         thumb_height: 112,
         model: "impression-13.3-2025".to_string(),
         color: "multi".to_string(),
+        physical_width: 1600,
+        physical_height: 1200,
+        rotation_degrees: 0,
+        rotation_revision: 0,
     };
 
     // Try to read config file.
@@ -176,6 +191,15 @@ fn get_display_config() -> DisplayConfig {
         debug!("Using default display config ({}x{})", config.width, config.height);
     }
 
+    let settings = display_settings::load_runtime_settings();
+    config.physical_width = config.width;
+    config.physical_height = config.height;
+    config.rotation_degrees = settings.rotation_degrees;
+    config.rotation_revision = settings.rotation_revision;
+    (config.width, config.height) = display_settings::compute_logical_dimensions(
+        config.width, config.height, settings.rotation_degrees);
+    (config.thumb_width, config.thumb_height) = display_settings::compute_logical_dimensions(
+        config.thumb_width, config.thumb_height, settings.rotation_degrees);
     config
 }
 
@@ -203,6 +227,7 @@ fn sanitize_filename(filename: &str) -> Option<String> {
 
 fn get_gallery_images() -> Vec<GalleryImage> {
     let mut images: Vec<GalleryImage> = Vec::new();
+    let revision = display_settings::load_runtime_settings().rotation_revision;
 
     let glob_pattern = format!("{}/*", config::IMAGES_DIR.display());
     for entry in glob(&glob_pattern).expect("Failed to read glob pattern") {
@@ -232,8 +257,14 @@ fn get_gallery_images() -> Vec<GalleryImage> {
 
                 images.push(GalleryImage {
                     path: image_path,
-                    filename,
-                    thumb_ready,
+                    filename: filename.clone(),
+                    thumb_ready: thumb_ready && meta.thumb_rotation_revision == revision,
+                    needs_processing: !thumb_ready
+                        || !config::cache_path(&filename).exists()
+                        || !config::dithered_path(&filename).exists()
+                        || meta.cache_rotation_revision != revision
+                        || meta.thumb_rotation_revision != revision
+                        || meta.dither_rotation_revision != revision,
                     filter: meta.filter,
                     fit_mode: meta.fit_mode,
                     cache_version: meta.cache_version,
@@ -268,7 +299,8 @@ fn gallery_images() -> Json<Vec<GalleryImage>> {
 #[get("/api/thumb-status/<filename>")]
 fn thumb_status(filename: &str) -> Json<ThumbStatus> {
     let thumb_path = config::thumb_path(filename);
-    let ready = thumb_path.exists();
+    let ready = thumb_path.exists() && metadata::get_all_metadata(filename).thumb_rotation_revision
+        == display_settings::load_runtime_settings().rotation_revision;
 
     Json(ThumbStatus {
         ready,
@@ -405,6 +437,7 @@ struct UploadDitheredResponse {
 #[derive(Debug, FromForm)]
 struct DitheredUpload<'v> {
     filename: String,
+    rotation_revision: Option<u64>,
     filter: String,
     fit_mode: Option<String>,
     saturation: f32,
@@ -419,6 +452,7 @@ struct DitheredUpload<'v> {
 #[derive(Debug, FromForm)]
 struct CacheUpload<'v> {
     filename: String,
+    rotation_revision: Option<u64>,
     filter: Option<String>,
     fit_mode: Option<String>,
     saturation: Option<f32>,
@@ -442,6 +476,7 @@ struct UploadCacheResponse {
 #[derive(Debug, FromForm)]
 struct ThumbUpload<'v> {
     filename: String,
+    rotation_revision: Option<u64>,
     file: TempFile<'v>,
 }
 
@@ -489,7 +524,18 @@ async fn upload_dithered(
     _origin: BrowserWrite,
     mut form: Form<DitheredUpload<'_>>,
     locks_state: &State<ImageLocksState>,
+    orientation: &State<orientation::OrientationState>,
 ) -> Json<UploadDitheredResponse> {
+    let _orientation = orientation.lock().await;
+    let revision = display_settings::load_runtime_settings().rotation_revision;
+    if form.rotation_revision.unwrap_or(0) != revision {
+        return Json(UploadDitheredResponse {
+            success: false,
+            message: "Display orientation changed. Reconnect and regenerate this photo.".into(),
+            path: None,
+        });
+    }
+
     // Sanitize filename to prevent path traversal.
     let filename = match sanitize_filename(&form.filename) {
         Some(name) => name,
@@ -549,6 +595,9 @@ async fn upload_dithered(
                 contrast,
                 &dither_algorithm,
             );
+            let mut meta = metadata::get_all_metadata(&filename);
+            meta.dither_rotation_revision = revision;
+            metadata::save_metadata(&filename, &meta);
             debug!("Saved dithered image: {}", filename);
 
             Json(UploadDitheredResponse {
@@ -574,7 +623,18 @@ async fn upload_cache(
     _origin: BrowserWrite,
     mut form: Form<CacheUpload<'_>>,
     locks_state: &State<ImageLocksState>,
+    orientation: &State<orientation::OrientationState>,
 ) -> Json<UploadCacheResponse> {
+    let _orientation = orientation.lock().await;
+    let revision = display_settings::load_runtime_settings().rotation_revision;
+    if form.rotation_revision.unwrap_or(0) != revision {
+        return Json(UploadCacheResponse {
+            success: false,
+            message: "Display orientation changed. Reconnect and regenerate this photo.".into(),
+            path: None,
+        });
+    }
+
     // Sanitize filename to prevent path traversal.
     let filename = match sanitize_filename(&form.filename) {
         Some(name) => name,
@@ -661,6 +721,9 @@ async fn upload_cache(
             }
             debug!("Saved cache image: {}", filename);
 
+            let mut meta = metadata::get_all_metadata(&filename);
+            meta.cache_rotation_revision = revision;
+            metadata::save_metadata(&filename, &meta);
             Json(UploadCacheResponse {
                 success: true,
                 message: "Cache image uploaded successfully".to_string(),
@@ -680,7 +743,21 @@ async fn upload_cache(
 
 /// API endpoint to upload a gallery thumbnail.
 #[post("/api/upload-thumb", data = "<form>")]
-async fn upload_thumb(_origin: BrowserWrite, mut form: Form<ThumbUpload<'_>>) -> Json<UploadThumbResponse> {
+async fn upload_thumb(
+    _origin: BrowserWrite,
+    mut form: Form<ThumbUpload<'_>>,
+    orientation: &State<orientation::OrientationState>,
+) -> Json<UploadThumbResponse> {
+    let _orientation = orientation.lock().await;
+    let revision = display_settings::load_runtime_settings().rotation_revision;
+    if form.rotation_revision.unwrap_or(0) != revision {
+        return Json(UploadThumbResponse {
+            success: false,
+            message: "Display orientation changed. Reconnect and regenerate this photo.".into(),
+            path: None,
+        });
+    }
+
     // Sanitize filename to prevent path traversal.
     let filename = match sanitize_filename(&form.filename) {
         Some(name) => name,
@@ -700,6 +777,9 @@ async fn upload_thumb(_origin: BrowserWrite, mut form: Form<ThumbUpload<'_>>) ->
 
     match form.file.copy_to(&thumb_path).await {
         Ok(()) => {
+            let mut meta = metadata::get_all_metadata(&filename);
+            meta.thumb_rotation_revision = revision;
+            metadata::save_metadata(&filename, &meta);
             debug!("Saved gallery thumbnail: {}", filename);
             Json(UploadThumbResponse {
                 success: true,
@@ -792,6 +872,7 @@ async fn submit_flash_image<'r>(
     mut form: Form<Contextual<'r, SubmitFlashImage>>,
     queue_state: &State<FlashQueueState>,
     locks_state: &State<ImageLocksState>,
+    orientation: &State<orientation::OrientationState>,
 ) -> Result<Json<FlashResponse>, (Status, String)> {
     let submission = match form.value {
         Some(ref mut s) => s,
@@ -818,6 +899,14 @@ async fn submit_flash_image<'r>(
     info!("Flash request received: {} (flash_twice: {}, session: {})", filename, flash_twice, session_id);
 
     // Serialize file validation/enqueue with photo deletion.
+    let _orientation = orientation.lock().await;
+    let display = get_display_config();
+    if submission.submission.rotation_revision.unwrap_or(0) != display.rotation_revision
+        || metadata::get_all_metadata(&filename).dither_rotation_revision != display.rotation_revision
+    {
+        return Err((Status::Conflict,
+            "Display orientation changed. Regenerate this photo before displaying it.".into()));
+    }
     let mut queue = queue_state.lock().await;
 
     // Verify lock ownership.
@@ -837,7 +926,10 @@ async fn submit_flash_image<'r>(
     }
 
     // Add to queue while file validation is still protected.
-    let job_id = queue.enqueue(filename.clone(), dithered_path.to_string_lossy().to_string(), flash_twice);
+    let snapshot = orientation::snapshot_image(&dithered_path)
+        .map_err(|error| (Status::InternalServerError, error))?;
+    let job_id = queue.enqueue(filename.clone(), snapshot.to_string_lossy().to_string(),
+        flash_twice, display.rotation_degrees);
     let queue_position = queue.get_position(job_id).unwrap_or(0);
     drop(queue);
 
@@ -989,6 +1081,14 @@ fn rocket() -> _ {
         }
     }
 
+    // This must precede queue creation and request handling: every existing
+    // snapshot belongs to a job abandoned by a previous server lifetime.
+    match orientation::cleanup_abandoned_snapshots(&config::flash_jobs_dir()) {
+        Ok(0) => {},
+        Ok(count) => info!("Removed {} abandoned flash snapshots", count),
+        Err(error) => warn!("Could not clean abandoned flash snapshots: {}", error),
+    }
+
     // Run migration from legacy metadata format if needed.
     metadata::migrate_legacy_metadata();
 
@@ -1001,11 +1101,13 @@ fn rocket() -> _ {
     let mut rocket = rocket::build()
         .manage(browser_access::BrowserAccess::from_env())
         .attach(browser_access::Cors)
+        .manage(orientation::OrientationState::default())
         .manage(flash_queue_state)
         .manage(image_locks_state)
         .mount("/", routes![
             browser_access::preflight,
             display_config,
+            orientation::update_display_rotation,
             gallery_images,
             photo_management::delete_image,
             flash_job_status,

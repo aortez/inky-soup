@@ -35,6 +35,12 @@ pub struct ImageMetadata {
     pub fit_mode: String,
     #[serde(default = "default_cache_version")]
     pub cache_version: u32,
+    #[serde(default)]
+    pub cache_rotation_revision: u64,
+    #[serde(default)]
+    pub thumb_rotation_revision: u64,
+    #[serde(default)]
+    pub dither_rotation_revision: u64,
 }
 
 fn default_filter() -> String {
@@ -75,6 +81,9 @@ impl Default for ImageMetadata {
             dither_algorithm: DEFAULT_DITHER_ALGORITHM.to_string(),
             fit_mode: DEFAULT_FIT_MODE.to_string(),
             cache_version: default_cache_version(),
+            cache_rotation_revision: 0,
+            thumb_rotation_revision: 0,
+            dither_rotation_revision: 0,
         }
     }
 }
@@ -219,6 +228,7 @@ pub fn save_all_settings(
         contrast,
         dither_algorithm: dither_algorithm.to_string(),
         cache_version: CACHE_VERSION,
+        ..get_all_metadata(filename)
     };
     save_metadata(filename, &metadata);
 }
@@ -364,6 +374,9 @@ pub fn migrate_legacy_metadata() {
             dither_algorithm: DEFAULT_DITHER_ALGORITHM.to_string(),
             fit_mode: DEFAULT_FIT_MODE.to_string(),
             cache_version: default_cache_version(),
+            cache_rotation_revision: 0,
+            thumb_rotation_revision: 0,
+            dither_rotation_revision: 0,
         };
         save_metadata(&filename, &metadata);
         migrated += 1;

@@ -103,6 +103,7 @@ The legacy shared metadata file is migrated to per-image files on startup.
 | GET | `/` | Gallery page |
 | GET | `/api/images` | Gallery metadata for local/hosted clients |
 | GET | `/api/display-config` | Display and thumbnail dimensions |
+| POST | `/api/settings/display-rotation` | Persist mount orientation with an expected revision |
 | POST | `/upload` | Store an original image |
 | POST | `/delete` | Legacy form deletion |
 | POST | `/api/delete-image` | Delete a photo with edit ownership and queue protection |
@@ -116,9 +117,33 @@ The legacy shared metadata file is migrated to per-image files on startup.
 | GET | `/api/flash/status` | Current job and queue |
 | GET | `/api/flash/status/<job_id>` | Individual job status |
 
-Display mounting orientation/settings and favorites-based scheduling are tracked
-in issues #3 and #4. The settings implementation is parked in PR #5 and is not
-part of `main` yet.
+Mount orientation is 0/90/180/270 degrees clockwise, viewed from the front.
+`/api/display-config` returns logical editing dimensions in `width`/`height`,
+native dimensions in `physical_width`/`physical_height`, plus `rotation_degrees`
+and `rotation_revision`. Portrait mounting swaps the image and thumbnail axes.
+POST `{rotation_degrees, expected_revision}` to change it; a stale revision fails
+with 409. A no-op preserves the revision. Settings are stored at
+`INKY_SOUP_DATA_DIR/settings/display-runtime.json`; the data directory defaults
+to the parent of an images directory named `images`, otherwise the images directory.
+
+Changes increment a persistent revision and remove cache/thumb/dithered PNGs.
+Originals and their settings survive. The app rebuilds derived images client-side;
+`/api/images` reports `needs_processing` until all three assets match the revision.
+Derived upload forms carry `rotation_revision`, flash forms carry
+`submission.rotation_revision`, and metadata records each asset's revision.
+Omitting it means revision 0, compatible only before the first orientation change.
+Settings changes, derived uploads, and flash snapshots share an orientation lock.
+Flash jobs copy their pixels into `flash-jobs/` and capture the mount angle at
+submission. The driver receives the compensating rotation via `--rotation`;
+completed/failed jobs remove their snapshots. Queues do not survive a restart;
+startup removes abandoned snapshot PNGs before accepting new jobs. This cleanup
+is confined to regular files directly inside `flash-jobs/`, preserving photo
+storage, settings, symlinks, and subdirectories.
+
+Deploy the server and both copies of the display script together. The temporary
+`inky-cli preview` command replaces only the server, so it cannot by itself test
+a release that also changes the driver. `INKY_SOUP_DISPLAY_COMMAND` can select a
+matching executable for isolated testing. Favorites/scheduling remain issue #4.
 
 ## Runtime and deployment
 

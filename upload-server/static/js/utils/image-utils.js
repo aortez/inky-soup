@@ -4,8 +4,8 @@
  */
 
 /**
- * Create ImageData from an image element.
- * @param {HTMLImageElement} img - The image element.
+ * Create ImageData from an image or canvas element.
+ * @param {HTMLImageElement|HTMLCanvasElement} img - Source drawable.
  * @returns {ImageData} The ImageData extracted from the image.
  */
 export function createImageDataFromImage(img) {
@@ -15,6 +15,20 @@ export function createImageDataFromImage(img) {
   const ctx = canvas.getContext('2d');
   ctx.drawImage(img, 0, 0);
   return ctx.getImageData(0, 0, img.width, img.height);
+}
+
+/**
+ * Convert ImageData into a canvas element.
+ * @param {ImageData} imageData - Source ImageData.
+ * @returns {HTMLCanvasElement} Canvas containing the ImageData.
+ */
+export function imageDataToCanvas(imageData) {
+  const canvas = document.createElement('canvas');
+  canvas.width = imageData.width;
+  canvas.height = imageData.height;
+  const ctx = canvas.getContext('2d');
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
 }
 
 /**

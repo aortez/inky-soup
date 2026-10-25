@@ -4,6 +4,7 @@
 
 import { test, expect } from '@playwright/test';
 import path from 'path';
+import fs from 'fs';
 
 test.describe('Image Upload', () => {
   const testImagePath = path.join(import.meta.dirname, 'fixtures', 'test-image.png');
@@ -15,7 +16,7 @@ test.describe('Image Upload', () => {
     const fileInput = page.locator('#fileInput');
 
     // Upload the test image.
-    await fileInput.setInputFiles(testImagePath);
+    await fileInput.setInputFiles({name: `upload_${crypto.randomUUID()}.png`, mimeType:'image/png', buffer:fs.readFileSync(testImagePath)});
 
     // Upload modal should appear with progress.
     await expect(page.locator('#uploadModal')).toHaveClass(/active/);
@@ -36,7 +37,7 @@ test.describe('Image Upload', () => {
 
     // Upload image.
     const fileInput = page.locator('#fileInput');
-    await fileInput.setInputFiles(testImagePath);
+    await fileInput.setInputFiles({name: `upload_${crypto.randomUUID()}.png`, mimeType:'image/png', buffer:fs.readFileSync(testImagePath)});
 
     // Wait for completion.
     await expect(page.locator('#uploadModalTitle')).toHaveText('✓ Upload Complete!', { timeout: 30000 });
@@ -65,7 +66,7 @@ test.describe('Upload with existing images', () => {
       // Upload an image first.
       const testImagePath = path.join(import.meta.dirname, 'fixtures', 'test-image.png');
       const fileInput = page.locator('#fileInput');
-      await fileInput.setInputFiles(testImagePath);
+      await fileInput.setInputFiles({name: `upload_${crypto.randomUUID()}.png`, mimeType:'image/png', buffer:fs.readFileSync(testImagePath)});
 
       // Wait for completion and close.
       await expect(page.locator('#uploadModalTitle')).toHaveText('✓ Upload Complete!', { timeout: 30000 });

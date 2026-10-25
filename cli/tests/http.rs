@@ -26,6 +26,19 @@ fn serve_responses(replies: Vec<String>) -> (String, thread::JoinHandle<Vec<Stri
                 stream.read_exact(&mut byte).unwrap();
                 request.push(byte[0]);
             }
+            let headers = String::from_utf8(request.clone()).unwrap();
+            if let Some(length) = headers.lines().find_map(|line| {
+                let (key, value) = line.split_once(':')?;
+                if key.eq_ignore_ascii_case("content-length") {
+                    value.trim().parse::<usize>().ok()
+                } else {
+                    None
+                }
+            }) {
+                let mut body = vec![0; length];
+                stream.read_exact(&mut body).unwrap();
+                request.extend(body);
+            }
             requests.push(String::from_utf8(request).unwrap());
             stream.write_all(reply.as_bytes()).unwrap();
         }
@@ -50,6 +63,31 @@ fn status_is_one_json_document_with_display_and_queue() {
     let requests = server.join().unwrap();
     assert!(requests[0].starts_with("GET /api/display-config "));
     assert!(requests[1].starts_with("GET /api/flash/status "));
+}
+
+#[test]
+fn orientation_uses_the_current_revision_and_rejects_invalid_degrees() {
+    let (url, server) = serve(vec![
+        r#"{"rotation_degrees":0,"rotation_revision":12}"#,
+        r#"{"success":true,"rotation_degrees":90,"rotation_revision":13}"#,
+    ]);
+    let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+        .args(["--device", &url, "--json", "orientation", "90"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let requests = server.join().unwrap();
+    assert!(requests[1].starts_with("POST /api/settings/display-rotation "));
+    let body: Value = serde_json::from_str(requests[1].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(
+        body,
+        serde_json::json!({"rotation_degrees":90,"expected_revision":12})
+    );
+    let invalid = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+        .args(["orientation", "45"])
+        .output()
+        .unwrap();
+    assert!(!invalid.status.success());
 }
 
 #[test]

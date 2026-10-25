@@ -27,6 +27,24 @@ def make_display(driver, width, height=1):
 
 
 class PreDitheredImageTests(unittest.TestCase):
+    def test_mount_counter_rotation_preserves_each_ink_and_corner(self):
+        colors = [(0, 0, 0), (255, 255, 255), (255, 255, 0),
+                  (255, 0, 0), (0, 0, 255), (0, 255, 0)]
+        image = Image.new('RGB', (3, 2))
+        image.putdata(colors)
+        expected = {0: [[0, 1, 2], [3, 5, 6]],
+                    90: [[3, 0], [5, 1], [6, 2]],
+                    180: [[6, 5, 3], [2, 1, 0]],
+                    270: [[2, 6], [1, 5], [0, 3]]}
+        for degrees, pixels in expected.items():
+            with self.subTest(degrees=degrees):
+                rotated = UPDATE_IMAGE.rotate_image(image, degrees)
+                display = make_display('inky_el133uf1', rotated.width, rotated.height)
+                UPDATE_IMAGE.set_pre_dithered_image(display, rotated)
+                self.assertEqual(display.buf.tolist(), pixels)
+                restored = UPDATE_IMAGE.rotate_image(rotated, (360-degrees) % 360)
+                self.assertEqual(restored.tobytes(), image.tobytes())
+
     def test_spectra_six_native_codes_including_blue_and_green(self):
         colors = [
             (0, 0, 0), (255, 255, 255), (255, 255, 0),

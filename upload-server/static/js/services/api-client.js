@@ -3,6 +3,8 @@
  * All fetch() calls are centralized here.
  */
 
+import { getDisplayConfig as cachedDisplayConfig } from '../core/state.js';
+
 /**
  * Fetch display configuration from the server.
  * Returns dimensions for the connected Inky Impression display.
@@ -23,6 +25,13 @@ export async function getDisplayConfig() {
     };
   }
 
+  return response.json();
+}
+
+/** Fetch current gallery metadata before rebuilding a saved photo. */
+export async function getGalleryImages() {
+  const response = await fetch('/api/images', { cache: 'no-store' });
+  if (!response.ok) throw new Error('Could not load the latest photo settings.');
   return response.json();
 }
 
@@ -52,6 +61,7 @@ export async function uploadCache(
 ) {
   const formData = new FormData();
   formData.append('filename', filename);
+  formData.append('rotation_revision', String(cachedDisplayConfig().rotationRevision || 0));
   if (filter) {
     formData.append('filter', filter);
     formData.append('saturation', saturation.toString());
@@ -88,6 +98,7 @@ export async function uploadCache(
 export async function uploadThumb(filename, blob) {
   const formData = new FormData();
   formData.append('filename', filename);
+  formData.append('rotation_revision', String(cachedDisplayConfig().rotationRevision || 0));
   formData.append('file', blob, `${filename}.png`);
 
   const response = await fetch('/api/upload-thumb', {
@@ -127,6 +138,7 @@ export async function uploadDithered(
 ) {
   const formData = new FormData();
   formData.append('filename', filename);
+  formData.append('rotation_revision', String(cachedDisplayConfig().rotationRevision || 0));
   formData.append('filter', filter);
   formData.append('fit_mode', fitMode);
   formData.append('saturation', saturation.toString());
@@ -158,6 +170,7 @@ export async function uploadDithered(
 export async function submitFlashJob(filename, flashTwice, sessionId) {
   const formData = new FormData();
   formData.append('submission.filename', filename);
+  formData.append('submission.rotation_revision', String(cachedDisplayConfig().rotationRevision || 0));
   formData.append('submission.image_file_path', `images/dithered/${filename}.png`);
   formData.append('submission.session_id', sessionId);
   if (flashTwice) {

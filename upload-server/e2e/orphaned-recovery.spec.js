@@ -30,13 +30,9 @@ test.describe('Orphaned Image Recovery', () => {
     expect(uploadResult.success).toBe(true);
 
     try {
-      // Navigate to gallery - should see placeholder for orphaned image.
+      // Recovery can finish before networkidle; assert the eventual thumbnail,
+      // rather than requiring a transient placeholder to still exist.
       await page.goto('/');
-      await page.waitForLoadState('networkidle');
-
-      const placeholder = page.locator(`.thumbnail-placeholder[data-filename="${filename}"]`);
-      await expect(placeholder).toBeVisible({ timeout: 2000 });
-      await expect(placeholder.locator('.label')).toHaveText('Caching...');
 
       // Client should automatically generate and upload the thumbnail.
       // Placeholder should be replaced with actual image.

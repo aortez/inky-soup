@@ -76,6 +76,27 @@ It works over SSH even if the preview HTTP API has failed. Reboot also removes
 the runtime override. Both commands require key access and noninteractive sudo;
 `--ssh-user` selects a different account. The installed binary is not replaced.
 
+## Mounting orientation
+
+```bash
+./inky-cli orientation --json       # Current mount, revision, and logical dimensions
+./inky-cli orientation 90           # Frame turned clockwise, viewed from the front
+./inky-cli orientation 0            # Normal landscape position
+```
+
+Supported positions are 0°, 90°, 180°, and 270°. This requires the orientation
+server update and matching display script. The setting survives restart. Changing
+it invalidates derived images while preserving originals and their adjustments;
+it does not refresh the screen. Open/reconnect the phone app to rebuild the
+library on that client, or upload new prepared images with the CLI.
+
+The preview and prepared PNGs remain upright. `display` reports logical dimensions:
+the 13.3-inch panel uses 1200 × 1600 at 90°/270°, and 1600 × 1200 at 0°/180°.
+The server counter-rotates the captured pixels only when flashing. Uploads carry
+the orientation revision used to prepare them; stale uploads are rejected even
+after an orientation is changed back. A queued job retains its original pixels
+and mounting orientation.
+
 ## Photos and display jobs
 
 ```bash
