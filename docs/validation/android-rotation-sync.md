@@ -40,7 +40,6 @@ service workers were observed. Phone network and stay-awake settings were restor
 
 - [Device results](android-rotation-sync-pixel9.json)
 - [Native preview](android-rotation-sync-pixel9.png)
-- [Native rotation controls](android-rotation-controls-pixel9.png)
 
 The Android shell still previews locally; native Pi networking and Bluetooth
 remain #21/#22. Web API behavior is covered by the imported mock-server regressions;
