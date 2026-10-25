@@ -87,3 +87,27 @@ REMOTE_URL=http://10.55.0.1:8000 npm run test:remote
 
 The remote configuration starts no server; without `REMOTE_URL`, it targets
 `http://inky-soup.local:8000`.
+
+## Hosted frame app API
+
+The client at `https://allan.pizza/frame/` uses `GET /api/display-config`,
+`GET /api/images`, the existing upload endpoints, image locks, and the flash queue.
+`/api/images` returns the same metadata as the local gallery. Original and derived
+image bytes still travel directly between the client and the Pi.
+
+The server allows cross-origin requests from exactly `https://allan.pizza`.
+Additional development origins can be supplied as a comma-separated
+`INKY_SOUP_CLIENT_ORIGINS` environment variable, for example
+`http://localhost:4173`. Origins include the scheme and port, with no trailing
+slash. Restart the server after changing the environment.
+
+All POST handlers reject foreign browser origins, including simple form requests
+that do not require a preflight. The local HTTP UI and clients without an Origin
+header (including the Rust CLI) continue to work. This is browser origin
+protection, not authentication against other local-network clients. Do not expose
+the unauthenticated device API to the internet.
+
+The hosted app also requires the browser’s local-network permission. The tested
+phone is Android Chrome; offline app editing works after its first successful
+load, while connecting, fetching gallery photos, and sending require the local
+frame. Bluetooth remains the WiFi provisioning transport, not the photo transport.

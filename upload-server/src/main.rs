@@ -1,5 +1,6 @@
 #[macro_use] extern crate rocket;
 
+mod browser_access;
 mod cache_worker;
 mod cleanup;
 mod config;
@@ -26,6 +27,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use browser_access::BrowserWrite;
 use flash_queue::{FlashJob, FlashQueue, FlashQueueState};
 use image_locks::ImageLocksState;
 
@@ -255,6 +257,12 @@ fn display_config() -> Json<DisplayConfig> {
     Json(get_display_config())
 }
 
+/// The same gallery data used by the local UI, available to the hosted client.
+#[get("/api/images")]
+fn gallery_images() -> Json<Vec<GalleryImage>> {
+    Json(get_gallery_images())
+}
+
 /// API endpoint to check if a gallery thumbnail exists.
 #[get("/api/thumb-status/<filename>")]
 fn thumb_status(filename: &str) -> Json<ThumbStatus> {
@@ -289,6 +297,7 @@ struct LockImageResponse {
 /// API endpoint to acquire or refresh a lock on an image.
 #[post("/api/lock-image", data = "<request>")]
 async fn lock_image(
+    _origin: BrowserWrite,
     request: Json<LockImageRequest>,
     locks_state: &State<ImageLocksState>,
 ) -> Json<LockImageResponse> {
@@ -355,6 +364,7 @@ struct UnlockImageResponse {
 /// API endpoint to release a lock on an image.
 #[post("/api/unlock-image", data = "<request>")]
 async fn unlock_image(
+    _origin: BrowserWrite,
     request: Json<UnlockImageRequest>,
     locks_state: &State<ImageLocksState>,
 ) -> Json<UnlockImageResponse> {
@@ -475,6 +485,7 @@ struct FlashStatusResponse {
 /// API endpoint to upload a pre-dithered image.
 #[post("/api/upload-dithered", data = "<form>")]
 async fn upload_dithered(
+    _origin: BrowserWrite,
     mut form: Form<DitheredUpload<'_>>,
     locks_state: &State<ImageLocksState>,
 ) -> Json<UploadDitheredResponse> {
@@ -559,6 +570,7 @@ async fn upload_dithered(
 /// API endpoint to upload a pre-generated cache image.
 #[post("/api/upload-cache", data = "<form>")]
 async fn upload_cache(
+    _origin: BrowserWrite,
     mut form: Form<CacheUpload<'_>>,
     locks_state: &State<ImageLocksState>,
 ) -> Json<UploadCacheResponse> {
@@ -667,7 +679,7 @@ async fn upload_cache(
 
 /// API endpoint to upload a gallery thumbnail.
 #[post("/api/upload-thumb", data = "<form>")]
-async fn upload_thumb(mut form: Form<ThumbUpload<'_>>) -> Json<UploadThumbResponse> {
+async fn upload_thumb(_origin: BrowserWrite, mut form: Form<ThumbUpload<'_>>) -> Json<UploadThumbResponse> {
     // Sanitize filename to prevent path traversal.
     let filename = match sanitize_filename(&form.filename) {
         Some(name) => name,
@@ -717,7 +729,7 @@ fn upload_form() -> Template {
 }
 
 #[post("/delete", data = "<form>")]
-async fn submit_delete_image<'r>(mut form: Form<Contextual<'r, SubmitDeleteImage>>) -> Result<Redirect, (Status, String)> {
+async fn submit_delete_image<'r>(_origin: BrowserWrite, mut form: Form<Contextual<'r, SubmitDeleteImage>>) -> Result<Redirect, (Status, String)> {
     let submission = match form.value {
         Some(ref mut s) => s,
         None => {
@@ -775,6 +787,7 @@ async fn submit_delete_image<'r>(mut form: Form<Contextual<'r, SubmitDeleteImage
 /// Queue a flash job (returns immediately).
 #[post("/flash", data = "<form>")]
 async fn submit_flash_image<'r>(
+    _origin: BrowserWrite,
     mut form: Form<Contextual<'r, SubmitFlashImage>>,
     queue_state: &State<FlashQueueState>,
     locks_state: &State<ImageLocksState>,
@@ -873,6 +886,7 @@ async fn flash_job_status(job_id: u64, queue_state: &State<FlashQueueState>) -> 
 
 #[post("/upload", data = "<form>")]
 async fn submit_new_image<'r>(
+    _origin: BrowserWrite,
     mut form: Form<Contextual<'r, SubmitNewImage<'r>>>
 ) -> Json<UploadResponse> {
     match form.value {
@@ -982,10 +996,14 @@ fn rocket() -> _ {
     let image_locks_state: ImageLocksState = Arc::new(Mutex::new(HashMap::new()));
 
     let mut rocket = rocket::build()
+        .manage(browser_access::BrowserAccess::from_env())
+        .attach(browser_access::Cors)
         .manage(flash_queue_state)
         .manage(image_locks_state)
         .mount("/", routes![
+            browser_access::preflight,
             display_config,
+            gallery_images,
             flash_job_status,
             flash_status,
             lock_image,

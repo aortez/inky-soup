@@ -48,6 +48,19 @@ jobs:
         run: rustup toolchain install 1.85.0 --profile minimal
       - run: cargo +1.85.0 test --locked
 
+  cli:
+    name: Local Rust CLI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install the host CLI toolchain
+        run: rustup toolchain install 1.94.1 --profile minimal --component rustfmt
+      - run: cargo +1.94.1 fmt --manifest-path cli/Cargo.toml --check
+      - run: cargo +1.94.1 test --locked --manifest-path cli/Cargo.toml
+
   display:
     name: Display image decoding
     runs-on: ubuntu-24.04

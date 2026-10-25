@@ -26,6 +26,22 @@ The display code supports the 5.7-inch (600 × 448) and 13.3-inch 2025
 (1600 × 1200) Inky Impression models. The display configuration API provides the
 dimensions used by the browser.
 
+## Local control CLI
+
+Use the Rust client from this checkout (tested with Rust 1.94.1):
+
+```bash
+./inky-cli status
+./inky-cli --device http://inky-soup.local:8000 images
+./inky-cli upload screen.png --prepared --flash --wait
+./inky-cli job 1 --wait --json
+```
+
+The default target is the Pi over USB Ethernet. `--prepared` requires a PNG with
+the display’s exact dimensions and native palette; a normal photo can be uploaded
+without that option and processed in the browser. See the [CLI guide](cli/README.md)
+for installation, scripting, and job recovery.
+
 ## Local development
 
 Install Rust and Node.js (CI uses Rust 1.85.0 and Node.js 24), then:
@@ -65,6 +81,7 @@ and physical display checks are separate validation steps.
 
 ## Project layout
 
+- `cli/`: local Rust client for USB/WiFi control and automation.
 - `upload-server/`: Rust/Rocket server, browser JavaScript, templates, and tests.
 - `update-image.py`: display update script; the packaged copy lives under
   `yocto/meta-inky-soup/recipes-inky-soup/inky-soup-display/files/`.
