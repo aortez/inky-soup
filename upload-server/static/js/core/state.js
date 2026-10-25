@@ -156,3 +156,13 @@ export const setLockKeepaliveInterval = (interval) => { lockKeepaliveInterval = 
 
 export const getIsReadOnly = () => isReadOnly;
 export const setIsReadOnly = (readOnly) => { isReadOnly = readOnly; };
+
+// Saved source rotation is independent of the display mounting position.
+let currentPhotoRotation = 0;
+let currentPhotoRevision = 0;
+export const getCurrentPhotoRotation = () => currentPhotoRotation;
+export const getCurrentPhotoRevision = () => currentPhotoRevision;
+export const setCurrentPhotoRotation = (degrees, revision) => {
+  currentPhotoRotation = [0, 90, 180, 270].includes(degrees) ? degrees : 0;
+  currentPhotoRevision = Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;
+};

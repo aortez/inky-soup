@@ -11,6 +11,8 @@ mod image_locks;
 mod metadata;
 mod orientation;
 mod photo_management;
+mod photo_rotation;
+mod test_card;
 #[cfg(test)]
 mod orientation_tests;
 
@@ -50,6 +52,7 @@ struct FlashSubmission {
     session_id: String,
     flash_twice: bool,
     rotation_revision: Option<u64>,
+    photo_rotation_revision: Option<u64>,
 }
 
 #[derive(Debug, FromForm)]
@@ -83,6 +86,8 @@ struct GalleryImage {
     filename: String,
     thumb_ready: bool,
     needs_processing: bool,
+    photo_rotation_degrees: u16,
+    photo_rotation_revision: u64,
     filter: String,
     fit_mode: String,
     cache_version: u32,
@@ -122,6 +127,8 @@ struct DisplayConfig {
     physical_height: u32,
     rotation_degrees: u16,
     rotation_revision: u64,
+    photo_rotation_supported: bool,
+    orientation_test_supported: bool,
 }
 
 /// Read display configuration from /etc/inky-soup/display.conf.
@@ -142,6 +149,8 @@ fn get_display_config() -> DisplayConfig {
         physical_height: 1200,
         rotation_degrees: 0,
         rotation_revision: 0,
+        photo_rotation_supported: true,
+        orientation_test_supported: true,
     };
 
     // Try to read config file.
@@ -259,13 +268,19 @@ fn get_gallery_images() -> Vec<GalleryImage> {
                 images.push(GalleryImage {
                     path: image_path,
                     filename: filename.clone(),
-                    thumb_ready: thumb_ready && meta.thumb_rotation_revision == revision,
+                    thumb_ready: thumb_ready && meta.thumb_rotation_revision == revision
+                        && meta.thumb_photo_revision == meta.photo_rotation_revision,
+                    photo_rotation_degrees: meta.photo_rotation_degrees,
+                    photo_rotation_revision: meta.photo_rotation_revision,
                     needs_processing: !thumb_ready
                         || !config::cache_path(&filename).exists()
                         || !config::dithered_path(&filename).exists()
                         || meta.cache_rotation_revision != revision
                         || meta.thumb_rotation_revision != revision
-                        || meta.dither_rotation_revision != revision,
+                        || meta.dither_rotation_revision != revision
+                        || meta.cache_photo_revision != meta.photo_rotation_revision
+                        || meta.thumb_photo_revision != meta.photo_rotation_revision
+                        || meta.dither_photo_revision != meta.photo_rotation_revision,
                     filter: meta.filter,
                     fit_mode: meta.fit_mode,
                     cache_version: meta.cache_version,
@@ -300,7 +315,9 @@ fn gallery_images() -> Json<Vec<GalleryImage>> {
 #[get("/api/thumb-status/<filename>")]
 fn thumb_status(filename: &str) -> Json<ThumbStatus> {
     let thumb_path = config::thumb_path(filename);
-    let ready = thumb_path.exists() && metadata::get_all_metadata(filename).thumb_rotation_revision
+    let meta = metadata::get_all_metadata(filename);
+    let ready = thumb_path.exists() && meta.thumb_photo_revision == meta.photo_rotation_revision
+        && meta.thumb_rotation_revision
         == display_settings::load_runtime_settings().rotation_revision;
 
     Json(ThumbStatus {
@@ -439,6 +456,7 @@ struct UploadDitheredResponse {
 struct DitheredUpload<'v> {
     filename: String,
     rotation_revision: Option<u64>,
+    photo_rotation_revision: Option<u64>,
     filter: String,
     fit_mode: Option<String>,
     saturation: f32,
@@ -454,6 +472,7 @@ struct DitheredUpload<'v> {
 struct CacheUpload<'v> {
     filename: String,
     rotation_revision: Option<u64>,
+    photo_rotation_revision: Option<u64>,
     filter: Option<String>,
     fit_mode: Option<String>,
     saturation: Option<f32>,
@@ -478,6 +497,7 @@ struct UploadCacheResponse {
 struct ThumbUpload<'v> {
     filename: String,
     rotation_revision: Option<u64>,
+    photo_rotation_revision: Option<u64>,
     file: TempFile<'v>,
 }
 
@@ -549,6 +569,14 @@ async fn upload_dithered(
             });
         }
     };
+    let meta = metadata::get_all_metadata(&filename);
+    if form.photo_rotation_revision.unwrap_or(0) != meta.photo_rotation_revision {
+        return Json(UploadDitheredResponse {
+            success: false,
+            message: "Photo rotation changed. Reopen this photo before saving.".into(),
+            path: None,
+        });
+    }
     let filter = form.filter.clone();
     let fit_mode = form.fit_mode.clone().unwrap_or_else(|| "contain".to_string());
     let fit_mode = if fit_mode == "cover" { "cover".to_string() } else { "contain".to_string() };
@@ -598,6 +626,7 @@ async fn upload_dithered(
             );
             let mut meta = metadata::get_all_metadata(&filename);
             meta.dither_rotation_revision = revision;
+            meta.dither_photo_revision = meta.photo_rotation_revision;
             metadata::save_metadata(&filename, &meta);
             debug!("Saved dithered image: {}", filename);
 
@@ -648,6 +677,14 @@ async fn upload_cache(
             });
         }
     };
+    let meta = metadata::get_all_metadata(&filename);
+    if form.photo_rotation_revision.unwrap_or(0) != meta.photo_rotation_revision {
+        return Json(UploadCacheResponse {
+            success: false,
+            message: "Photo rotation changed. Reopen this photo before saving.".into(),
+            path: None,
+        });
+    }
 
     // Extract all settings.
     let filter = form.filter.clone();
@@ -724,6 +761,7 @@ async fn upload_cache(
 
             let mut meta = metadata::get_all_metadata(&filename);
             meta.cache_rotation_revision = revision;
+            meta.cache_photo_revision = meta.photo_rotation_revision;
             metadata::save_metadata(&filename, &meta);
             Json(UploadCacheResponse {
                 success: true,
@@ -771,6 +809,14 @@ async fn upload_thumb(
             });
         }
     };
+    let meta = metadata::get_all_metadata(&filename);
+    if form.photo_rotation_revision.unwrap_or(0) != meta.photo_rotation_revision {
+        return Json(UploadThumbResponse {
+            success: false,
+            message: "Photo rotation changed. Reopen this photo before saving.".into(),
+            path: None,
+        });
+    }
     debug!("Saving gallery thumbnail: {}", filename);
 
     // Save thumbnail to thumbs directory.
@@ -780,6 +826,7 @@ async fn upload_thumb(
         Ok(()) => {
             let mut meta = metadata::get_all_metadata(&filename);
             meta.thumb_rotation_revision = revision;
+            meta.thumb_photo_revision = meta.photo_rotation_revision;
             metadata::save_metadata(&filename, &meta);
             debug!("Saved gallery thumbnail: {}", filename);
             Json(UploadThumbResponse {
@@ -907,6 +954,11 @@ async fn submit_flash_image<'r>(
     {
         return Err((Status::Conflict,
             "Display orientation changed. Regenerate this photo before displaying it.".into()));
+    }
+    let photo = metadata::get_all_metadata(&filename);
+    if submission.submission.photo_rotation_revision.unwrap_or(0) != photo.photo_rotation_revision
+        || photo.dither_photo_revision != photo.photo_rotation_revision {
+        return Err((Status::Conflict, "Photo rotation changed. Regenerate this photo before displaying it.".into()));
     }
     let mut queue = queue_state.lock().await;
 
@@ -1122,7 +1174,9 @@ fn rocket() -> _ {
             upload_cache,
             upload_dithered,
             upload_form,
-            upload_thumb
+            upload_thumb,
+            photo_rotation::update_photo_rotation,
+            test_card::flash_test_card
         ])
         // Use rank 10 (lower priority) for root static server so /images can take precedence.
         .mount("/", FileServer::from("static").rank(10));

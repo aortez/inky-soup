@@ -4,7 +4,7 @@
  */
 
 import {
-  getOriginalImageCache,
+  getCurrentPhotoRotation, getOriginalImageCache,
   setOriginalImageCache,
   getDisplayWidth,
   getDisplayHeight,
@@ -31,7 +31,7 @@ export async function loadImageUsingCache(filename) {
       + 'Loading original.',
     );
     const img = await loadOriginal(filename);
-    const imageData = createImageDataFromImage(img);
+    const imageData = createImageDataFromImage(img, getCurrentPhotoRotation());
     return { imageData, needsFiltering: true };
   }
 
@@ -46,7 +46,7 @@ export async function loadImageUsingCache(filename) {
         + `vs expected ${expectedWidth}x${expectedHeight}. Loading original.`,
       );
       const img = await loadOriginal(filename);
-      const imageData = createImageDataFromImage(img);
+      const imageData = createImageDataFromImage(img, getCurrentPhotoRotation());
       return { imageData, needsFiltering: true };
     }
 
@@ -56,7 +56,7 @@ export async function loadImageUsingCache(filename) {
   } catch {
     // Cache doesn't exist — load original.
     const img = await loadOriginal(filename);
-    const imageData = createImageDataFromImage(img);
+    const imageData = createImageDataFromImage(img, getCurrentPhotoRotation());
     return { imageData, needsFiltering: true };
   }
 }

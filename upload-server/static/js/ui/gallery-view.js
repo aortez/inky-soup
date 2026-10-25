@@ -5,7 +5,7 @@
 
 import { queryAll } from '../core/dom.js';
 import { CACHE_VERSION } from '../core/constants.js';
-import { getThumbStatus } from '../services/api-client.js';
+import { getGalleryImages, getThumbStatus } from '../services/api-client.js';
 import { showDetailView } from './navigation.js';
 
 const REGENERATION_CONCURRENCY = 2;
@@ -16,22 +16,17 @@ const REGENERATION_CONCURRENCY = 2;
  * @param {string} path - The file path.
  * @param {HTMLElement} placeholderEl - The placeholder element.
  */
-function pollThumbStatus(filename, path, placeholderEl) {
-  getThumbStatus(filename)
-    .then((data) => {
-      if (data.ready) {
-        // Thumbnail is ready - replace placeholder.
-        replacePlaceholderWithThumb(filename, path, data.thumb_path, placeholderEl);
-      } else {
-        // Not ready yet - poll again in 2 seconds.
-        setTimeout(() => pollThumbStatus(filename, path, placeholderEl), 2000);
-      }
-    })
-    .catch((err) => {
-      console.error('Failed to poll thumb status:', err);
-      // Retry on error.
-      setTimeout(() => pollThumbStatus(filename, path, placeholderEl), 2000);
-    });
+async function pollThumbStatus(filename, path, placeholderEl) {
+  try {
+    const data = await getThumbStatus(filename);
+    if (data.ready) {
+      await replacePlaceholderWithThumb(filename, path, data.thumb_path, placeholderEl);
+      return;
+    }
+  } catch (err) {
+    console.error('Failed to poll thumb status:', err);
+  }
+  setTimeout(() => pollThumbStatus(filename, path, placeholderEl), 2000);
 }
 
 /**
@@ -41,20 +36,25 @@ function pollThumbStatus(filename, path, placeholderEl) {
  * @param {string} thumbPath - The thumbnail path.
  * @param {HTMLElement} placeholderEl - The placeholder element.
  */
-function replacePlaceholderWithThumb(filename, path, thumbPath, placeholderEl) {
-  const dataset = placeholderEl ? placeholderEl.dataset : {};
+async function replacePlaceholderWithThumb(filename, path, thumbPath, placeholderEl) {
+  // Recovery may have used settings newer than the page's initial placeholder.
+  // Refresh every saved setting on both the regeneration and polling paths.
+  const saved = (await getGalleryImages()).find((photo) => photo.filename === filename);
+  if (!saved?.thumb_ready) throw new Error('Photo changed while preparing its thumbnail.');
   const img = document.createElement('img');
-  img.src = thumbPath;
+  img.src = `${thumbPath}${thumbPath.includes('?') ? '&' : '?'}t=${Date.now()}`;
   img.alt = filename;
   img.dataset.filename = filename;
   img.dataset.path = path;
-  img.dataset.filter = dataset.filter || 'bicubic';
-  img.dataset.fitMode = dataset.fitMode || 'contain';
-  img.dataset.cacheVersion = dataset.cacheVersion || `${CACHE_VERSION}`;
-  img.dataset.saturation = dataset.saturation || '0.5';
-  img.dataset.brightness = dataset.brightness || '0';
-  img.dataset.contrast = dataset.contrast || '0';
-  img.dataset.dither = dataset.dither || 'floyd-steinberg';
+  img.dataset.filter = saved.filter ?? 'bicubic';
+  img.dataset.photoRotation = saved.photo_rotation_degrees ?? '0';
+  img.dataset.photoRevision = saved.photo_rotation_revision ?? '0';
+  img.dataset.fitMode = saved.fit_mode ?? 'contain';
+  img.dataset.cacheVersion = saved.cache_version ?? `${CACHE_VERSION}`;
+  img.dataset.saturation = saved.saturation ?? '0.5';
+  img.dataset.brightness = saved.brightness ?? '0';
+  img.dataset.contrast = saved.contrast ?? '0';
+  img.dataset.dither = saved.dither_algorithm ?? 'floyd-steinberg';
   img.loading = 'lazy';
 
   // Add click handler.
@@ -64,12 +64,14 @@ function replacePlaceholderWithThumb(filename, path, thumbPath, placeholderEl) {
       path,
       img.dataset.filter,
       true,
-      parseFloat(img.dataset.saturation) || 0.5,
+      parseFloat(img.dataset.saturation),
       parseInt(img.dataset.brightness, 10) || 0,
       parseInt(img.dataset.contrast, 10) || 0,
-      img.dataset.dither || 'floyd-steinberg',
-      img.dataset.fitMode || 'contain',
+      img.dataset.dither ?? 'floyd-steinberg',
+      img.dataset.fitMode ?? 'contain',
       parseInt(img.dataset.cacheVersion, 10) || 1,
+      Number(img.dataset.photoRotation),
+      Number(img.dataset.photoRevision),
     );
   });
 
@@ -89,12 +91,12 @@ async function generateMissingThumb(filename, path, placeholderEl) {
   try {
     // Dynamically import to avoid circular dependencies.
     const { generateThumbnails } = await import('../services/upload-service.js');
-    const fitMode = placeholderEl?.dataset.fitMode || 'contain';
-    const filter = placeholderEl?.dataset.filter || 'bicubic';
-    const saturation = parseFloat(placeholderEl?.dataset.saturation || '0.5');
-    const brightness = parseInt(placeholderEl?.dataset.brightness || '0', 10);
-    const contrast = parseInt(placeholderEl?.dataset.contrast || '0', 10);
-    const ditherAlgorithm = placeholderEl?.dataset.dither || 'floyd-steinberg';
+    const fitMode = placeholderEl?.dataset.fitMode ?? 'contain';
+    const filter = placeholderEl?.dataset.filter ?? 'bicubic';
+    const saturation = parseFloat(placeholderEl?.dataset.saturation ?? '0.5');
+    const brightness = parseInt(placeholderEl?.dataset.brightness ?? '0', 10);
+    const contrast = parseInt(placeholderEl?.dataset.contrast ?? '0', 10);
+    const ditherAlgorithm = placeholderEl?.dataset.dither ?? 'floyd-steinberg';
 
     // Load the original image and convert it to a data URL.
     const dataUrl = await new Promise((resolve, reject) => {
@@ -125,7 +127,7 @@ async function generateMissingThumb(filename, path, placeholderEl) {
       regenerate: true,
     });
     const thumbPath = thumbData?.path || `images/thumbs/${filename}.png`;
-    replacePlaceholderWithThumb(filename, path, `${thumbPath}?t=${Date.now()}`, placeholderEl);
+    await replacePlaceholderWithThumb(filename, path, thumbPath, placeholderEl);
   } catch (err) {
     console.error('Failed to generate missing thumbnail:', err);
     // Fall back to polling.

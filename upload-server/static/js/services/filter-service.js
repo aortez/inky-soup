@@ -4,7 +4,7 @@
  */
 
 import {
-  getFilterWorker,
+  getCurrentPhotoRotation, getFilterWorker,
   setFilterWorker,
   getCurrentFilter,
   setCurrentFilter,
@@ -131,7 +131,7 @@ export function applyFilterToCanvas(imageData) {
  * @param {HTMLImageElement} img - The image element.
  */
 function applyFilterFromImage(img) {
-  const imageData = createImageDataFromImage(img);
+  const imageData = createImageDataFromImage(img, getCurrentPhotoRotation());
   applyFilterToCanvas(imageData);
 }
 

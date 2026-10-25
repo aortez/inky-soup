@@ -177,3 +177,33 @@ port to 8000. The client lives in the standalone `aortez.github.io` checkout und
 The setup window is closed when already connected, and bounded to five minutes
 when opened. Use `wifi-provisioner --start|--stop|--status` over USB/SSH. The client
 handles explicit notifications and polls older firmware as a compatibility path.
+
+### Photo rotation and orientation cards
+
+Photo source rotation (`photo_rotation_degrees`, 0/90/180/270 clockwise) is separate
+from the frame mount. Clients rotate the original before fitting/resampling and
+dithering; original bytes remain unchanged. The gallery includes the saved angle
+and monotonic `photo_rotation_revision`. `POST /api/settings/photo-rotation`
+requires filename, session_id, photo_rotation_degrees and expected_revision under
+the existing edit lock. It persists metadata before invalidating that photo's
+derived assets. Each derived upload carries `photo_rotation_revision` alongside
+the mount's `rotation_revision`; `/flash` uses the `submission.` prefix for both.
+Per-asset revision stamps keep failed invalidation and stale clients from making
+old pixels valid. Old metadata defaults to angle/revision zero.
+
+Clients may include an `operation_id` (1–128 ASCII letters, digits or hyphens).
+The server persists the latest operation and its result with the photo metadata.
+Repeating that ID with the same angle and expected revision returns the accepted
+revision without invalidating pixels again, including after a restart. Edit
+ownership is still required, and a superseded rotation fails the revision check.
+The app checkpoints pending operations in its draft before sending them, so a
+lost response can be retried without discarding unsaved photo adjustments.
+
+`POST /api/flash-test-card` accepts a client-generated PNG (`file`) plus the saved
+mount `rotation_revision`. It checks PNG dimensions and queues a private temporary
+snapshot, with normal job status and cleanup, without touching the gallery.
+Full PNG decoding/palette validation remains in the display script. The API's
+`photo_rotation_supported` and `orientation_test_supported` config fields allow
+clients to disable these controls on old servers. CLI commands are documented in
+`cli/README.md`; its photo rotations are settings changes, with rebuilding in the
+browser client, just as for mounting changes.

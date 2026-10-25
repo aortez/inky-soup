@@ -102,6 +102,20 @@ pub fn cleanup_abandoned_snapshots(directory: &Path) -> std::io::Result<usize> {
 }
 
 fn snapshot_into(source: &Path, directory: &Path) -> std::io::Result<PathBuf> {
+    let mut input = fs::File::open(source)?;
+    let (path, mut output) = reserve_in(directory)?;
+    if let Err(error) = std::io::copy(&mut input, &mut output) {
+        let _ = fs::remove_file(&path);
+        return Err(error);
+    }
+    Ok(path)
+}
+
+pub fn reserve_snapshot() -> std::io::Result<(PathBuf, fs::File)> {
+    reserve_in(&config::flash_jobs_dir())
+}
+
+fn reserve_in(directory: &Path) -> std::io::Result<(PathBuf, fs::File)> {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     fs::create_dir_all(directory)?;
     let epoch = SystemTime::now()
@@ -112,16 +126,11 @@ fn snapshot_into(source: &Path, directory: &Path) -> std::io::Result<PathBuf> {
         "{epoch}-{}.png",
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
-    let mut input = fs::File::open(source)?;
-    let mut output = fs::OpenOptions::new()
+    let output = fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&path)?;
-    if let Err(error) = std::io::copy(&mut input, &mut output) {
-        let _ = fs::remove_file(&path);
-        return Err(error);
-    }
-    Ok(path)
+    Ok((path, output))
 }
 
 #[cfg(test)]
