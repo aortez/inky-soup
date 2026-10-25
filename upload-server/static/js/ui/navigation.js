@@ -4,6 +4,7 @@
  */
 
 import {
+  setCurrentPhotoRotation,
   setCurrentView,
   getCurrentFilename,
   setCurrentFilename,
@@ -87,6 +88,8 @@ export async function showDetailView(
   ditherAlgorithm = 'floyd-steinberg',
   fitMode = 'contain',
   cacheVersion = 1,
+  photoRotation = 0,
+  photoRevision = 0,
 ) {
   if (!thumbReady) {
     // Can't view detail for uncached images yet.
@@ -141,6 +144,7 @@ export async function showDetailView(
     updateReadOnlyUI();
   }
 
+  setCurrentPhotoRotation(photoRotation, photoRevision);
   setCurrentFilename(filename);
   setCurrentPath(path);
   setCurrentFilter(filter || 'bicubic');
@@ -280,6 +284,8 @@ export function initNavigation() {
           ditherAlgorithm,
           fitMode,
           cacheVersion,
+          Number(thumb.dataset.photoRotation),
+          Number(thumb.dataset.photoRevision),
         );
       } else {
         showGalleryView();

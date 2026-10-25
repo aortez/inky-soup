@@ -10,6 +10,7 @@ vi.mock('../../static/js/core/state.js', () => ({
   setOriginalImageCache: vi.fn(),
   getDisplayWidth: vi.fn(() => 1600),
   getDisplayHeight: vi.fn(() => 1200),
+  getCurrentPhotoRotation: vi.fn(() => 0),
   getCurrentCacheVersion: vi.fn(() => 2),
 }));
 

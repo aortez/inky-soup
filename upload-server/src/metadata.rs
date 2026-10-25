@@ -41,6 +41,16 @@ pub struct ImageMetadata {
     pub thumb_rotation_revision: u64,
     #[serde(default)]
     pub dither_rotation_revision: u64,
+    #[serde(default)]
+    pub photo_rotation_degrees: u16,
+    #[serde(default)]
+    pub photo_rotation_revision: u64,
+    #[serde(default)]
+    pub cache_photo_revision: u64,
+    #[serde(default)]
+    pub thumb_photo_revision: u64,
+    #[serde(default)]
+    pub dither_photo_revision: u64,
 }
 
 fn default_filter() -> String {
@@ -84,6 +94,11 @@ impl Default for ImageMetadata {
             cache_rotation_revision: 0,
             thumb_rotation_revision: 0,
             dither_rotation_revision: 0,
+            photo_rotation_degrees: 0,
+            photo_rotation_revision: 0,
+            cache_photo_revision: 0,
+            thumb_photo_revision: 0,
+            dither_photo_revision: 0,
         }
     }
 }
@@ -142,6 +157,12 @@ pub fn load_metadata(filename: &str) -> ImageMetadata {
 
 /// Saves metadata for an image atomically.
 pub fn save_metadata(filename: &str, metadata: &ImageMetadata) {
+    if let Err(error) = try_save_metadata(filename, metadata) {
+        error!("Could not save metadata for '{}': {}", filename, error);
+    }
+}
+
+pub fn try_save_metadata(filename: &str, metadata: &ImageMetadata) -> std::io::Result<()> {
     ensure_metadata_dir();
 
     let path = get_metadata_path(filename);
@@ -152,19 +173,22 @@ pub fn save_metadata(filename: &str, metadata: &ImageMetadata) {
             // Write to temp file first.
             if let Err(e) = fs::write(&temp_path, &json) {
                 error!("Failed to write temp metadata for '{}': {}", filename, e);
-                return;
+                return Err(e);
             }
 
             // Atomically rename temp file to target file.
             if let Err(e) = fs::rename(&temp_path, &path) {
                 error!("Failed to rename metadata file for '{}': {}", filename, e);
                 let _ = fs::remove_file(&temp_path);
+                return Err(e);
             }
         }
         Err(e) => {
             error!("Failed to serialize metadata for '{}': {}", filename, e);
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e));
         }
     }
+    Ok(())
 }
 
 /// Deletes metadata for an image.
@@ -377,6 +401,7 @@ pub fn migrate_legacy_metadata() {
             cache_rotation_revision: 0,
             thumb_rotation_revision: 0,
             dither_rotation_revision: 0,
+            ..ImageMetadata::default()
         };
         save_metadata(&filename, &metadata);
         migrated += 1;

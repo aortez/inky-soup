@@ -895,7 +895,9 @@
                     parseInt(img.dataset.contrast),
                     img.dataset.dither,
                     img.dataset.fitMode,
-                    parseInt(img.dataset.cacheVersion, 10)
+                    parseInt(img.dataset.cacheVersion, 10),
+                    Number(img.dataset.photoRotation),
+                    Number(img.dataset.photoRevision)
                   );
                 }
               ">
@@ -909,6 +911,8 @@
                   data-filter="{{ img.filter }}"
                   data-fit-mode="{{ img.fit_mode }}"
                   data-cache-version="{{ img.cache_version }}"
+                  data-photo-rotation="{{ img.photo_rotation_degrees }}"
+                  data-photo-revision="{{ img.photo_rotation_revision }}"
                   data-saturation="{{ img.saturation }}"
                   data-brightness="{{ img.brightness }}"
                   data-contrast="{{ img.contrast }}"
@@ -923,6 +927,8 @@
                   data-filter="{{ img.filter }}"
                   data-fit-mode="{{ img.fit_mode }}"
                   data-cache-version="{{ img.cache_version }}"
+                  data-photo-rotation="{{ img.photo_rotation_degrees }}"
+                  data-photo-revision="{{ img.photo_rotation_revision }}"
                   data-saturation="{{ img.saturation }}"
                   data-brightness="{{ img.brightness }}"
                   data-contrast="{{ img.contrast }}"

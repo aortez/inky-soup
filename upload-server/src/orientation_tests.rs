@@ -57,7 +57,9 @@ async fn orientation_api_preserves_jobs_and_recovers_after_restart() {
                     upload_cache,
                     upload_thumb,
                     upload_dithered,
-                    submit_flash_image
+                    submit_flash_image,
+                    photo_rotation::update_photo_rotation,
+                    test_card::flash_test_card
                 ],
             ),
     )
@@ -161,6 +163,7 @@ async fn orientation_api_preserves_jobs_and_recovers_after_restart() {
         display_settings::load_runtime_settings().rotation_revision,
         2
     );
+    check_photo_rotation_and_cards(&client, &queue).await;
     // Restart with the real startup path: the old in-memory queue is gone,
     // so its immutable snapshots must not accumulate on persistent storage.
     let metadata_before = fs::read(config::metadata_dir().join("photo.png.json")).unwrap();
@@ -192,4 +195,169 @@ async fn orientation_api_preserves_jobs_and_recovers_after_restart() {
     );
     drop(restarted);
     fs::remove_dir_all(root).unwrap();
+}
+
+async fn check_photo_rotation_and_cards(client: &Client, queue: &FlashQueueState) {
+    let rotate = |degrees, revision, session: &str| {
+        json!({"filename":"photo.png", "session_id":session,
+        "photo_rotation_degrees":degrees,"expected_revision":revision})
+        .to_string()
+    };
+    for (degrees, revision, session, status) in [
+        (45, 0, "editor", Status::BadRequest),
+        (90, 0, "other", Status::Forbidden),
+        (90, 0, "editor", Status::Ok),
+        (180, 0, "editor", Status::Conflict),
+    ] {
+        assert_eq!(
+            client
+                .post("/api/settings/photo-rotation")
+                .header(ContentType::JSON)
+                .body(rotate(degrees, revision, session))
+                .dispatch()
+                .await
+                .status(),
+            status
+        );
+    }
+    let meta = metadata::get_all_metadata("photo.png");
+    assert_eq!(meta.photo_rotation_degrees, 90);
+    assert_eq!(meta.photo_rotation_revision, 1);
+    assert_eq!(meta.filter, "lanczos");
+    assert_eq!(meta.brightness, 25);
+    assert_eq!(
+        fs::read(config::original_path("photo.png")).unwrap(),
+        b"original"
+    );
+    for revision in [0, 1] {
+        for endpoint in ["cache", "thumb", "dithered"] {
+            let (kind, body) = multipart(
+                &[
+                    ("filename", "photo.png".into()),
+                    ("session_id", "editor".into()),
+                    ("rotation_revision", "2".into()),
+                    ("photo_rotation_revision", revision.to_string()),
+                    ("filter", "lanczos".into()),
+                    ("fit_mode", "cover".into()),
+                    ("saturation", "0.7".into()),
+                    ("brightness", "25".into()),
+                    ("contrast", "-20".into()),
+                    ("dither_algorithm", "atkinson".into()),
+                ],
+                true,
+            );
+            let response = client
+                .post(format!("/api/upload-{endpoint}"))
+                .header(kind)
+                .body(body)
+                .dispatch()
+                .await;
+            assert_eq!(
+                response.into_json::<Value>().await.unwrap()["success"],
+                revision == 1
+            );
+        }
+        let gallery = client
+            .get("/api/images")
+            .dispatch()
+            .await
+            .into_json::<Value>()
+            .await
+            .unwrap();
+        assert_eq!(gallery[0]["needs_processing"], revision == 0);
+        assert_eq!(gallery[0]["photo_rotation_degrees"], 90);
+    }
+    for revision in [0, 1] {
+        let (kind, body) = multipart(
+            &[
+                ("submission.filename", "photo.png".into()),
+                ("submission.image_file_path", "ignored".into()),
+                ("submission.session_id", "editor".into()),
+                ("submission.flash_twice", "false".into()),
+                ("submission.rotation_revision", "2".into()),
+                ("submission.photo_rotation_revision", revision.to_string()),
+            ],
+            false,
+        );
+        assert_eq!(
+            client
+                .post("/flash")
+                .header(kind)
+                .body(body)
+                .dispatch()
+                .await
+                .status(),
+            if revision == 0 {
+                Status::Conflict
+            } else {
+                Status::Ok
+            }
+        );
+    }
+    let photo_job = queue.lock().await.get_queued_jobs().last().unwrap().clone();
+    // Returning to the original angle still invalidates every previous render.
+    assert_eq!(
+        client
+            .post("/api/settings/photo-rotation")
+            .header(ContentType::JSON)
+            .body(rotate(0, 1, "editor"))
+            .dispatch()
+            .await
+            .status(),
+        Status::Ok
+    );
+    assert_eq!(
+        metadata::get_all_metadata("photo.png").photo_rotation_revision,
+        2
+    );
+    assert_eq!(
+        fs::read(&photo_job.dithered_path).unwrap(),
+        b"prepared pixels"
+    );
+    for path in [
+        config::cache_path("photo.png"),
+        config::thumb_path("photo.png"),
+        config::dithered_path("photo.png"),
+    ] {
+        assert!(!path.exists());
+    }
+    let before = get_gallery_images().len();
+    let snapshots = || fs::read_dir(config::flash_jobs_dir()).unwrap().count();
+    let count = snapshots();
+    // The route checks PNG type/dimensions; pixel decoding stays in the display driver.
+    let mut header = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+    header.extend(1600u32.to_be_bytes());
+    header.extend(1200u32.to_be_bytes());
+    for (revision, valid, status) in [
+        (1, true, Status::Conflict),
+        (2, false, Status::BadRequest),
+        (2, true, Status::Ok),
+    ] {
+        let (kind, body) = multipart(&[("rotation_revision", revision.to_string())], true);
+        let mut body = body.into_bytes();
+        let start = body
+            .windows(b"prepared pixels".len())
+            .position(|window| window == b"prepared pixels")
+            .unwrap();
+        if valid {
+            body.splice(start..start + b"prepared pixels".len(), header.clone());
+        }
+        assert_eq!(
+            client
+                .post("/api/flash-test-card")
+                .header(kind)
+                .body(body)
+                .dispatch()
+                .await
+                .status(),
+            status
+        );
+        assert_eq!(snapshots(), count + usize::from(status == Status::Ok));
+    }
+    assert_eq!(get_gallery_images().len(), before);
+    let card = queue.lock().await.get_queued_jobs().last().unwrap().clone();
+    assert_eq!(card.filename, "orientation-test-card.png");
+    assert_eq!(card.rotation_degrees, 180);
+    assert!(!card.flash_twice);
+    assert_eq!(fs::read(&card.dithered_path).unwrap(), header);
 }

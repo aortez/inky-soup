@@ -8,13 +8,16 @@
  * @param {HTMLImageElement|HTMLCanvasElement} img - Source drawable.
  * @returns {ImageData} The ImageData extracted from the image.
  */
-export function createImageDataFromImage(img) {
+export function createImageDataFromImage(img, degrees = 0) {
   const canvas = document.createElement('canvas');
-  canvas.width = img.width;
-  canvas.height = img.height;
+  const swapped = [90, 270].includes(degrees);
+  canvas.width = swapped ? img.height : img.width;
+  canvas.height = swapped ? img.width : img.height;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, 0, 0);
-  return ctx.getImageData(0, 0, img.width, img.height);
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate((degrees * Math.PI) / 180);
+  ctx.drawImage(img, -img.width / 2, -img.height / 2);
+  return ctx.getImageData(0, 0, canvas.width, canvas.height);
 }
 
 /**

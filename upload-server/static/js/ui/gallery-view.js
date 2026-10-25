@@ -49,6 +49,8 @@ function replacePlaceholderWithThumb(filename, path, thumbPath, placeholderEl) {
   img.dataset.filename = filename;
   img.dataset.path = path;
   img.dataset.filter = dataset.filter || 'bicubic';
+  img.dataset.photoRotation = dataset.photoRotation || '0';
+  img.dataset.photoRevision = dataset.photoRevision || '0';
   img.dataset.fitMode = dataset.fitMode || 'contain';
   img.dataset.cacheVersion = dataset.cacheVersion || `${CACHE_VERSION}`;
   img.dataset.saturation = dataset.saturation || '0.5';
@@ -70,6 +72,8 @@ function replacePlaceholderWithThumb(filename, path, thumbPath, placeholderEl) {
       img.dataset.dither || 'floyd-steinberg',
       img.dataset.fitMode || 'contain',
       parseInt(img.dataset.cacheVersion, 10) || 1,
+      Number(img.dataset.photoRotation),
+      Number(img.dataset.photoRevision),
     );
   });
 

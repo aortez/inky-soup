@@ -608,6 +608,8 @@ export async function generateThumbnails(dataUrl, filename, options = {}) {
       if (!latest.needs_processing) return { thumbData: { path: `images/thumbs/${filename}.png` } };
       settings = {
         ...options,
+        photoRotation: latest.photo_rotation_degrees,
+        photoRevision: latest.photo_rotation_revision,
         fitMode: latest.fit_mode,
         filter: latest.filter,
         saturation: latest.saturation,
@@ -623,7 +625,7 @@ export async function generateThumbnails(dataUrl, filename, options = {}) {
     const brightness = normalizeNumeric(settings.brightness, 0);
     const contrast = normalizeNumeric(settings.contrast, 0);
     const img = await loadImageFromDataUrl(dataUrl);
-    const sourceImageData = createImageDataFromImage(img);
+    const sourceImageData = createImageDataFromImage(img, settings.photoRotation || 0);
     const sourceCanvas = imageDataToCanvas(sourceImageData);
 
     const cacheWidth = getDisplayWidth();
@@ -679,13 +681,14 @@ export async function generateThumbnails(dataUrl, filename, options = {}) {
       contrast,
       ditherAlgorithm,
       sessionId,
+      settings.photoRevision || 0,
     );
     if (!cacheData.success) {
       throw new Error(cacheData.message || 'Cache upload failed');
     }
 
     if (lockError) throw lockError;
-    const thumbData = await uploadThumb(filename, thumbBlob);
+    const thumbData = await uploadThumb(filename, thumbBlob, settings.photoRevision || 0);
     if (!thumbData.success) {
       throw new Error(thumbData.message || 'Thumbnail upload failed');
     }
@@ -701,6 +704,7 @@ export async function generateThumbnails(dataUrl, filename, options = {}) {
       contrast,
       ditherAlgorithm,
       sessionId,
+      settings.photoRevision || 0,
     );
     if (!ditherData.success) {
       throw new Error(ditherData.message || 'Dithered upload failed');

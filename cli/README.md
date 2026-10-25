@@ -166,6 +166,37 @@ This selects hardware; mounting orientation is a separate setting. If first-boot
 detection prevented startup, start the server after manual setup with
 `sudo systemctl restart inky-soup-server.service` on the Pi.
 
+## Orientation test card and photo rotation
+
+```bash
+./inky-cli orientation-test --wait          # Display TOP / BOTTOM / LEFT / RIGHT
+./inky-cli orientation-test --output /tmp/orientation.png  # Preview without flashing
+./inky-cli upload holiday.jpg --rotate 90   # Preserve original; save clockwise rotation
+./inky-cli rotate <filename>                # Inspect saved photo rotation and settings
+./inky-cli rotate <filename> 270            # Set an absolute clockwise angle
+```
+
+The orientation card uses the **saved frame mounting orientation**, exact logical
+panel dimensions, and black/white pixels supported by both the 13.3-inch and
+5.7-inch displays. It replaces the picture on the panel but creates no gallery
+photo. Its temporary PNG is removed after the job finishes (or at server restart).
+An unsaved app orientation choice must be saved before testing it.
+
+Photo rotation is independent of mounting orientation. The allowed angles are
+0, 90, 180, and 270 degrees clockwise relative to the original photo. Rotation
+never rewrites the original or changes its other adjustments. Like mounting
+changes, CLI photo rotation saves settings and marks derived images for rebuilding:
+**open/reconnect the frame app to generate the new previews on that client**,
+then display the photo from the app or use `inky-cli flash <filename> --wait`.
+The CLI does not resize/dither arbitrary originals. `--rotate` cannot be combined
+with `--prepared`, whose input is already fitted and dithered.
+
+Rotation changes require edit ownership and the current photo revision. Old
+uploads/flash requests are rejected after a change, even after rotating back to
+0 degrees. Already queued jobs keep their captured pixels. Both commands require
+the updated frame server; `orientation-test --output` can also render a card for
+an older supported server without sending it to the display.
+
 ## Photos and display jobs
 
 ```bash

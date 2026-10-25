@@ -15,6 +15,7 @@ mod deploy;
 mod display_setup;
 mod preview;
 mod ssh;
+mod test_card;
 
 #[derive(Parser)]
 #[command(
@@ -87,6 +88,22 @@ enum Command {
         #[arg(long, default_value = "inky")]
         ssh_user: String,
     },
+    /// Display an edge-labeled orientation card without adding it to the gallery.
+    OrientationTest {
+        /// Save the PNG locally instead of refreshing the frame.
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[arg(long, conflicts_with = "output")]
+        wait: bool,
+        #[arg(long, default_value_t = 180, value_parser = clap::value_parser!(u64).range(1..))]
+        timeout: u64,
+    },
+    /// Read or set a photo's clockwise rotation; the app rebuilds its saved previews.
+    Rotate {
+        filename: String,
+        #[arg(value_parser = parse_orientation)]
+        degrees: Option<u16>,
+    },
     /// List images and their saved settings.
     Images,
     /// Delete an original and its saved versions; refuses locked or pending photos.
@@ -97,6 +114,9 @@ enum Command {
         /// Input is an opaque PNG with exact display dimensions and native palette colors.
         #[arg(long)]
         prepared: bool,
+        /// Save a clockwise source rotation. Open the app to generate display pixels.
+        #[arg(long, value_parser = parse_orientation, conflicts_with = "prepared")]
+        rotate: Option<u16>,
         /// Queue the prepared image after uploading it.
         #[arg(long, requires = "prepared")]
         flash: bool,
@@ -247,7 +267,21 @@ impl Frame {
     }
     fn queue(&self, filename: &str, session: &str, twice: bool) -> Result<Value> {
         let config = self.get("api/display-config")?;
+        let photo_revision = if config["photo_rotation_supported"] == true {
+            let images = self.get("api/images")?;
+            images
+                .as_array()
+                .context("Invalid gallery")?
+                .iter()
+                .find(|photo| photo["filename"] == filename)
+                .context("Photo not found")?["photo_rotation_revision"]
+                .as_u64()
+                .context("Missing photo revision")?
+        } else {
+            0
+        };
         self.multipart("flash", multipart::Form::new()
+            .text("submission.photo_rotation_revision", photo_revision.to_string())
             .text("submission.rotation_revision", config["rotation_revision"].as_u64().unwrap_or(0).to_string())
             .text("submission.filename", filename.to_owned())
             .text("submission.image_file_path", format!("images/dithered/{filename}.png"))
@@ -515,6 +549,80 @@ fn run(args: &Args) -> Result<Value> {
             ssh_user,
             *model,
         ),
+        Command::OrientationTest {
+            output,
+            wait,
+            timeout,
+        } => {
+            let config = frame.get("api/display-config")?;
+            let png = test_card::render(&config)?;
+            if let Some(path) = output {
+                std::fs::write(path, png)?;
+                return Ok(
+                    json!({"output":path,"width":config["width"],"height":config["height"]}),
+                );
+            }
+            if config["orientation_test_supported"] != true {
+                bail!("Update the frame server to support orientation test cards");
+            }
+            let queued = frame.multipart(
+                "api/flash-test-card",
+                multipart::Form::new()
+                    .text(
+                        "rotation_revision",
+                        config["rotation_revision"]
+                            .as_u64()
+                            .context("Missing orientation revision")?
+                            .to_string(),
+                    )
+                    .part(
+                        "file",
+                        multipart::Part::bytes(png)
+                            .file_name("orientation-test-card.png")
+                            .mime_str("image/png")?,
+                    ),
+            )?;
+            if *wait {
+                frame.wait(
+                    queued["job_id"].as_u64().context("Missing job ID")?,
+                    *timeout,
+                    Some("orientation-test-card.png"),
+                )
+            } else {
+                Ok(queued)
+            }
+        }
+        Command::Rotate { filename, degrees } => {
+            valid_filename(filename)?;
+            let session = uuid::Uuid::new_v4().to_string();
+            if degrees.is_some() {
+                frame.lock(filename, &session)?;
+            }
+            let result = (|| -> Result<Value> {
+                let images = frame.get("api/images")?;
+                let photo = images
+                    .as_array()
+                    .context("Invalid gallery")?
+                    .iter()
+                    .find(|photo| photo["filename"] == *filename)
+                    .context("Photo not found")?;
+                let revision = photo["photo_rotation_revision"]
+                    .as_u64()
+                    .context("Update the frame server to support photo rotation")?;
+                match degrees {
+                    None => Ok(photo.clone()),
+                    Some(degrees) => frame.json_post(
+                        "api/settings/photo-rotation",
+                        &json!({"filename":filename,"session_id":session,
+                        "photo_rotation_degrees":degrees,"expected_revision":revision}),
+                    ),
+                }
+            })();
+            if degrees.is_some() {
+                frame.unlock(filename, &session);
+            }
+            result
+        }
         Command::Images => frame.get("api/images"),
         Command::Delete { filename } => {
             valid_filename(filename)?;
@@ -559,6 +667,7 @@ fn run(args: &Args) -> Result<Value> {
         Command::Upload {
             file,
             prepared,
+            rotate,
             flash,
             wait,
             timeout,
@@ -567,13 +676,17 @@ fn run(args: &Args) -> Result<Value> {
             if bytes.len() > 20 * 1024 * 1024 {
                 bail!("Images must be at most 20 MiB");
             }
-            let config = if *prepared {
+            let config = if *prepared || rotate.is_some() {
                 Some(frame.get("api/display-config")?)
             } else {
                 None
             };
+            if rotate.is_some() && config.as_ref().unwrap()["photo_rotation_supported"] != true {
+                bail!("Update the frame server to support photo rotation");
+            }
             let ready = config
                 .as_ref()
+                .filter(|_| *prepared)
                 .map(|c| validate_prepared(&bytes, c))
                 .transpose()?;
             let extension = if *prepared {
@@ -584,7 +697,7 @@ fn run(args: &Args) -> Result<Value> {
             let filename = format!("{}.{}", uuid::Uuid::new_v4(), extension);
             valid_filename(&filename)?;
             let session = uuid::Uuid::new_v4().to_string();
-            if *prepared {
+            if *prepared || rotate.is_some() {
                 // Reserve the name before the original becomes visible to
                 // clients that rebuild missing derived images automatically.
                 frame.lock(&filename, &session)?;
@@ -606,13 +719,22 @@ fn run(args: &Args) -> Result<Value> {
             let upload = match upload {
                 Ok(upload) if upload["filename"] == filename => upload,
                 result => {
-                    if *prepared {
+                    if *prepared || rotate.is_some() {
                         frame.unlock(&filename, &session);
                     }
                     result?;
                     bail!("Device returned an unexpected filename");
                 }
             };
+            if let Some(degrees) = rotate {
+                let result = frame.json_post(
+                    "api/settings/photo-rotation",
+                    &json!({"filename":filename,"session_id":session,
+                    "photo_rotation_degrees":degrees,"expected_revision":0}),
+                );
+                frame.unlock(&filename, &session);
+                return result;
+            }
             if let (Some(image), Some(config)) = (ready, config) {
                 let result = (|| -> Result<Value> {
                     let mut thumb = Cursor::new(Vec::new());

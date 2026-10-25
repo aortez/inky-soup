@@ -3,7 +3,7 @@
  * All fetch() calls are centralized here.
  */
 
-import { getDisplayConfig as cachedDisplayConfig } from '../core/state.js';
+import { getCurrentPhotoRevision, getDisplayConfig as cachedDisplayConfig } from '../core/state.js';
 
 /**
  * Fetch display configuration from the server.
@@ -58,9 +58,11 @@ export async function uploadCache(
   contrast,
   ditherAlgorithm,
   sessionId,
+  photoRevision = getCurrentPhotoRevision(),
 ) {
   const formData = new FormData();
   formData.append('filename', filename);
+  formData.append('photo_rotation_revision', String(photoRevision));
   formData.append('rotation_revision', String(cachedDisplayConfig().rotationRevision || 0));
   if (filter) {
     formData.append('filter', filter);
@@ -95,9 +97,10 @@ export async function uploadCache(
  * @param {Blob} blob - PNG blob data.
  * @returns {Promise<Object>} Server response.
  */
-export async function uploadThumb(filename, blob) {
+export async function uploadThumb(filename, blob, photoRevision = getCurrentPhotoRevision()) {
   const formData = new FormData();
   formData.append('filename', filename);
+  formData.append('photo_rotation_revision', String(photoRevision));
   formData.append('rotation_revision', String(cachedDisplayConfig().rotationRevision || 0));
   formData.append('file', blob, `${filename}.png`);
 
@@ -135,9 +138,11 @@ export async function uploadDithered(
   contrast,
   ditherAlgorithm,
   sessionId,
+  photoRevision = getCurrentPhotoRevision(),
 ) {
   const formData = new FormData();
   formData.append('filename', filename);
+  formData.append('photo_rotation_revision', String(photoRevision));
   formData.append('rotation_revision', String(cachedDisplayConfig().rotationRevision || 0));
   formData.append('filter', filter);
   formData.append('fit_mode', fitMode);
@@ -167,9 +172,15 @@ export async function uploadDithered(
  * @param {string} sessionId - Session ID for lock verification.
  * @returns {Promise<Object>} Server response with job_id.
  */
-export async function submitFlashJob(filename, flashTwice, sessionId) {
+export async function submitFlashJob(
+  filename,
+  flashTwice,
+  sessionId,
+  photoRevision = getCurrentPhotoRevision(),
+) {
   const formData = new FormData();
   formData.append('submission.filename', filename);
+  formData.append('submission.photo_rotation_revision', String(photoRevision));
   formData.append('submission.rotation_revision', String(cachedDisplayConfig().rotationRevision || 0));
   formData.append('submission.image_file_path', `images/dithered/${filename}.png`);
   formData.append('submission.session_id', sessionId);
