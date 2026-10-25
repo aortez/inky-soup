@@ -135,7 +135,10 @@ Omitting it means revision 0, compatible only before the first orientation chang
 Settings changes, derived uploads, and flash snapshots share an orientation lock.
 Flash jobs copy their pixels into `flash-jobs/` and capture the mount angle at
 submission. The driver receives the compensating rotation via `--rotation`;
-completed/failed jobs remove their snapshots. Queues do not survive a restart.
+completed/failed jobs remove their snapshots. Queues do not survive a restart;
+startup removes abandoned snapshot PNGs before accepting new jobs. This cleanup
+is confined to regular files directly inside `flash-jobs/`, preserving photo
+storage, settings, symlinks, and subdirectories.
 
 Deploy the server and both copies of the display script together. The temporary
 `inky-cli preview` command replaces only the server, so it cannot by itself test

@@ -21,7 +21,7 @@ fn multipart(fields: &[(&str, String)], file: bool) -> (ContentType, String) {
 }
 
 #[rocket::async_test]
-async fn orientation_api_preserves_queued_pixels_and_rejects_old_uploads() {
+async fn orientation_api_preserves_jobs_and_recovers_after_restart() {
     let root = std::env::temp_dir().join(format!("inky-orientation-api-{}", std::process::id()));
     std::env::set_var("INKY_SOUP_IMAGES_DIR", root.join("images"));
     std::env::set_var("INKY_SOUP_DATA_DIR", &root);
@@ -141,6 +141,7 @@ async fn orientation_api_preserves_queued_pixels_and_rejects_old_uploads() {
         .await;
     assert_eq!(changed.status(), Status::Ok);
     assert_eq!(fs::read(&job.dithered_path).unwrap(), b"prepared pixels");
+    drop(changed);
     assert!(!config::dithered_path("photo.png").exists());
     assert_eq!(
         client
@@ -160,5 +161,35 @@ async fn orientation_api_preserves_queued_pixels_and_rejects_old_uploads() {
         display_settings::load_runtime_settings().rotation_revision,
         2
     );
+    // Restart with the real startup path: the old in-memory queue is gone,
+    // so its immutable snapshots must not accumulate on persistent storage.
+    let metadata_before = fs::read(config::metadata_dir().join("photo.png.json")).unwrap();
+    drop(client);
+    drop(queue);
+    assert!(Path::new(&job.dithered_path).exists());
+    let restarted = Client::tracked(rocket()).await.unwrap();
+    let status = restarted
+        .get("/api/flash/status")
+        .dispatch()
+        .await
+        .into_json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(status["queue_length"], 0);
+    assert!(status["current_job"].is_null());
+    assert!(!Path::new(&job.dithered_path).exists());
+    assert_eq!(
+        fs::read(config::original_path("photo.png")).unwrap(),
+        b"original"
+    );
+    assert_eq!(
+        fs::read(config::metadata_dir().join("photo.png.json")).unwrap(),
+        metadata_before
+    );
+    assert_eq!(
+        display_settings::load_runtime_settings().rotation_revision,
+        2
+    );
+    drop(restarted);
     fs::remove_dir_all(root).unwrap();
 }

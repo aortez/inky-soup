@@ -86,6 +86,21 @@ pub fn snapshot_image(source: &Path) -> Result<PathBuf, String> {
         .map_err(|error| format!("Could not prepare display job: {error}"))
 }
 
+/// Run before accepting jobs. The queue is not persisted, so snapshots left
+/// from an earlier server lifetime no longer belong to any live job.
+pub fn cleanup_abandoned_snapshots(directory: &Path) -> std::io::Result<usize> {
+    let mut removed = 0;
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        let path = entry.path();
+        if entry.file_type()?.is_file() && path.extension().is_some_and(|ext| ext == "png") {
+            fs::remove_file(path)?;
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
 fn snapshot_into(source: &Path, directory: &Path) -> std::io::Result<PathBuf> {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     fs::create_dir_all(directory)?;
@@ -112,6 +127,39 @@ fn snapshot_into(source: &Path, directory: &Path) -> std::io::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_cleanup_removes_snapshots_and_preserves_other_files() {
+        let root =
+            std::env::temp_dir().join(format!("inky-snapshot-cleanup-{}", std::process::id()));
+        let images = root.join("images");
+        let jobs = root.join("flash-jobs");
+        fs::create_dir_all(&images).unwrap();
+        fs::create_dir_all(jobs.join("nested.png")).unwrap();
+        let original = images.join("photo.png");
+        fs::write(&original, b"original pixels").unwrap();
+        fs::write(jobs.join("keep.txt"), b"unrelated file").unwrap();
+        fs::write(jobs.join("nested.png/keep.png"), b"nested file").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&original, jobs.join("linked.png")).unwrap();
+
+        let first = snapshot_into(&original, &jobs).unwrap();
+        let second = snapshot_into(&original, &jobs).unwrap();
+        assert_eq!(cleanup_abandoned_snapshots(&jobs).unwrap(), 2);
+        assert!(!first.exists());
+        assert!(!second.exists());
+        assert_eq!(fs::read(&original).unwrap(), b"original pixels");
+        assert_eq!(fs::read(jobs.join("keep.txt")).unwrap(), b"unrelated file");
+        assert_eq!(
+            fs::read(jobs.join("nested.png/keep.png")).unwrap(),
+            b"nested file"
+        );
+        #[cfg(unix)]
+        assert!(jobs.join("linked.png").is_symlink());
+        assert_eq!(cleanup_abandoned_snapshots(&jobs).unwrap(), 0);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn changes_invalidate_all_versions_preserve_snapshots_and_reject_stale_writers() {
         let root = std::env::temp_dir().join(format!("inky-orientation-{}", std::process::id()));

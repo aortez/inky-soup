@@ -1081,6 +1081,14 @@ fn rocket() -> _ {
         }
     }
 
+    // This must precede queue creation and request handling: every existing
+    // snapshot belongs to a job abandoned by a previous server lifetime.
+    match orientation::cleanup_abandoned_snapshots(&config::flash_jobs_dir()) {
+        Ok(0) => {},
+        Ok(count) => info!("Removed {} abandoned flash snapshots", count),
+        Err(error) => warn!("Could not clean abandoned flash snapshots: {}", error),
+    }
+
     // Run migration from legacy metadata format if needed.
     metadata::migrate_legacy_metadata();
 
