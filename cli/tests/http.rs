@@ -209,3 +209,78 @@ fn browser_check_requires_origin_method_and_content_type_permission() {
         }
     }
 }
+
+#[test]
+fn delete_acquires_edit_access_and_releases_it_after_server_refusal() {
+    let lock = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 15\r\nConnection: close\r\n\r\n{\"locked\":true}".to_string();
+    let refused = r#"{"success":false,"message":"Photo is queued"}"#;
+    let rejection = format!("HTTP/1.1 409 Conflict\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", refused.len(), refused);
+    let unlock = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 16\r\nConnection: close\r\n\r\n{\"success\":true}".to_string();
+    let (address, server) = serve_responses(vec![lock, rejection, unlock]);
+    let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+        .args(["--device", &address, "--json", "delete", "photo.png"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("Photo is queued"));
+    let requests = server.join().unwrap();
+    assert!(requests[0].starts_with("POST /api/lock-image "));
+    assert!(requests[1].starts_with("POST /api/delete-image "));
+    assert!(requests[2].starts_with("POST /api/unlock-image "));
+}
+
+#[test]
+fn preview_start_refuses_to_restart_a_flashing_frame() {
+    let (address, server) = serve(vec![
+        r#"{"current_job":{"status":"Flashing"},"queue_length":0}"#,
+    ]);
+    let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+        .args(["--device", &address, "--json", "preview", "start"])
+        .env("PATH", "/nonexistent")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("Wait for queued display jobs"));
+    assert_eq!(server.join().unwrap().len(), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn preview_stop_can_restore_the_service_when_the_preview_api_is_down() {
+    use std::{fs, os::unix::fs::PermissionsExt};
+    let root = std::env::temp_dir().join(format!("inky-preview-test-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&root).unwrap();
+    let ssh = root.join("ssh");
+    fs::write(&ssh, "#!/bin/sh\ncat >/dev/null\nprintf 'active\\n'\n").unwrap();
+    fs::set_permissions(&ssh, fs::Permissions::from_mode(0o755)).unwrap();
+    let (address, server) = serve_responses(vec![
+        "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".into(),
+    ]);
+    let path = std::env::join_paths(
+        std::iter::once(root.clone())
+            .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+        .args(["--device", &address, "--json", "preview", "stop"])
+        .env("PATH", path)
+        .output()
+        .unwrap();
+    fs::remove_dir_all(root).unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["ok"], true);
+    assert_eq!(server.join().unwrap().len(), 1);
+}
