@@ -8,6 +8,9 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 
 SRC_URI[sha256sum] = "4333f1e9bacf0f5d087cbfd21d74b082dd9434b7c8540d625076c8f6750599dc"
 
+# Wait for the 13.3-inch panel before powering down (upstream PR #265).
+SRC_URI += "file://0001-fix-el133uf1-refresh-wait.patch"
+
 inherit pypi python_hatchling
 
 PYPI_PACKAGE = "inky"

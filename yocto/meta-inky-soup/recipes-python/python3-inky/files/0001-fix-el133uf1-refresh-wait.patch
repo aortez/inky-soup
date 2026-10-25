@@ -1,0 +1,71 @@
+From f64ef85443f284529a2a6950f4aeb493f99f73ad Mon Sep 17 00:00:00 2001
+From: stkr22 <stkr22@github.com>
+Date: Sun, 12 Jul 2026 10:43:50 +0200
+Subject: [PATCH] Fix EL133UF1 sending POF mid-refresh on 13.3" displays
+
+The BUSY line on the EL133UF1 (Impression 13.3") is active-LOW during a
+refresh: it drops LOW while the panel updates and returns HIGH when done.
+`_busy_wait` treats the line as active-HIGH, so after DRF it returns
+instantly and POF is sent mid-refresh on every update. The panel usually
+ignores it but occasionally latches into a fault (BUSY pinned HIGH,
+ignoring RST_N/POF/deep-sleep) that only full power removal recovers.
+
+Add `_refresh_wait`, which polls the line correctly (assert busy LOW,
+then wait for it to clear HIGH, with a timeout warning) and use it after
+DRF. `_busy_wait` is left unchanged for PON/POF, since post-POF the line
+rests LOW and would be ambiguous under an inverted global check.
+
+Upstream-Status: Backport [https://github.com/pimoroni/inky/commit/f64ef85443f284529a2a6950f4aeb493f99f73ad]
+
+Adapted to use monotonic time, following upstream commit 1e6332f.
+
+---
+ inky/inky_el133uf1.py | 28 +++++++++++++++++++++++++++-
+ 1 file changed, 27 insertions(+), 1 deletion(-)
+
+diff --git a/inky/inky_el133uf1.py b/inky/inky_el133uf1.py
+index 7368b5d..dbff10f 100644
+--- a/inky/inky_el133uf1.py
++++ b/inky/inky_el133uf1.py
+@@ -279,6 +279,32 @@ def _busy_wait(self, timeout=40.0):
+                 warnings.warn(f"Busy Wait: Timed out after {timeout:0.2f}s")
+                 return
+ 
++    def _refresh_wait(self, timeout=65.0):
++        """Wait for a display refresh to complete.
++
++        Unlike ``_busy_wait``, the EL133UF1 BUSY line is *active-LOW* during a
++        refresh: after DRF the line drops LOW (INACTIVE) while the panel is
++        updating, then returns HIGH (ACTIVE) once the refresh is done. Poll for
++        the line to first assert busy (LOW), then wait for it to clear (HIGH),
++        so we never send POF mid-refresh (which can latch the panel into a fault
++        that only full power removal recovers).
++        """
++        t_start = time.monotonic()
++
++        # Wait for the panel to assert BUSY (line drops LOW) after DRF.
++        while self._gpio.get_value(self.busy_pin) == Value.ACTIVE:
++            if time.monotonic() - t_start > timeout:
++                warnings.warn(f"Refresh Wait: Timed out waiting for busy after {timeout:0.2f}s")
++                return
++            time.sleep(0.01)
++
++        # Wait for the refresh to complete (line returns HIGH).
++        while self._gpio.get_value(self.busy_pin) == Value.INACTIVE:
++            if time.monotonic() - t_start > timeout:
++                warnings.warn(f"Refresh Wait: Timed out after {timeout:0.2f}s")
++                return
++            time.sleep(0.1)
++
+     def _update(self, buf_a, buf_b):
+         """Update display.
+         Dispatches display update to correct driver.
+@@ -292,7 +318,7 @@ def _update(self, buf_a, buf_b):
+         self._busy_wait(0.2)
+ 
+         self._send_command(EL133UF1_DRF, CS_BOTH_SEL, [0x00])
+-        self._busy_wait(32.0)
++        self._refresh_wait(65.0)
+ 
+         self._send_command(EL133UF1_POF, CS_BOTH_SEL, [0x00])
+         self._busy_wait(0.2)

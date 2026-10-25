@@ -2,7 +2,10 @@
 
 import importlib.util
 from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import Mock, patch
+import warnings
 
 import numpy
 from PIL import Image
@@ -77,6 +80,38 @@ class PreDitheredImageTests(unittest.TestCase):
     def test_yocto_copy_is_identical(self):
         packaged = ROOT / "yocto/meta-inky-soup/recipes-inky-soup/inky-soup-display/files/update-image.py"
         self.assertEqual((ROOT / "update-image.py").read_bytes(), packaged.read_bytes())
+
+
+class DisplayRefreshTests(unittest.TestCase):
+    def run_flash(self, show):
+        display = make_display("inky_el133uf1", 1)
+        display.show = show
+        with tempfile.TemporaryDirectory() as directory:
+            image_path = Path(directory) / "image.png"
+            Image.new("RGB", (1, 1)).save(image_path)
+            with (
+                patch.object(UPDATE_IMAGE, "get_display", return_value=display),
+                patch.object(
+                    UPDATE_IMAGE.sys, "argv",
+                    ["update-image.py", str(image_path), "--skip-dither"],
+                ),
+            ):
+                UPDATE_IMAGE.main()
+
+    def test_driver_timeouts_fail_instead_of_reporting_completion(self):
+        for message in [
+            "Refresh Wait: Timed out waiting for busy after 65.00s",
+            "Refresh Wait: Timed out after 65.00s",
+            "Busy Wait: Timed out after 0.20s",
+        ]:
+            with self.subTest(message=message):
+                with self.assertRaisesRegex(UserWarning, "Wait: Timed out"):
+                    self.run_flash(lambda: warnings.warn(message, UserWarning))
+
+    def test_successful_refresh_returns_normally(self):
+        show = Mock()
+        self.run_flash(show)
+        show.assert_called_once_with()
 
 
 if __name__ == "__main__":
