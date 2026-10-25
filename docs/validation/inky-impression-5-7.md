@@ -126,5 +126,32 @@ The combined Pi Zero 2 W image build also passed all 5,551 tasks. Artifact
 `inky-soup-image-raspberrypi0-2w.rootfs-20261025204240.wic.gz` has SHA-256
 `c2956ff5cb56a463bf04991da94324582ec2e2d5263a6616752211084376b768`.
 Gzip integrity and packaged scripts, frontend, and service configuration were
-verified. The physical test above used the preceding build; this combined image
-has not been flashed to the device.
+verified. The combined application payload was subsequently installed and tested
+on the device as described below.
+
+## Final PR smoke test — 2026-10-25
+
+The matching server, display script, templates, and static assets were extracted
+from the combined image and installed on `inky-soup-small` with the guarded CLI
+deployment command. The existing I2C module-loading file and SPI overlay matched
+the image's boot fixes. This was an application deployment with a software backup,
+not another SD-card flash. Both existing photos and their saved adjustments were
+preserved.
+
+After reboot, the normal service started with no failed systemd units. The API
+reported the 600 × 448 physical panel, mounting angle 0°, and revision 0. Job 1
+completed the seven-color card in 47.4 seconds without an error; the owner again
+confirmed the TOP label, border, and all seven colors. A second refresh completed
+while the browser test exercised a separate disposable image.
+
+The browser test now waits for the new document's initial status response to
+finish before interacting, on both initial navigation and upload-dialog reload.
+It deliberately delays the real display-config responses to cover the startup
+race. Waiting only for the outgoing status request exposed a second race during
+an active refresh, because the late status response could overwrite editor state;
+waiting for the response to finish resolved that test failure.
+
+The final test passed against the real Pi both idle and during a refresh, plus
+local 448 × 600 portrait and 1600 × 1200 profiles. The hosted app's CORS check
+passed. Disposable test images were removed, and the final gallery and saved
+adjustments matched the pre-deployment state.

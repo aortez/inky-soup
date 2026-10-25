@@ -5,6 +5,21 @@
 
 import { test, expect } from '@playwright/test';
 
+async function navigateAndWaitForApp(page, navigate) {
+  // Listen after the new document commits so an old page's status poll cannot
+  // satisfy readiness. The app sends this request after registering UI handlers.
+  const ready = page.waitForEvent('framenavigated', (frame) => frame === page.mainFrame())
+    .then(() => page.waitForRequest((request) => request.url().endsWith('/api/flash/status')
+      && request.method() === 'GET'))
+    .then(async (request) => {
+      const response = await request.response();
+      expect(response).not.toBeNull();
+      expect(response.ok()).toBe(true);
+      await response.finished();
+    });
+  await Promise.all([ready, navigate()]);
+}
+
 test('configured display preserves dimensions and inks through save and flash preparation', async ({ page, request }, testInfo) => {
   const config = await (await request.get('/api/display-config')).json();
   const profiles = {
@@ -16,7 +31,14 @@ test('configured display preserves dimensions and inks through save and flash pr
   expect([config.physical_width ?? config.width, config.physical_height ?? config.height])
     .toEqual(profile.slice(0, 2));
   const dimensions = [config.width, config.height];
-  await page.goto('/');
+  // Exercise delayed configuration on initial load and reload, keeping the real
+  // server response. File selection must wait until the upload handler exists.
+  await page.route('**/api/display-config', async (route) => {
+    const response = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.fulfill({ response });
+  }, { times: 2 });
+  await navigateAndWaitForApp(page, () => page.goto('/'));
 
   const source = await page.evaluate(({ width, height, model }) => {
     const canvas = document.createElement('canvas');
@@ -41,13 +63,7 @@ test('configured display preserves dimensions and inks through save and flash pr
   });
   const { filename } = await (await uploaded).json();
   await expect(page.locator('#uploadModalTitle')).toHaveText('✓ Upload Complete!', { timeout: 30000 });
-  // Closing reloads the page. The initial status request runs after async UI
-  // setup, so wait for it before clicking the newly rendered gallery.
-  await Promise.all([
-    page.waitForResponse((response) => response.url().endsWith('/api/flash/status')
-      && response.request().method() === 'GET'),
-    page.locator('#uploadCloseBtn').click(),
-  ]);
+  await navigateAndWaitForApp(page, () => page.locator('#uploadCloseBtn').click());
   await page.locator(`.thumbnail-item img[data-filename="${filename}"]`).click();
   await expect(page.locator('#detailView')).toBeVisible();
   await expect(page.locator('#lockStatus')).toContainText('Editing');
