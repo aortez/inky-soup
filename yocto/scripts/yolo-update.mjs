@@ -28,13 +28,13 @@ import {
   setupConsolaLogging,
   banner,
   skull,
-  run,
   checkRemoteReachable,
   getRemoteBootTime,
   waitForReboot,
   createCleanupManager,
   loadConfig,
 } from '../pi-base/scripts/lib/index.mjs';
+import { runKas } from './kas-runner.mjs';
 
 // ============================================================================
 // Project Configuration
@@ -118,7 +118,7 @@ function getMachine(args) {
  */
 async function cleanImage(machine) {
   info(`Cleaning ${IMAGE_NAME} sstate to force rebuild...`);
-  await run('kas', ['shell', machine.kasFile, '-c', `bitbake -c cleansstate ${IMAGE_NAME}`], { cwd: YOCTO_DIR });
+  await runKas(['shell', machine.kasFile, '-c', `bitbake -c cleansstate ${IMAGE_NAME}`], YOCTO_DIR);
   success('Clean complete!');
 }
 
@@ -127,7 +127,7 @@ async function cleanImage(machine) {
  */
 async function cleanAll(machine) {
   info(`Cleaning ${SERVER_NAME} and ${IMAGE_NAME} sstate...`);
-  await run('kas', ['shell', machine.kasFile, '-c', `bitbake -c cleansstate ${SERVER_NAME} ${IMAGE_NAME}`], { cwd: YOCTO_DIR });
+  await runKas(['shell', machine.kasFile, '-c', `bitbake -c cleansstate ${SERVER_NAME} ${IMAGE_NAME}`], YOCTO_DIR);
   success('Clean complete!');
 }
 
@@ -143,7 +143,7 @@ async function build(machine, forceClean = false, forceCleanAll = false) {
     await cleanImage(machine);
   }
 
-  await run('kas', ['build', machine.kasFile], { cwd: YOCTO_DIR });
+  await runKas(['build', machine.kasFile], YOCTO_DIR);
   success('Build complete!');
 }
 

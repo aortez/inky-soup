@@ -51,6 +51,15 @@ CLI orientation, restart persistence, and prepared portrait upload/delete passed
 The normal service and its 15 photos were preserved; the temporary service was
 stopped. See [results](../docs/validation/frame-orientation-pi-zero-w.json).
 
+For local panel testing, `INKY_SOUP_DISPLAY_CONFIG` overrides the default
+`/etc/inky-soup/display.conf` path in both the server and display script. Generate
+a temporary profile with `configure-display.py --model impression-5.7 --output
+/tmp/inky-display.conf` from the display recipe's `files/` directory. Keep test
+images in a disposable `INKY_SOUP_IMAGES_DIR`. The `e2e/display-profile.spec.js`
+test exercises upload, all three dither modes, Save, and the prepared PNG upload;
+it intercepts flash submission so no physical refresh is queued. Run it once per
+supported profile against a local test server using the remote Playwright config.
+
 ## Unit tests and lint
 
 ```bash

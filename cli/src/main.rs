@@ -12,6 +12,7 @@ use std::{
 };
 
 mod deploy;
+mod display_setup;
 mod preview;
 mod ssh;
 
@@ -78,6 +79,13 @@ enum Command {
     Orientation {
         #[arg(value_parser = parse_orientation)]
         degrees: Option<u16>,
+    },
+    /// Configure a new frame's physical panel over SSH, before uploading photos.
+    DisplaySetup {
+        #[arg(value_enum, default_value = "auto")]
+        model: display_setup::DisplayModel,
+        #[arg(long, default_value = "inky")]
+        ssh_user: String,
     },
     /// List images and their saved settings.
     Images,
@@ -502,6 +510,11 @@ fn run(args: &Args) -> Result<Value> {
                 }
             }
         }
+        Command::DisplaySetup { model, ssh_user } => display_setup::run(
+            frame.base.host_str().context("Missing device host")?,
+            ssh_user,
+            *model,
+        ),
         Command::Images => frame.get("api/images"),
         Command::Delete { filename } => {
             valid_filename(filename)?;
@@ -731,5 +744,28 @@ mod tests {
             image.write_to(&mut png, ImageFormat::Png).unwrap();
             assert_eq!(validate_prepared(png.get_ref(), &config).is_ok(), valid);
         }
+    }
+
+    #[test]
+    fn smaller_panel_accepts_seven_inks_at_its_native_size() {
+        let config = json!({"width":600,"height":448,"model":"impression-5.7"});
+        let inks = [
+            [0, 0, 0, 255],
+            [255, 255, 255, 255],
+            [0, 255, 0, 255],
+            [0, 0, 255, 255],
+            [255, 0, 0, 255],
+            [255, 255, 0, 255],
+            [255, 140, 0, 255],
+        ];
+        let image =
+            image::RgbaImage::from_fn(600, 448, |x, _| image::Rgba(inks[(x as usize * 7) / 600]));
+        let mut png = Cursor::new(Vec::new());
+        image.write_to(&mut png, ImageFormat::Png).unwrap();
+        assert!(validate_prepared(png.get_ref(), &config).is_ok());
+        let wrong_size = json!({"width":1600,"height":1200,"model":"impression-5.7"});
+        assert!(validate_prepared(png.get_ref(), &wrong_size).is_err());
+        let wrong_inks = json!({"width":600,"height":448,"model":"impression-13.3-2025"});
+        assert!(validate_prepared(png.get_ref(), &wrong_inks).is_err());
     }
 }

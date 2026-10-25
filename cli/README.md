@@ -141,6 +141,31 @@ the orientation revision used to prepare them; stale uploads are rejected even
 after an orientation is changed back. A queued job retains its original pixels
 and mounting orientation.
 
+## Set up the physical display
+
+New images detect a supported panel before starting the server. To configure a
+fresh frame built with older firmware, or explicitly select a panel:
+
+```bash
+./inky-cli --device smaller-frame.local display-setup impression-5.7
+./inky-cli --device smaller-frame.local display --json
+# Or read the panel's identification EEPROM:
+./inky-cli --device smaller-frame.local display-setup auto
+```
+
+The 5.7-inch profile reports `impression-5.7`, 600 × 448, and seven colors.
+The other supported profile is `impression-13.3-2025`, 1600 × 1200, six colors.
+`display-setup` sends the configuration helper over SSH, so it also works when
+the helper is not installed on the Pi or the web server is stopped. It needs
+key access and noninteractive sudo (`--ssh-user` selects the account). It writes
+`/etc/inky-soup/display.conf` atomically without refreshing the screen.
+
+Run setup before uploading photos, then reconnect/reload the app. Existing
+derived images must be regenerated if you change the physical panel model.
+This selects hardware; mounting orientation is a separate setting. If first-boot
+detection prevented startup, start the server after manual setup with
+`sudo systemctl restart inky-soup-server.service` on the Pi.
+
 ## Photos and display jobs
 
 ```bash

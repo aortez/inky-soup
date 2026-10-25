@@ -10,6 +10,8 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 # Use cargo_bin from meta-rust-bin for prebuilt Rust toolchain.
 inherit externalsrc cargo_bin systemd
 
+RDEPENDS:${PN} += "inky-soup-display"
+
 EXTERNALSRC = "${THISDIR}/../../../../upload-server"
 
 # Allow network access during compile for cargo to fetch dependencies.
