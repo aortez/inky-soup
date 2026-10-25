@@ -41,5 +41,17 @@
     "unit/frame-client.test.js",
     "unit/frame.test.js",
     "wifi/index.html"
+  ],
+  "adapted_from": [
+    {
+      "commit": "73908c0f0a5f12bbfc2b0fabaeeb53affac56ca6",
+      "paths": [
+        "frame/core/photo-rotation.js",
+        "frame/core/settings.js",
+        "frame/services/frame-client.js (savePhoto)",
+        "public/frame/photo-worker.js"
+      ],
+      "purpose": "Preserve saved photo orientation and idempotent revision recovery during native transfers."
+    }
   ]
 }

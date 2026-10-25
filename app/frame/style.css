@@ -17,12 +17,7 @@ body {
   margin: 0;
 }
 
-.native-shell #photo-actions,
-.native-shell #library-actions,
-.native-shell .privacy,
-.native-shell #settings-panel > .orientation-card:not(#preview-profile) {
-  display: none;
-}
+.native-shell .help { display: none; }
 
 button,input,select {
   font: inherit;

@@ -5,7 +5,7 @@ from the published `aortez.github.io` master revision recorded in `source.json`;
 unmerged work in the website checkout was not imported. Source and worker license
 notices are retained in `LICENSE` and `public/frame/vendor/`.
 
-## Prototype scope (#20)
+## Android prototype (#20 / #21)
 
 The Android APK bundles the editor, photo picker, image-processing workers, and
 IndexedDB draft storage. It can preview both panels in landscape or portrait
@@ -13,9 +13,11 @@ without internet or a connected frame. Settings selects the preview display.
 Android Back returns from Settings to Create, then saves the draft and minimizes
 the app. Cancelling the system photo picker preserves the existing draft.
 
-This shell does not yet connect to a Pi or perform Bluetooth setup. Those are
-issues #21 and #22; discovery/reconnection and signed public updates follow in
-#23 and #24. The existing web build keeps its working device and setup flows.
+Enter the frame’s WiFi IPv4 address or `.local` hostname to connect directly from
+Android. The app reads the gallery, edits/saves photos, and submits display jobs
+using native HTTP. The frame’s display profile replaces the offline preview profile
+while connected. Native Bluetooth setup is #22; discovery/reconnection and signed
+public updates follow in #23 and #24. The web build keeps its browser transport.
 The Pi-hosted legacy UI remains until #26.
 
 ## Build and install
@@ -63,8 +65,9 @@ mismatch. Stable distribution signing and in-app updates belong to #24.
 - Web output is `dist/`; Android output is `dist-android/` with a root entry.
 - Only the web build generates/registers `/frame/sw.js`. Android UI and worker
   code advance together through APK installation.
-- Native networking and BLE will sit behind platform adapters; the current
-  shell does not relax server CORS or load remote website code.
+- `services/transport.js` selects browser fetch or the native `FrameTransport` plugin.
+- Native API requests never pass through browser fetch, a proxy, or a cloud relay.
+  The Pi’s browser CORS settings remain unchanged. Native Bluetooth follows in #22.
 
 ## Verification
 
@@ -75,6 +78,7 @@ npm test                    # Modern web editor and existing browser BLE setup.
 npm run test:pwa            # Built web app, cached launch, and update lifecycle.
 npm run test:android:web    # Bundled Android assets, both palettes and orientations.
 npm run build:android
+(cd android && ./gradlew --no-daemon :app:testDebugUnitTest)
 ```
 
 Browser suites use separate output directories and ports 8080, 4173, and 4174.
@@ -121,3 +125,56 @@ workers, and service-worker cache hashes always agree.
 The website checkout and live Pages deployment are not modified by building the
 Android prototype. Its active photo-rotation work must be reconciled when that
 consumer migration lands; see the immutable source revision in `source.json`.
+
+## Direct Pi transport
+
+Connect using the Pi’s **WiFi** address, for example `192.168.1.149:8000`. Multiple
+USB-connected Pis can each advertise `10.55.0.1`; that address is ambiguous on a
+host with two USB interfaces and is not reachable from the phone over WiFi.
+Configuration must include mount revision and physical dimensions; older firmware
+gets an explicit update message. Optional photo rotation capabilities are checked
+before sending rotated photos. Existing photo angles and both revision stamps are
+preserved, including interrupted idempotent rotation saves.
+
+Android currently targets SDK 36. Per [Android local-network guidance](https://developer.android.com/privacy-and-security/local-network-permission),
+`INTERNET` provides implicit LAN access on this target, including Android 17;
+do not request `ACCESS_LOCAL_NETWORK` until targeting SDK 37. Permission denial,
+timeouts, and inaccessible devices produce recoverable connection messages. A
+future target-SDK upgrade must implement the corresponding permission flow.
+
+Cleartext HTTP is enabled because existing frames have dynamic local addresses
+and no trusted TLS certificate. The native plugin accepts only the selected
+RFC1918 IPv4 / `.local` origin, resolves `.local` to private IPv4 before connecting,
+and permits only enumerated API/image routes. It rejects redirects and proxies,
+retains normal certificate validation for HTTPS, and makes one on-wire attempt
+per request, including HTTP retry responses. Android’s bundled page has a CSP
+limiting browser connections and scripts to itself; external pages are not added
+to Capacitor’s allowed navigation/origins. Bridge payload logging is disabled.
+
+Multipart encoding remains standard FormData, including filenames and revision
+fields. Uploads cross the bridge in 64 KiB chunks into app-private temporary files;
+OkHttp streams those files. Binary responses stream to private files and return
+through the same bounded chunks. The transfer cap is 24 MiB (20 MiB photo plus
+multipart overhead), JSON/error responses are capped at 2 MiB, and at most 12 files
+and 8 requests can be live. Requests have a 60-second total network deadline;
+staging/download cancellation releases files. Orphans expire after 10 minutes on
+the next allocation and are removed at process start. Normal completion leaves no
+transfer files. This bounds bridge/native transfer memory; image decoding and
+processing still need memory proportional to the selected image.
+
+A repeated display submission is never automatic. If a submission response is
+lost, check the frame before deliberately retrying; job polling only reads status.
+Use `inky-cli --device http://WIFI_IP:8000 job JOB_ID` to independently inspect it.
+
+To run the repeatable phone/Pi test with disposable data:
+
+```sh
+node tools/android-pi-check.mjs --serial PHONE_SERIAL \
+  --device http://WIFI_IP:8000 --photo /path/to/test.jpg \
+  --flash --output /tmp/android-pi.json
+```
+
+This adds one gallery photo; `--flash` also refreshes the small physical panel.
+Without `--flash`, it saves without changing the display. It exercises the installed
+APK’s editor/file input, native uploads/downloads, gallery, edit lock, and status.
+It checks temporary-file cleanup and captures a JSON record and screenshot.

@@ -3,7 +3,8 @@
   "appName": "Sparkle Duck",
   "webDir": "dist-android",
   "android": {
-    "backgroundColor": "#f6f3eb"
+    "backgroundColor": "#f6f3eb",
+    "loggingBehavior": "none"
   },
   "plugins": {
     "SystemBars": {"style": "LIGHT"}

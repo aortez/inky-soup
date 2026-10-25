@@ -9,7 +9,8 @@ for (const [model, width, height] of [['impression-5.7', 600, 448], ['impression
       });
       await page.goto('/');
       await expect(page.locator('#pick-photo')).toBeEnabled();
-      await expect(page.locator('#connection')).toBeHidden();
+      await expect(page.locator('#connection')).toBeVisible();
+      await expect(page.locator('#setup-link')).toBeHidden();
       await page.locator('#settings-tab').click();
       await page.locator('#preview-model').selectOption(model);
       await page.locator('#preview-layout').selectOption(portrait ? 'portrait' : 'landscape');

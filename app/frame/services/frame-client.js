@@ -1,3 +1,5 @@
+import {pendingPhotoRotation} from '../core/photo-rotation.js';
+import {deviceFetch} from './transport.js';
 import {imageSettings} from '../core/settings.js';
 
 export function normalizeAddress(input) {
@@ -21,11 +23,12 @@ export function normalizeAddress(input) {
 export async function request(base, path, options = {}) {
   let response;
   try {
-    response = await fetch(`${base}${path}`, {
+    response = await deviceFetch(base, path, {
       credentials: 'omit', cache: 'no-store', redirect: 'error',
       signal: AbortSignal.timeout(60000), ...options,
     });
-  } catch {
+  } catch (error) {
+    if (error?.message && !['TypeError', 'AbortError', 'TimeoutError'].includes(error.name)) throw error;
     throw new Error('Cannot reach the frame. Use the same WiFi, allow local-network access, then reconnect.');
   }
   if (!response.ok) {
@@ -101,7 +104,30 @@ export async function savePhoto({base, draft, prepared, session, onProgress = ()
       original.append('submission.file', draft.blob, filename);
       const uploaded = await request(base, '/upload', {method: 'POST', body: original});
       if (uploaded.filename !== filename) throw new Error('The frame returned an unexpected image name.');
-      await onStored({base, filename});
+      await onStored({base, filename, photo_rotation_revision:0, pending_photo_rotation:null});
+    }
+    if (prepared.photo_rotation_supported) {
+      if (prepared.photo_rotation_degrees !== settings.photo_rotation_degrees) throw new Error('The photo changed. Wait for a new preview.');
+      let revision = existing ? settings.photo_rotation_revision : 0;
+      const pending = existing ? pendingPhotoRotation(draft, base, filename) : null;
+      const applyRotation = async operation => {
+        // Persist before sending: the response can be lost after the server commits.
+        await onStored({base, filename, photo_rotation_revision:revision, pending_photo_rotation:operation});
+        const rotation = await jsonPost(base, '/api/settings/photo-rotation', {filename, session_id:session,
+          operation_id:operation.operation_id, photo_rotation_degrees:operation.photo_rotation_degrees,
+          expected_revision:operation.expected_revision});
+        revision = rotation.photo_rotation_revision;
+        await onStored({base, filename, photo_rotation_revision:revision, pending_photo_rotation:null});
+      };
+      if (pending) await applyRotation(pending);
+      // The user may have chosen another angle since an interrupted save.
+      if (!pending || pending.photo_rotation_degrees !== settings.photo_rotation_degrees) {
+        await applyRotation({base, filename, operation_id:crypto.randomUUID(),
+          photo_rotation_degrees:settings.photo_rotation_degrees, expected_revision:revision});
+      }
+      metadata.photo_rotation_revision = revision;
+    } else if (settings.photo_rotation_degrees || settings.photo_rotation_revision) {
+      throw new Error('Update the frame software before saving a rotated photo.');
     }
     for (const [path, blob, label] of [
       ['/api/upload-cache', prepared.cache, 'Saving the preview…'],
@@ -118,6 +144,7 @@ export async function savePhoto({base, draft, prepared, session, onProgress = ()
     onProgress('Starting the display refresh…');
     const body = form({'submission.filename': filename, 'submission.image_file_path': `images/dithered/${filename}.png`,
       'submission.rotation_revision': prepared.rotation_revision ?? 0,
+      'submission.photo_rotation_revision': metadata.photo_rotation_revision ?? 0,
       'submission.session_id': session, 'submission.flash_twice': false});
     const job = await request(base, '/flash', {method: 'POST', body});
     return {id: job.job_id, filename, base};
@@ -137,7 +164,7 @@ export async function deletePhoto(base, filename, session) {
 
 export async function getPhoto(base, filename, thumbnail = false) {
   const path = thumbnail ? `thumbs/${encodeURIComponent(filename)}.png` : encodeURIComponent(filename);
-  const response = await fetch(`${base}/images/${path}`, {credentials: 'omit', cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(30000)});
+  const response = await deviceFetch(base, `/images/${path}`, {binary: true, signal: AbortSignal.timeout(60000)});
   if (!response.ok) throw new Error('Could not load this photo from the frame.');
   return response.blob();
 }

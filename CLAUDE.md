@@ -9,8 +9,8 @@ are the command references; this file explains the implementation.
 
 The modern shared UI and Android prototype live in `app/`. See `app/README.md`
 for builds, platform adapters, source provenance, and website artifact consumption.
-The Android shell currently supports offline editing; native Pi networking and BLE
-setup are tracked separately in issues #21 and #22. The Pi frontend below remains
+The Android app supports offline editing and direct native Pi networking (#21);
+native BLE setup is tracked in #22. The Pi frontend below remains
 until the Android experience passes hardware acceptance (#25 / #26).
 
 1. `upload-server/`: Rust/Rocket server, Tera templates, and browser JavaScript.
