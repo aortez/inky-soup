@@ -11,6 +11,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod preview;
+
 #[derive(Parser)]
 #[command(
     version,
@@ -47,6 +49,18 @@ enum Command {
     BrowserCheck {
         #[arg(long, default_value = "https://allan.pizza")]
         origin: String,
+    },
+    /// Temporarily run a preview server/origin; stop or reboot restores normal service.
+    Preview {
+        #[arg(value_enum)]
+        action: SetupAction,
+        #[arg(long, default_value = "http://localhost:4175")]
+        origin: String,
+        /// Executable already copied to this absolute path on the Pi.
+        #[arg(long, default_value = "/usr/bin/inky-soup-server")]
+        server_binary: String,
+        #[arg(long, default_value = "inky")]
+        ssh_user: String,
     },
     /// Display model and exact pixel dimensions.
     Display,
@@ -305,6 +319,35 @@ fn run(args: &Args) -> Result<Value> {
         Command::Status => Ok(
             json!({"device":frame.base.as_str(),"display":frame.get("api/display-config")?,"flash":frame.get("api/flash/status")?}),
         ),
+        Command::Preview {
+            action,
+            origin,
+            server_binary,
+            ssh_user,
+        } => {
+            if !matches!(action, SetupAction::Status) {
+                match frame.get("api/flash/status") {
+                    Ok(queue) => {
+                        let active = queue["current_job"]["status"].as_str();
+                        if matches!(active, Some("Queued" | "Flashing"))
+                            || queue["queue_length"].as_u64().unwrap_or(0) > 0
+                        {
+                            bail!("Wait for queued display jobs to finish before changing the preview server");
+                        }
+                    }
+                    Err(error) if matches!(action, SetupAction::Start) => return Err(error),
+                    // A broken preview must still be recoverable over SSH.
+                    Err(_) => {}
+                }
+            }
+            preview::run(
+                frame.base.host_str().context("Missing device host")?,
+                ssh_user,
+                *action,
+                origin,
+                server_binary,
+            )
+        }
         Command::WifiSetup { action, ssh_user } => {
             if ssh_user.is_empty()
                 || !ssh_user

@@ -51,6 +51,31 @@ origin, method, and content-type permissions. It does not submit a write. It exi
 nonzero when the server does not grant browser access. Browser/Android local-network
 permissions and mixed-content rules still need validation on the actual phone.
 
+## Temporary browser preview
+
+```bash
+# Copy a compatible PR server binary to the Pi if its API has also changed.
+scp upload-server/target/arm-unknown-linux-gnueabihf/release/upload-server inky@10.55.0.1:/tmp/inky-preview-server
+./inky-cli preview start --origin http://localhost:4175 --server-binary /tmp/inky-preview-server
+./inky-cli browser-check --origin http://localhost:4175 --json
+./inky-cli preview status
+./inky-cli preview stop
+```
+
+`preview start` uses SSH to install a runtime-only systemd override for the normal
+server. It copies the supplied executable into `/run`, allows the exact preview
+origin alongside `https://allan.pizza`, and restarts the service. The default
+binary is the installed server, useful when only the website has changed.
+Use a binary built for the target Pi (ARMv6/VFPv2 for the original Zero W).
+The same photo library is used, and edits/deletions made during preview persist.
+Avoid sending display jobs while changing servers; the CLI checks the current
+queue and refuses a restart if it observes pending work.
+
+`preview stop` removes only this CLI's override and restarts the normal server.
+It works over SSH even if the preview HTTP API has failed. Reboot also removes
+the runtime override. Both commands require key access and noninteractive sudo;
+`--ssh-user` selects a different account. The installed binary is not replaced.
+
 ## Photos and display jobs
 
 ```bash
