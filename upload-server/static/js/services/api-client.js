@@ -3,6 +3,8 @@
  * All fetch() calls are centralized here.
  */
 
+import { getDisplayConfig as cachedDisplayConfig } from '../core/state.js';
+
 /**
  * Fetch display configuration from the server.
  * Returns dimensions for the connected Inky Impression display.
@@ -14,20 +16,11 @@ export async function getDisplayConfig() {
   if (!response.ok) {
     console.warn('Failed to fetch display config, using defaults');
     return {
-      width: 1600,
-      height: 1200,
+      width: 600,
+      height: 448,
       thumb_width: 150,
       thumb_height: 112,
-      logical_width: 1600,
-      logical_height: 1200,
-      logical_thumb_width: 150,
-      logical_thumb_height: 112,
-      physical_width: 1600,
-      physical_height: 1200,
-      physical_thumb_width: 150,
-      physical_thumb_height: 112,
-      rotation_degrees: 0,
-      model: 'impression-13.3-default',
+      model: 'impression-5.7-default',
       color: 'multi',
     };
   }
@@ -35,25 +28,11 @@ export async function getDisplayConfig() {
   return response.json();
 }
 
-/**
- * Update global display rotation setting.
- * @param {number} rotationDegrees - Must be one of 0, 90, 180, 270.
- * @returns {Promise<Object>} Rotation update response.
- */
-export async function updateDisplayRotation(rotationDegrees) {
-  const response = await fetch('/api/settings/display-rotation', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rotation_degrees: rotationDegrees }),
-  });
-
-  const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(payload.message || `Failed to update display rotation (${response.status})`);
-  }
-
-  return payload;
+/** Fetch current gallery metadata before rebuilding a saved photo. */
+export async function getGalleryImages() {
+  const response = await fetch('/api/images', { cache: 'no-store' });
+  if (!response.ok) throw new Error('Could not load the latest photo settings.');
+  return response.json();
 }
 
 /**
@@ -82,6 +61,7 @@ export async function uploadCache(
 ) {
   const formData = new FormData();
   formData.append('filename', filename);
+  formData.append('rotation_revision', String(cachedDisplayConfig().rotationRevision || 0));
   if (filter) {
     formData.append('filter', filter);
     formData.append('saturation', saturation.toString());
@@ -118,6 +98,7 @@ export async function uploadCache(
 export async function uploadThumb(filename, blob) {
   const formData = new FormData();
   formData.append('filename', filename);
+  formData.append('rotation_revision', String(cachedDisplayConfig().rotationRevision || 0));
   formData.append('file', blob, `${filename}.png`);
 
   const response = await fetch('/api/upload-thumb', {
@@ -133,7 +114,7 @@ export async function uploadThumb(filename, blob) {
 }
 
 /**
- * Upload a dithered image (7-color PNG) to the server.
+ * Upload a dithered image (display-palette PNG) to the server.
  * @param {string} filename - Original filename (without .png extension).
  * @param {Blob} blob - PNG blob data.
  * @param {string} filter - Filter name used for the cached image.
@@ -142,7 +123,6 @@ export async function uploadThumb(filename, blob) {
  * @param {number} brightness - Brightness value used for dithering.
  * @param {number} contrast - Contrast value used for dithering.
  * @param {string} ditherAlgorithm - Dither algorithm name.
- * @param {string|null} sessionId - Optional lock session for protected edit flows.
  * @returns {Promise<Object>} Server response.
  */
 export async function uploadDithered(
@@ -158,15 +138,14 @@ export async function uploadDithered(
 ) {
   const formData = new FormData();
   formData.append('filename', filename);
+  formData.append('rotation_revision', String(cachedDisplayConfig().rotationRevision || 0));
   formData.append('filter', filter);
   formData.append('fit_mode', fitMode);
   formData.append('saturation', saturation.toString());
   formData.append('brightness', brightness.toString());
   formData.append('contrast', contrast.toString());
   formData.append('dither_algorithm', ditherAlgorithm);
-  if (sessionId) {
-    formData.append('session_id', sessionId);
-  }
+  formData.append('session_id', sessionId);
   formData.append('file', blob, `${filename}.png`);
 
   const response = await fetch('/api/upload-dithered', {
@@ -191,6 +170,7 @@ export async function uploadDithered(
 export async function submitFlashJob(filename, flashTwice, sessionId) {
   const formData = new FormData();
   formData.append('submission.filename', filename);
+  formData.append('submission.rotation_revision', String(cachedDisplayConfig().rotationRevision || 0));
   formData.append('submission.image_file_path', `images/dithered/${filename}.png`);
   formData.append('submission.session_id', sessionId);
   if (flashTwice) {

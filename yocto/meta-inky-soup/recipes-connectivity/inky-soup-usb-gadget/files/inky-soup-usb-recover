@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+# A dwc2 link can stop receiving even after the first few host packets arrive.
+net_dir=/sys/class/net/usb0
+[ -r "$net_dir/statistics/rx_packets" ] || exit 0
+carrier=$(cat "$net_dir/carrier" 2>/dev/null || true)
+[ "$carrier" = "1" ] || exit 0
+rx_before=$(cat "$net_dir/statistics/rx_packets")
+
+# ARP checks the local link even when the host firewall blocks ICMP echo.
+arping -q -I usb0 -c 1 -w 2 10.55.0.2 >/dev/null 2>&1 && exit 0
+# Any received traffic also proves the link works; do not interrupt it.
+[ "$(cat "$net_dir/statistics/rx_packets")" = "$rx_before" ] || exit 0
+
+echo "USB host did not answer ARP and no packets arrived; reloading g_ether"
+modprobe -r g_ether
+exec "$(dirname "$0")/inky-soup-usb-gadget"

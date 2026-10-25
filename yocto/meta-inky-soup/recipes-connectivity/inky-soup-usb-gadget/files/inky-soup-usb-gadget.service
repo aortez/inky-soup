@@ -1,0 +1,12 @@
+[Unit]
+Description=Inky Soup USB Ethernet gadget
+After=systemd-modules-load.service
+Before=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=@SBINDIR@/inky-soup-usb-gadget
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

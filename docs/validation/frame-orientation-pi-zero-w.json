@@ -1,0 +1,204 @@
+{
+  "hardware": "Pi Zero W (ARMv6), Inky 13.3-inch 2025",
+  "transport": "USB Ethernet",
+  "browser": "Desktop Chromium, mobile viewport; no Android connected",
+  "mocked": false,
+  "positions": [
+    {
+      "angle": 90,
+      "config": {
+        "color": "multi",
+        "height": 1600,
+        "model": "impression-13.3-2025",
+        "physical_height": 1200,
+        "physical_width": 1600,
+        "rotation_degrees": 90,
+        "rotation_revision": 1,
+        "thumb_height": 150,
+        "thumb_width": 112,
+        "width": 1200
+      },
+      "images": [
+        {
+          "brightness": 0,
+          "cache_version": 2,
+          "contrast": 0,
+          "dither_algorithm": "floyd-steinberg",
+          "filename": "43c5f786-907a-4380-b5dd-9d56c75a272e.png",
+          "filter": "bicubic",
+          "fit_mode": "contain",
+          "needs_processing": false,
+          "path": "images/43c5f786-907a-4380-b5dd-9d56c75a272e.png",
+          "saturation": 0.5,
+          "thumb_ready": true
+        }
+      ]
+    },
+    {
+      "angle": 270,
+      "config": {
+        "color": "multi",
+        "height": 1600,
+        "model": "impression-13.3-2025",
+        "physical_height": 1200,
+        "physical_width": 1600,
+        "rotation_degrees": 270,
+        "rotation_revision": 2,
+        "thumb_height": 150,
+        "thumb_width": 112,
+        "width": 1200
+      },
+      "images": [
+        {
+          "brightness": 0,
+          "cache_version": 2,
+          "contrast": 0,
+          "dither_algorithm": "floyd-steinberg",
+          "filename": "43c5f786-907a-4380-b5dd-9d56c75a272e.png",
+          "filter": "bicubic",
+          "fit_mode": "contain",
+          "needs_processing": false,
+          "path": "images/43c5f786-907a-4380-b5dd-9d56c75a272e.png",
+          "saturation": 0.5,
+          "thumb_ready": true
+        }
+      ]
+    },
+    {
+      "angle": 180,
+      "config": {
+        "color": "multi",
+        "height": 1200,
+        "model": "impression-13.3-2025",
+        "physical_height": 1200,
+        "physical_width": 1600,
+        "rotation_degrees": 180,
+        "rotation_revision": 3,
+        "thumb_height": 112,
+        "thumb_width": 150,
+        "width": 1600
+      },
+      "images": [
+        {
+          "brightness": 0,
+          "cache_version": 2,
+          "contrast": 0,
+          "dither_algorithm": "floyd-steinberg",
+          "filename": "43c5f786-907a-4380-b5dd-9d56c75a272e.png",
+          "filter": "bicubic",
+          "fit_mode": "contain",
+          "needs_processing": false,
+          "path": "images/43c5f786-907a-4380-b5dd-9d56c75a272e.png",
+          "saturation": 0.5,
+          "thumb_ready": true
+        }
+      ]
+    },
+    {
+      "angle": 0,
+      "config": {
+        "color": "multi",
+        "height": 1200,
+        "model": "impression-13.3-2025",
+        "physical_height": 1200,
+        "physical_width": 1600,
+        "rotation_degrees": 0,
+        "rotation_revision": 4,
+        "thumb_height": 112,
+        "thumb_width": 150,
+        "width": 1600
+      },
+      "images": [
+        {
+          "brightness": 0,
+          "cache_version": 2,
+          "contrast": 0,
+          "dither_algorithm": "floyd-steinberg",
+          "filename": "43c5f786-907a-4380-b5dd-9d56c75a272e.png",
+          "filter": "bicubic",
+          "fit_mode": "contain",
+          "needs_processing": false,
+          "path": "images/43c5f786-907a-4380-b5dd-9d56c75a272e.png",
+          "saturation": 0.5,
+          "thumb_ready": true
+        }
+      ]
+    }
+  ],
+  "filename": "43c5f786-907a-4380-b5dd-9d56c75a272e.png",
+  "flash": {
+    "job_id": 1,
+    "rotation_degrees": 90,
+    "status": "Completed",
+    "verification": "Browser observed Completed; device journal independently recorded successful completion."
+  },
+  "journal": [
+    "Oct 25 19:15:34 inky-soup inky-orientation-server[781]: Processing flash job 1: 43c5f786-907a-4380-b5dd-9d56c75a272e.png (flash_twice: false, mount_rotation: 90, flash_rotation: 270)",
+    "Oct 25 19:16:16 inky-soup inky-orientation-server[781]: Flash job 1 completed successfully"
+  ],
+  "writeCounts": {
+    "/api/lock-image": 13,
+    "/api/unlock-image": 6,
+    "/api/upload-cache": 3,
+    "/api/upload-thumb": 3,
+    "/api/upload-dithered": 3
+  },
+  "errors": [],
+  "date": "2026-10-25",
+  "visual_confirmation": "User confirmed: TOP is on the left edge in landscape and upright with the frame turned 90 degrees clockwise.",
+  "cli": {
+    "restart_preserved": {
+      "color": "multi",
+      "height": 1600,
+      "model": "impression-13.3-2025",
+      "physical_height": 1200,
+      "physical_width": 1600,
+      "rotation_degrees": 90,
+      "rotation_revision": 7,
+      "thumb_height": 150,
+      "thumb_width": 112,
+      "width": 1200
+    },
+    "prepared_portrait_upload": {
+      "filename": "64d497ba-64d5-4339-b53f-c086f6853447.png",
+      "prepared": true,
+      "result": {
+        "filename": "64d497ba-64d5-4339-b53f-c086f6853447.png",
+        "message": "Upload completed successfully",
+        "success": true
+      }
+    },
+    "delete": {
+      "filename": "64d497ba-64d5-4339-b53f-c086f6853447.png",
+      "success": true,
+      "warnings": []
+    },
+    "restored_test_orientation": {
+      "changed": true,
+      "display": {
+        "color": "multi",
+        "height": 1200,
+        "model": "impression-13.3-2025",
+        "physical_height": 1200,
+        "physical_width": 1600,
+        "rotation_degrees": 0,
+        "rotation_revision": 8,
+        "thumb_height": 112,
+        "thumb_width": 150,
+        "width": 1600
+      },
+      "pending_images": 1,
+      "removed_assets": {
+        "cache": 0,
+        "dithered": 0,
+        "thumbs": 0
+      },
+      "rotation_degrees": 0,
+      "rotation_revision": 8,
+      "success": true
+    },
+    "production_library_count": 15
+  },
+  "normal_service_restored": true,
+  "temporary_service_stopped": true
+}

@@ -310,8 +310,9 @@ async fn execute_flash(
 ) -> Result<(), String> {
     debug!("Executing flash script for {}", dithered_path);
 
-    // TODO: Port e2e tests to Docker environment mimicking production.
-    let output = Command::new("/usr/bin/inky-soup-update-display")
+    let display_command = std::env::var("INKY_SOUP_DISPLAY_COMMAND")
+        .unwrap_or_else(|_| "/usr/bin/inky-soup-update-display".into());
+    let output = Command::new(&display_command)
         .arg(dithered_path)
         .arg("--skip-dither")
         .arg("--rotation")
@@ -334,7 +335,7 @@ async fn execute_flash(
     if flash_twice {
         debug!("Executing second flash for {}", dithered_path);
 
-        let output2 = Command::new("/usr/bin/inky-soup-update-display")
+        let output2 = Command::new(&display_command)
             .arg(dithered_path)
             .arg("--skip-dither")
             .arg("--rotation")

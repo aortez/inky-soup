@@ -5,7 +5,7 @@
 
 import { DEFAULT_FILTER, DEFAULT_FIT_MODE } from '../core/constants.js';
 import {
-  getDisplayWidth, getDisplayHeight, getThumbWidth, getThumbHeight,
+  getDisplayWidth, getDisplayHeight, getThumbWidth, getThumbHeight, getDisplayConfig,
   getUploadQueue, setUploadQueue,
   getUploadQueueActive, setUploadQueueActive,
   getUploadQueueCurrentId, setUploadQueueCurrentId,
@@ -19,6 +19,9 @@ import {
   imageDataToCanvas,
 } from '../utils/image-utils.js';
 import {
+  getGalleryImages,
+  lockImage,
+  unlockImage,
   uploadCache,
   uploadDithered,
   uploadThumb,
@@ -103,6 +106,7 @@ function filterImage(imageData, targetWidth, targetHeight, filter, fitMode) {
 
 function ditherImage(imageData, saturation, algorithm, brightness, contrast) {
   return runWorkerTask('/js/dither-worker.js', {
+    model: getDisplayConfig().model,
     data: imageData.data.buffer,
     width: imageData.width,
     height: imageData.height,
@@ -373,6 +377,27 @@ async function processUploadQueue() {
  * @param {object} item - Queue item.
  */
 async function uploadQueueItem(item) {
+  const sessionId = generateUUID();
+  const lock = await lockImage(item.file.name, sessionId);
+  if (!lock.locked) {
+    updateQueueItem(item.id, {
+      status: UPLOAD_STATUS.FAILED,
+      message: 'This filename is being edited elsewhere. Rename the file and retry.',
+    });
+    return;
+  }
+  const timer = setInterval(() => {
+    lockImage(item.file.name, sessionId, true).catch(() => {});
+  }, 10000);
+  try {
+    await uploadOwnedItem(item, sessionId);
+  } finally {
+    clearInterval(timer);
+    await unlockImage(item.file.name, sessionId).catch(() => {});
+  }
+}
+
+async function uploadOwnedItem(item, sessionId) {
   updateQueueItem(item.id, { status: UPLOAD_STATUS.UPLOADING, message: null });
   setUploadQueueCurrentId(item.id);
 
@@ -452,7 +477,7 @@ async function uploadQueueItem(item) {
       brightness: 0,
       contrast: 0,
       ditherAlgorithm: 'floyd-steinberg',
-      sessionId: null,
+      sessionId,
     });
   } catch (err) {
     const message = err?.message || `Failed to finish ${uploadedFilename}`;
@@ -554,96 +579,138 @@ export function handleFileSelect(selection) {
  * @returns {Promise<{cacheData: object, thumbData: object, ditherData: object}>}
  */
 export async function generateThumbnails(dataUrl, filename, options = {}) {
-  const mode = normalizeFitMode(options.fitMode);
-  const filter = normalizeFilter(options.filter);
-  const ditherAlgorithm = normalizeDitherAlgorithm(options.ditherAlgorithm);
-  const saturation = normalizeNumeric(options.saturation, 0.5);
-  const brightness = normalizeNumeric(options.brightness, 0);
-  const contrast = normalizeNumeric(options.contrast, 0);
-  const sessionId = options.sessionId || null;
-
-  const img = await loadImageFromDataUrl(dataUrl);
-  const sourceImageData = createImageDataFromImage(img);
-  const sourceCanvas = imageDataToCanvas(sourceImageData);
-
-  const cacheWidth = getDisplayWidth();
-  const cacheHeight = getDisplayHeight();
-  const thumbWidth = getThumbWidth();
-  const thumbHeight = getThumbHeight();
-
-  const cacheCanvas = document.createElement('canvas');
-  cacheCanvas.width = cacheWidth;
-  cacheCanvas.height = cacheHeight;
-  const cacheCtx = cacheCanvas.getContext('2d');
-
-  // Generate cache image with worker filter, fallback to direct draw on worker failure.
+  if (options.regenerate) {
+    // Another page may have finished while this page loaded the original.
+    // Avoid briefly taking edit ownership of an already-ready photo.
+    const latest = (await getGalleryImages()).find((image) => image.filename === filename);
+    if (latest && !latest.needs_processing) {
+      return { thumbData: { path: `images/thumbs/${filename}.png` } };
+    }
+  }
+  const sessionId = options.sessionId || generateUUID();
+  const lock = await lockImage(filename, sessionId);
+  if (!lock.locked) throw new Error('This photo is being edited elsewhere.');
+  let lockError;
+  let refreshing = false;
+  const lockTimer = setInterval(async () => {
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      const renewed = await lockImage(filename, sessionId, true);
+      if (!renewed.locked) lockError = new Error('The editing session expired. Reload to retry.');
+    } catch (error) { lockError = error; } finally { refreshing = false; }
+  }, 10000);
+  let settings = options;
   try {
-    const filteredData = await filterImage(sourceImageData, cacheWidth, cacheHeight, filter, mode);
-    cacheCtx.putImageData(filteredData, 0, 0);
-  } catch (err) {
-    console.error('Filter worker error during upload:', err);
-    drawImageToFit(cacheCtx, sourceCanvas, cacheWidth, cacheHeight, mode);
+    if (options.regenerate) {
+      const latest = (await getGalleryImages()).find((image) => image.filename === filename);
+      if (!latest) throw new Error('The photo was removed.');
+      if (!latest.needs_processing) return { thumbData: { path: `images/thumbs/${filename}.png` } };
+      settings = {
+        ...options,
+        fitMode: latest.fit_mode,
+        filter: latest.filter,
+        saturation: latest.saturation,
+        brightness: latest.brightness,
+        contrast: latest.contrast,
+        ditherAlgorithm: latest.dither_algorithm,
+      };
+    }
+    const mode = normalizeFitMode(settings.fitMode);
+    const filter = normalizeFilter(settings.filter);
+    const ditherAlgorithm = normalizeDitherAlgorithm(settings.ditherAlgorithm);
+    const saturation = normalizeNumeric(settings.saturation, 0.5);
+    const brightness = normalizeNumeric(settings.brightness, 0);
+    const contrast = normalizeNumeric(settings.contrast, 0);
+    const img = await loadImageFromDataUrl(dataUrl);
+    const sourceImageData = createImageDataFromImage(img);
+    const sourceCanvas = imageDataToCanvas(sourceImageData);
+
+    const cacheWidth = getDisplayWidth();
+    const cacheHeight = getDisplayHeight();
+    const thumbWidth = getThumbWidth();
+    const thumbHeight = getThumbHeight();
+
+    const cacheCanvas = document.createElement('canvas');
+    cacheCanvas.width = cacheWidth;
+    cacheCanvas.height = cacheHeight;
+    const cacheCtx = cacheCanvas.getContext('2d');
+
+    // Use direct drawing if the resize worker fails.
+    try {
+      const filtered = await filterImage(sourceImageData, cacheWidth, cacheHeight, filter, mode);
+      cacheCtx.putImageData(filtered, 0, 0);
+    } catch (err) {
+      console.error('Filter worker error during upload:', err);
+      drawImageToFit(cacheCtx, sourceCanvas, cacheWidth, cacheHeight, mode);
+    }
+
+    const cacheBlob = await canvasToBlob(cacheCanvas);
+
+    const thumbCanvas = document.createElement('canvas');
+    thumbCanvas.width = thumbWidth;
+    thumbCanvas.height = thumbHeight;
+    const thumbCtx = thumbCanvas.getContext('2d');
+    drawImageToFit(thumbCtx, sourceCanvas, thumbWidth, thumbHeight, mode);
+    const thumbBlob = await canvasToBlob(thumbCanvas);
+
+    const cacheImageData = cacheCtx.getImageData(0, 0, cacheWidth, cacheHeight);
+    const ditheredImageData = await ditherImage(
+      cacheImageData,
+      saturation,
+      ditherAlgorithm,
+      brightness,
+      contrast,
+    );
+    const ditherCanvas = document.createElement('canvas');
+    ditherCanvas.width = cacheWidth;
+    ditherCanvas.height = cacheHeight;
+    ditherCanvas.getContext('2d').putImageData(ditheredImageData, 0, 0);
+    const ditherBlob = await canvasToBlob(ditherCanvas);
+
+    if (lockError) throw lockError;
+    const cacheData = await uploadCache(
+      filename,
+      cacheBlob,
+      filter,
+      mode,
+      saturation,
+      brightness,
+      contrast,
+      ditherAlgorithm,
+      sessionId,
+    );
+    if (!cacheData.success) {
+      throw new Error(cacheData.message || 'Cache upload failed');
+    }
+
+    if (lockError) throw lockError;
+    const thumbData = await uploadThumb(filename, thumbBlob);
+    if (!thumbData.success) {
+      throw new Error(thumbData.message || 'Thumbnail upload failed');
+    }
+
+    if (lockError) throw lockError;
+    const ditherData = await uploadDithered(
+      filename,
+      ditherBlob,
+      filter,
+      mode,
+      saturation,
+      brightness,
+      contrast,
+      ditherAlgorithm,
+      sessionId,
+    );
+    if (!ditherData.success) {
+      throw new Error(ditherData.message || 'Dithered upload failed');
+    }
+
+    return { cacheData, thumbData, ditherData };
+  } finally {
+    clearInterval(lockTimer);
+    if (!options.sessionId) await unlockImage(filename, sessionId).catch(() => {});
   }
-
-  const cacheBlob = await canvasToBlob(cacheCanvas);
-
-  const thumbCanvas = document.createElement('canvas');
-  thumbCanvas.width = thumbWidth;
-  thumbCanvas.height = thumbHeight;
-  const thumbCtx = thumbCanvas.getContext('2d');
-  drawImageToFit(thumbCtx, sourceCanvas, thumbWidth, thumbHeight, mode);
-  const thumbBlob = await canvasToBlob(thumbCanvas);
-
-  const cacheImageData = cacheCtx.getImageData(0, 0, cacheWidth, cacheHeight);
-  const ditheredImageData = await ditherImage(
-    cacheImageData,
-    saturation,
-    ditherAlgorithm,
-    brightness,
-    contrast,
-  );
-  const ditherCanvas = document.createElement('canvas');
-  ditherCanvas.width = cacheWidth;
-  ditherCanvas.height = cacheHeight;
-  ditherCanvas.getContext('2d').putImageData(ditheredImageData, 0, 0);
-  const ditherBlob = await canvasToBlob(ditherCanvas);
-
-  const cacheData = await uploadCache(
-    filename,
-    cacheBlob,
-    filter,
-    mode,
-    saturation,
-    brightness,
-    contrast,
-    ditherAlgorithm,
-    sessionId,
-  );
-  if (!cacheData.success) {
-    throw new Error(cacheData.message || 'Cache upload failed');
-  }
-
-  const thumbData = await uploadThumb(filename, thumbBlob);
-  if (!thumbData.success) {
-    throw new Error(thumbData.message || 'Thumbnail upload failed');
-  }
-
-  const ditherData = await uploadDithered(
-    filename,
-    ditherBlob,
-    filter,
-    mode,
-    saturation,
-    brightness,
-    contrast,
-    ditherAlgorithm,
-    sessionId,
-  );
-  if (!ditherData.success) {
-    throw new Error(ditherData.message || 'Dithered upload failed');
-  }
-
-  return { cacheData, thumbData, ditherData };
 }
 
 /**

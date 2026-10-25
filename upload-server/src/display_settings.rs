@@ -1,7 +1,7 @@
 //! Runtime display settings (rotation override) and display dimension helpers.
 
 use crate::config;
-use log::{error, warn};
+use log::warn;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -12,6 +12,8 @@ pub const DEFAULT_ROTATION_DEGREES: u16 = 0;
 pub struct RuntimeDisplaySettings {
     #[serde(default = "default_rotation_degrees")]
     pub rotation_degrees: u16,
+    #[serde(default)]
+    pub rotation_revision: u64,
 }
 
 fn default_rotation_degrees() -> u16 {
@@ -22,6 +24,7 @@ impl Default for RuntimeDisplaySettings {
     fn default() -> Self {
         Self {
             rotation_degrees: DEFAULT_ROTATION_DEGREES,
+            rotation_revision: 0,
         }
     }
 }
@@ -70,7 +73,7 @@ pub fn compute_flash_rotation_degrees(mount_rotation_degrees: u16) -> u16 {
     }
 }
 
-fn load_runtime_settings_from_path(path: &Path) -> RuntimeDisplaySettings {
+pub(crate) fn load_runtime_settings_from_path(path: &Path) -> RuntimeDisplaySettings {
     if !path.exists() {
         return RuntimeDisplaySettings::default();
     }
@@ -110,7 +113,7 @@ fn load_runtime_settings_from_path(path: &Path) -> RuntimeDisplaySettings {
     }
 }
 
-fn save_runtime_settings_to_path(
+pub(crate) fn save_runtime_settings_to_path(
     path: &Path,
     settings: &RuntimeDisplaySettings,
 ) -> Result<(), String> {
@@ -137,6 +140,9 @@ fn save_runtime_settings_to_path(
             e
         )
     })?;
+    fs::File::open(&temp_path)
+        .and_then(|file| file.sync_all())
+        .map_err(|e| format!("Failed to sync runtime settings: {}", e))?;
 
     fs::rename(&temp_path, path).map_err(|e| {
         format!(
@@ -145,6 +151,9 @@ fn save_runtime_settings_to_path(
             e
         )
     })?;
+    fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|e| format!("Failed to sync settings directory: {}", e))?;
 
     Ok(())
 }
@@ -152,39 +161,6 @@ fn save_runtime_settings_to_path(
 /// Loads runtime display settings from writable app data storage.
 pub fn load_runtime_settings() -> RuntimeDisplaySettings {
     load_runtime_settings_from_path(&config::display_runtime_settings_path())
-}
-
-/// Persists runtime display settings using atomic write (temp file + rename).
-pub fn save_runtime_settings(settings: &RuntimeDisplaySettings) -> Result<(), String> {
-    if !is_valid_rotation_degrees(settings.rotation_degrees) {
-        return Err(format!(
-            "Invalid rotation_degrees {}. Must be one of 0, 90, 180, 270.",
-            settings.rotation_degrees
-        ));
-    }
-
-    save_runtime_settings_to_path(&config::display_runtime_settings_path(), settings)
-}
-
-/// Returns the currently configured rotation.
-pub fn load_rotation_degrees() -> u16 {
-    load_runtime_settings().rotation_degrees
-}
-
-/// Saves a validated rotation.
-pub fn save_rotation_degrees(rotation_degrees: u16) -> Result<(), String> {
-    if !is_valid_rotation_degrees(rotation_degrees) {
-        return Err(format!(
-            "Invalid rotation_degrees {}. Must be one of 0, 90, 180, 270.",
-            rotation_degrees
-        ));
-    }
-
-    let settings = RuntimeDisplaySettings { rotation_degrees };
-    save_runtime_settings(&settings).map_err(|e| {
-        error!("Failed to persist display rotation: {}", e);
-        e
-    })
 }
 
 #[cfg(test)]
@@ -246,11 +222,13 @@ mod tests {
         let settings_path = temp_dir.join("display-runtime.json");
         let settings = RuntimeDisplaySettings {
             rotation_degrees: 270,
+            rotation_revision: 7,
         };
 
         save_runtime_settings_to_path(&settings_path, &settings).unwrap();
         let loaded = load_runtime_settings_from_path(&settings_path);
         assert_eq!(loaded.rotation_degrees, 270);
+        assert_eq!(loaded.rotation_revision, 7);
 
         fs::remove_dir_all(temp_dir).unwrap();
     }

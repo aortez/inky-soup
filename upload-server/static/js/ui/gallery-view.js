@@ -122,6 +122,7 @@ async function generateMissingThumb(filename, path, placeholderEl) {
       contrast,
       ditherAlgorithm,
       sessionId: null,
+      regenerate: true,
     });
     const thumbPath = thumbData?.path || `images/thumbs/${filename}.png`;
     replacePlaceholderWithThumb(filename, path, `${thumbPath}?t=${Date.now()}`, placeholderEl);

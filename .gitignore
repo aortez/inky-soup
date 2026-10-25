@@ -130,7 +130,7 @@ dmypy.json
 
 # Node.js
 node_modules/
-package-lock.json
+coverage/
 
 # Playwright
 playwright-report/
@@ -143,6 +143,8 @@ upload-server/Rocket.toml.hidden
 # Test images (created during e2e tests)
 upload-server/static/images/
 !upload-server/static/images/.gitkeep
+upload-server/static/settings/
+upload-server/static/flash-jobs/
 
 # Rust/Cargo build artifacts
 upload-server/target/

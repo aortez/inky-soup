@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+# Keep both ends' MAC addresses stable across boots, and unique to this board.
+serial=$(sed -n 's/^Serial[[:space:]]*:[[:space:]]*//p' /proc/cpuinfo)
+suffix=$(printf '%s' "$serial" | sed -n 's/.*\([[:xdigit:]]\{10\}\)$/\1/p')
+if [ -z "$suffix" ]; then
+    echo "Cannot derive USB Ethernet MAC addresses from the Pi serial number" >&2
+    exit 1
+fi
+mac_suffix=$(printf '%s' "$suffix" | sed 's/../:&/g')
+
+modprobe dwc2
+modprobe g_ether dev_addr="02$mac_suffix" host_addr="06$mac_suffix"

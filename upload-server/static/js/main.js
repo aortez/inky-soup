@@ -5,18 +5,12 @@
 
 // Core imports.
 import { initDOMCache } from './core/dom.js';
-import { setDisplayConfig, getCurrentSessionId, getIsReadOnly } from './core/state.js';
+import { setDisplayConfig } from './core/state.js';
 
 // UI imports.
-import {
-  initNavigation,
-  showDetailView,
-  showGalleryView,
-  showSettingsView,
-} from './ui/navigation.js';
+import { initNavigation, showDetailView, showGalleryView } from './ui/navigation.js';
 import { initDetailView } from './ui/detail-view.js';
 import { initGalleryView } from './ui/gallery-view.js';
-import { initSettingsView } from './ui/settings-view.js';
 import { initFilterControls, applyFilter } from './ui/filter-controls.js';
 import { initFitModeControls } from './ui/fit-mode-controls.js';
 import { initSaturationControls } from './ui/saturation-controls.js';
@@ -35,6 +29,7 @@ import {
 import { checkGlobalFlashStatus, flashImage } from './services/flash-service.js';
 import { updateSaturation, updateBrightness, updateContrast } from './services/dither-service.js';
 import { getDisplayConfig } from './services/api-client.js';
+import { getCurrentSessionId, getIsReadOnly } from './core/state.js';
 
 /**
  * Load display configuration from server.
@@ -45,31 +40,16 @@ async function loadDisplayConfig() {
     const config = await getDisplayConfig();
     console.log('Display config loaded:', config);
 
-    // UI dimensions remain mount-agnostic (physical panel dimensions).
-    const physicalWidth = config.physical_width ?? config.width;
-    const physicalHeight = config.physical_height ?? config.height;
-    const physicalThumbWidth = config.physical_thumb_width ?? config.thumb_width;
-    const physicalThumbHeight = config.physical_thumb_height ?? config.thumb_height;
-    const logicalWidth = config.logical_width ?? physicalWidth;
-    const logicalHeight = config.logical_height ?? physicalHeight;
-    const logicalThumbWidth = config.logical_thumb_width ?? physicalThumbWidth;
-    const logicalThumbHeight = config.logical_thumb_height ?? physicalThumbHeight;
+    // Store in state (convert snake_case to camelCase).
     setDisplayConfig({
-      width: physicalWidth,
-      height: physicalHeight,
-      thumbWidth: physicalThumbWidth,
-      thumbHeight: physicalThumbHeight,
-      logicalWidth,
-      logicalHeight,
-      logicalThumbWidth,
-      logicalThumbHeight,
-      physicalWidth,
-      physicalHeight,
-      physicalThumbWidth,
-      physicalThumbHeight,
-      rotationDegrees: config.rotation_degrees ?? 0,
+      width: config.width,
+      height: config.height,
+      thumbWidth: config.thumb_width,
+      thumbHeight: config.thumb_height,
       model: config.model,
       color: config.color,
+      rotationDegrees: config.rotation_degrees || 0,
+      rotationRevision: config.rotation_revision || 0,
     });
 
     // Update canvas sizes if they exist.
@@ -77,20 +57,21 @@ async function loadDisplayConfig() {
     const ditherCanvas = document.getElementById('ditherCanvas');
 
     if (filterCanvas) {
-      filterCanvas.width = physicalWidth;
-      filterCanvas.height = physicalHeight;
+      filterCanvas.width = config.width;
+      filterCanvas.height = config.height;
     }
     if (ditherCanvas) {
-      ditherCanvas.width = physicalWidth;
-      ditherCanvas.height = physicalHeight;
+      ditherCanvas.width = config.width;
+      ditherCanvas.height = config.height;
     }
 
     // Update dimension labels.
     document.querySelectorAll('.pipeline-stage-label').forEach((label) => {
       if (label.textContent.includes('resized')) {
-        label.textContent = `${physicalWidth} × ${physicalHeight} (resized)`;
+        label.textContent = `${config.width} × ${config.height} (resized)`;
       } else if (label.textContent.includes('colors')) {
-        label.textContent = `${physicalWidth} × ${physicalHeight} (7 colors)`;
+        const colors = config.model === 'impression-13.3-2025' ? 6 : 7;
+        label.textContent = `${config.width} × ${config.height} (${colors} colors)`;
       }
     });
   } catch (error) {
@@ -110,7 +91,6 @@ async function init() {
 
   // 3. Initialize UI modules.
   initNavigation();
-  initSettingsView();
   initDetailView();
   initGalleryView();
   initFilterControls();
@@ -137,7 +117,6 @@ if (document.readyState === 'loading') {
 // TODO: Migrate to event delegation to remove these global exports.
 window.showDetailView = showDetailView;
 window.showGalleryView = showGalleryView;
-window.showSettingsView = showSettingsView;
 window.showDeleteConfirmation = showDeleteConfirmation;
 window.closeDeleteConfirmation = closeDeleteConfirmation;
 window.confirmDelete = confirmDelete;

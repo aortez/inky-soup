@@ -16,6 +16,7 @@ import {
   setCurrentContrast,
   getDisplayWidth,
   getDisplayHeight,
+  getDisplayConfig,
 } from '../core/state.js';
 import { elements } from '../core/dom.js';
 
@@ -103,6 +104,7 @@ export function applyDither(imageData) {
   };
 
   worker.postMessage({
+    model: getDisplayConfig().model,
     data: imageData.data.buffer,
     width: imageData.width,
     height: imageData.height,

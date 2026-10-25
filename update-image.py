@@ -10,7 +10,9 @@ import argparse
 import os
 import sys
 import time
+import warnings
 
+import numpy
 from PIL import Image
 
 # Configuration file path.
@@ -71,6 +73,58 @@ def get_display():
         sys.exit(1)
 
 
+def set_pre_dithered_image(display, image):
+    """Decode browser ink colors exactly, without another quantization pass."""
+    if image.size != (display.width, display.height):
+        raise ValueError("Pre-dithered image dimensions must match the display")
+
+    driver = type(display).__module__.rsplit(".", 1)[-1]
+    if driver == "inky_el133uf1":
+        colors = [
+            (0, 0, 0), (255, 255, 255), (255, 255, 0),
+            (255, 0, 0), (0, 0, 255), (0, 255, 0),
+        ]
+        # EL133UF1's wire format skips code 4, unlike its Python color constants.
+        codes = [0, 1, 2, 3, 5, 6]
+    elif driver == "inky_uc8159":
+        colors = [
+            (0, 0, 0), (255, 255, 255), (0, 255, 0), (0, 0, 255),
+            (255, 0, 0), (255, 255, 0), (255, 140, 0),
+        ]
+        codes = list(range(7))
+    else:
+        raise ValueError(f"Unsupported pre-dithered display driver: {driver}")
+
+    rgba = numpy.asarray(image.convert("RGBA"))
+    if numpy.any(rgba[:, :, 3] != 255):
+        raise ValueError("Pre-dithered image must be opaque")
+
+    rgb = rgba[:, :, :3]
+    buffer = numpy.full((display.height, display.width), 255, dtype=numpy.uint8)
+    for color, code in zip(colors, codes):
+        buffer[numpy.all(rgb == color, axis=2)] = code
+
+    if numpy.any(buffer == 255):
+        raise ValueError(
+            "Image contains colors outside the display palette; "
+            "reload the web app and regenerate the preview"
+        )
+
+    # Both supported drivers consume native ink codes from this buffer in show().
+    display.buf = buffer
+
+
+def rotate_image(image, clockwise_degrees):
+    """Turn whole pixels without resampling the encoded ink colors."""
+    turns = {90: Image.Transpose.ROTATE_270, 180: Image.Transpose.ROTATE_180,
+             270: Image.Transpose.ROTATE_90}
+    if clockwise_degrees == 0:
+        return image
+    if clockwise_degrees not in turns:
+        raise ValueError("Rotation must be 0, 90, 180, or 270")
+    return image.transpose(turns[clockwise_degrees])
+
+
 def main():
     start_time = time.time()
 
@@ -91,13 +145,8 @@ def main():
         action="store_true",
         help="Skip dithering (image is pre-dithered)",
     )
-    parser.add_argument(
-        "--rotation",
-        type=int,
-        choices=[0, 90, 180, 270],
-        default=0,
-        help="Clockwise rotation to apply before final sizing (default: 0)",
-    )
+    parser.add_argument("--rotation", type=int, choices=[0, 90, 180, 270], default=0,
+                        help="Clockwise buffer rotation to compensate for mounting")
     args = parser.parse_args()
 
     # Read display configuration.
@@ -117,17 +166,14 @@ def main():
         print(f"Using display dimensions: {target_width}x{target_height}", flush=True)
 
     load_start = time.time()
-    image = Image.open(args.image)
-
-    if args.rotation:
-        print(f"Applying rotation: {args.rotation}°", flush=True)
-        # PIL rotate is counterclockwise for positive values; negate for clockwise.
-        image = image.rotate(-args.rotation, expand=True)
+    image = rotate_image(Image.open(args.image), args.rotation)
 
     width, height = image.size
     print(f"Image size: {width}x{height}", flush=True)
 
     if width != target_width or height != target_height:
+        if args.skip_dither:
+            raise ValueError("Pre-dithered image dimensions must match the display")
         print(f"Resizing to {target_width}x{target_height}...", flush=True)
         image = image.resize((target_width, target_height), Image.Resampling.BICUBIC)
         print(f"Resize complete in {time.time() - load_start:.1f}s", flush=True)
@@ -139,16 +185,7 @@ def main():
 
     if args.skip_dither:
         print("Using pre-dithered image, sending directly to display...", flush=True)
-        # Load pre-dithered palette image directly into buffer.
-        # Convert to RGB first in case it's a palette image.
-        if image.mode == "P":
-            # Convert palette indices to RGB using the palette.
-            rgb_image = image.convert("RGB")
-            # Re-quantize to the Inky palette to get palette indices.
-            inky.set_image(rgb_image, saturation=1.0)
-        else:
-            # If already RGB, convert to palette using Inky's palette.
-            inky.set_image(image, saturation=1.0)
+        set_pre_dithered_image(inky, image)
     else:
         print(f"Dithering with saturation={args.saturation}...", flush=True)
         dither_start = time.time()
@@ -157,7 +194,10 @@ def main():
 
     print("Sending to display...", flush=True)
     show_start = time.time()
-    inky.show()
+    # Driver timeouts must fail the job instead of reporting a successful flash.
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=r"^(Busy|Refresh) Wait:", category=UserWarning)
+        inky.show()
     print(f"Display refresh complete in {time.time() - show_start:.1f}s", flush=True)
 
     print(f"Total time: {time.time() - start_time:.1f}s", flush=True)
