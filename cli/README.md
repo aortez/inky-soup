@@ -191,6 +191,11 @@ then display the photo from the app or use `inky-cli flash <filename> --wait`.
 The CLI does not resize/dither arbitrary originals. `--rotate` cannot be combined
 with `--prepared`, whose input is already fitted and dithered.
 
+After uploading an original, `upload --rotate` renews edit ownership before saving
+the angle, since a slow transfer can outlast the lock. If another editor takes
+over, the command stops and reports the saved filename. Use `rotate <filename>`
+to inspect or finish that upload rather than uploading another copy.
+
 Rotation changes require edit ownership and the current photo revision. Old
 uploads/flash requests are rejected after a change, even after rotating back to
 0 degrees. Already queued jobs keep their captured pixels. Both commands require

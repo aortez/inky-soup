@@ -164,6 +164,7 @@ async fn orientation_api_preserves_jobs_and_recovers_after_restart() {
         2
     );
     check_photo_rotation_and_cards(&client, &queue).await;
+    prepare_rotation_retry(&client).await;
     // Restart with the real startup path: the old in-memory queue is gone,
     // so its immutable snapshots must not accumulate on persistent storage.
     let metadata_before = fs::read(config::metadata_dir().join("photo.png.json")).unwrap();
@@ -193,6 +194,7 @@ async fn orientation_api_preserves_jobs_and_recovers_after_restart() {
         display_settings::load_runtime_settings().rotation_revision,
         2
     );
+    check_rotation_retry_after_restart(&restarted).await;
     drop(restarted);
     fs::remove_dir_all(root).unwrap();
 }
@@ -360,4 +362,126 @@ async fn check_photo_rotation_and_cards(client: &Client, queue: &FlashQueueState
     assert_eq!(card.rotation_degrees, 180);
     assert!(!card.flash_twice);
     assert_eq!(fs::read(&card.dithered_path).unwrap(), header);
+}
+
+async fn rotation_operation(
+    client: &Client,
+    id: Option<&str>,
+    degrees: u16,
+    revision: u64,
+    session: &str,
+) -> (Status, Value) {
+    let response = client
+        .post("/api/settings/photo-rotation")
+        .header(ContentType::JSON)
+        .body(
+            json!({"filename":"retry.png","session_id":session,"operation_id":id,
+            "photo_rotation_degrees":degrees,"expected_revision":revision})
+            .to_string(),
+        )
+        .dispatch()
+        .await;
+    let status = response.status();
+    (status, response.into_json::<Value>().await.unwrap())
+}
+
+async fn prepare_rotation_retry(client: &Client) {
+    fs::write(config::original_path("retry.png"), b"retry original").unwrap();
+    let locks = client.rocket().state::<ImageLocksState>().unwrap();
+    image_locks::try_acquire_lock(locks, "retry.png", "before-restart", false)
+        .await
+        .unwrap();
+    assert_eq!(
+        rotation_operation(client, Some("op-1"), 90, 0, "before-restart")
+            .await
+            .0,
+        Status::Ok
+    );
+    // Simulate lost acknowledgement; preserve saved pixels across a repeated request.
+    fs::write(config::dithered_path("retry.png"), b"already prepared").unwrap();
+}
+
+async fn check_rotation_retry_after_restart(client: &Client) {
+    assert_eq!(
+        rotation_operation(client, Some("op-1"), 90, 0, "after-restart")
+            .await
+            .0,
+        Status::Forbidden
+    );
+    let locks = client.rocket().state::<ImageLocksState>().unwrap();
+    image_locks::try_acquire_lock(locks, "retry.png", "after-restart", false)
+        .await
+        .unwrap();
+    let (status, replayed) = rotation_operation(client, Some("op-1"), 90, 0, "after-restart").await;
+    assert_eq!(status, Status::Ok);
+    assert_eq!(replayed["photo_rotation_revision"], 1);
+    assert_eq!(replayed["replayed"], true);
+    assert_eq!(
+        fs::read(config::dithered_path("retry.png")).unwrap(),
+        b"already prepared"
+    );
+    for (id, degrees, revision) in [
+        (Some("op-1"), 180, 0),
+        (Some("op-1"), 90, 1),
+        (Some("different"), 90, 0),
+        (None, 90, 0),
+    ] {
+        assert_eq!(
+            rotation_operation(client, id, degrees, revision, "after-restart")
+                .await
+                .0,
+            Status::Conflict
+        );
+    }
+    assert_eq!(
+        rotation_operation(client, Some(""), 90, 1, "after-restart")
+            .await
+            .0,
+        Status::BadRequest
+    );
+    // A later accepted operation, even a no-op, supersedes the recovery receipt.
+    assert_eq!(
+        rotation_operation(client, Some("op-2"), 90, 1, "after-restart")
+            .await
+            .0,
+        Status::Ok
+    );
+    assert_eq!(
+        rotation_operation(client, Some("op-1"), 90, 0, "after-restart")
+            .await
+            .0,
+        Status::Conflict
+    );
+    assert_eq!(
+        rotation_operation(client, Some("op-3"), 180, 1, "after-restart")
+            .await
+            .0,
+        Status::Ok
+    );
+    assert_eq!(
+        rotation_operation(client, Some("op-2"), 90, 1, "after-restart")
+            .await
+            .0,
+        Status::Conflict
+    );
+    // Requests from older clients cannot leave behind a replayable stale receipt.
+    assert_eq!(
+        rotation_operation(client, None, 180, 2, "after-restart")
+            .await
+            .0,
+        Status::Ok
+    );
+    assert!(metadata::get_all_metadata("retry.png")
+        .photo_rotation_operation
+        .is_none());
+    assert_eq!(
+        rotation_operation(client, Some("op-3"), 180, 1, "after-restart")
+            .await
+            .0,
+        Status::Conflict
+    );
+    assert_eq!(
+        fs::read(config::original_path("retry.png")).unwrap(),
+        b"retry original"
+    );
 }

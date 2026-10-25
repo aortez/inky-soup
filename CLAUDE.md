@@ -191,6 +191,14 @@ the mount's `rotation_revision`; `/flash` uses the `submission.` prefix for both
 Per-asset revision stamps keep failed invalidation and stale clients from making
 old pixels valid. Old metadata defaults to angle/revision zero.
 
+Clients may include an `operation_id` (1–128 ASCII letters, digits or hyphens).
+The server persists the latest operation and its result with the photo metadata.
+Repeating that ID with the same angle and expected revision returns the accepted
+revision without invalidating pixels again, including after a restart. Edit
+ownership is still required, and a superseded rotation fails the revision check.
+The app checkpoints pending operations in its draft before sending them, so a
+lost response can be retried without discarding unsaved photo adjustments.
+
 `POST /api/flash-test-card` accepts a client-generated PNG (`file`) plus the saved
 mount `rotation_revision`. It checks PNG dimensions and queues a private temporary
 snapshot, with normal job status and cleanup, without touching the gallery.

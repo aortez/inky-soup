@@ -727,13 +727,20 @@ fn run(args: &Args) -> Result<Value> {
                 }
             };
             if let Some(degrees) = rotate {
-                let result = frame.json_post(
-                    "api/settings/photo-rotation",
-                    &json!({"filename":filename,"session_id":session,
-                    "photo_rotation_degrees":degrees,"expected_revision":0}),
-                );
+                let result = (|| -> Result<Value> {
+                    // Uploading can outlast the edit lease. Reacquire it before
+                    // changing metadata, and respect any editor who took over.
+                    frame.lock(&filename, &session)?;
+                    frame.json_post(
+                        "api/settings/photo-rotation",
+                        &json!({"filename":filename,"session_id":session,
+                        "photo_rotation_degrees":degrees,"expected_revision":0}),
+                    )
+                })();
                 frame.unlock(&filename, &session);
-                return result;
+                return result.with_context(|| {
+                    format!("Original saved as {filename}; rotation was not confirmed")
+                });
             }
             if let (Some(image), Some(config)) = (ready, config) {
                 let result = (|| -> Result<Value> {

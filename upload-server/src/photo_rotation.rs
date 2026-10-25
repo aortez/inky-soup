@@ -17,6 +17,7 @@ pub struct PhotoRotation {
     session_id: String,
     photo_rotation_degrees: i32,
     expected_revision: u64,
+    operation_id: Option<String>,
 }
 
 type RotationResult = Result<Json<Value>, (Status, Json<Value>)>;
@@ -38,6 +39,13 @@ pub async fn update_photo_rotation(
     let degrees =
         crate::display_settings::parse_rotation_degrees(request.photo_rotation_degrees)
             .ok_or_else(|| failure(Status::BadRequest, "Choose 0, 90, 180, or 270 degrees"))?;
+    if request.operation_id.as_ref().is_some_and(|id| {
+        id.is_empty()
+            || id.len() > 128
+            || !id.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')
+    }) {
+        return Err(failure(Status::BadRequest, "Invalid rotation operation ID"));
+    }
     let _orientation = orientation.lock().await;
     let locks = locks.lock().await;
     if !locks.get(filename).is_some_and(|lock| {
@@ -52,22 +60,55 @@ pub async fn update_photo_rotation(
         return Err(failure(Status::NotFound, "Photo not found"));
     }
     let mut meta = metadata::get_all_metadata(filename);
-    if meta.photo_rotation_revision != request.expected_revision {
+    let previous_operation = meta.photo_rotation_operation.clone();
+    let replayed = previous_operation
+        .as_ref()
+        .is_some_and(|operation| request.operation_id.as_ref() == Some(&operation.id));
+    if replayed
+        && !previous_operation.as_ref().is_some_and(|operation| {
+            operation.expected_revision == request.expected_revision
+                && operation.rotation_degrees == degrees
+                && operation.revision == meta.photo_rotation_revision
+                && meta.photo_rotation_degrees == degrees
+        })
+    {
+        return Err(failure(
+            Status::Conflict,
+            "Rotation operation ID was reused with different settings",
+        ));
+    }
+    if !replayed && meta.photo_rotation_revision != request.expected_revision {
         return Err(failure(
             Status::Conflict,
             "This photo was rotated elsewhere. Reopen it from the gallery before saving.",
         ));
     }
-    let changed = meta.photo_rotation_degrees != degrees;
+    let changed = !replayed && meta.photo_rotation_degrees != degrees;
     if changed {
         meta.photo_rotation_degrees = degrees;
         meta.photo_rotation_revision = meta
             .photo_rotation_revision
             .checked_add(1)
             .ok_or_else(|| failure(Status::InternalServerError, "Photo revision is exhausted"))?;
-        // Persist first: revision stamps reject stale pixels even if deletion fails.
+    }
+    if !replayed {
+        meta.photo_rotation_operation =
+            request
+                .operation_id
+                .as_ref()
+                .map(|id| metadata::PhotoRotationOperation {
+                    id: id.clone(),
+                    expected_revision: request.expected_revision,
+                    rotation_degrees: degrees,
+                    revision: meta.photo_rotation_revision,
+                });
+    }
+    if changed || meta.photo_rotation_operation != previous_operation {
+        // Persist the receipt and revision together before deleting any pixels.
         metadata::try_save_metadata(filename, &meta)
             .map_err(|_| failure(Status::InternalServerError, "Could not save photo rotation"))?;
+    }
+    if changed {
         for path in [
             config::cache_path(filename),
             config::thumb_path(filename),
@@ -81,7 +122,7 @@ pub async fn update_photo_rotation(
         }
     }
     Ok(Json(
-        json!({"success":true,"changed":changed,"filename":filename,
+        json!({"success":true,"changed":changed,"replayed":replayed,"filename":filename,
         "photo_rotation_degrees":degrees,"photo_rotation_revision":meta.photo_rotation_revision,
         "needs_processing":meta.dither_photo_revision != meta.photo_rotation_revision || !config::dithered_path(filename).exists()}),
     ))

@@ -395,48 +395,94 @@ fn orientation_card_queues_once_without_uploading_a_gallery_original() {
 }
 
 #[test]
-fn upload_with_rotation_preserves_source_bytes_and_saves_settings_before_unlocking() {
-    let (url, server) = serve_handler(5, |request, index| {
-        let body = match index {
-            0 => r#"{"photo_rotation_supported":true}"#.to_string(),
-            1 => r#"{"locked":true}"#.to_string(),
-            2 => {
-                let filename = request.split("filename=\"").nth(1).unwrap().split('"').next().unwrap();
-                serde_json::json!({"success":true,"filename":filename}).to_string()
-            },
-            3 => r#"{"success":true,"photo_rotation_degrees":90,"photo_rotation_revision":1,"needs_processing":true}"#.to_string(),
-            _ => r#"{"unlocked":true}"#.to_string(),
-        };
-        format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body)
-    });
-    let path = std::env::temp_dir().join(format!("inky-photo-rotation-{}.jpg", std::process::id()));
-    std::fs::write(&path, b"unaltered original photo bytes").unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
-        .args([
-            "--device",
-            &url,
-            "--json",
-            "upload",
-            path.to_str().unwrap(),
-            "--rotate",
-            "90",
-        ])
-        .output()
-        .unwrap();
-    std::fs::remove_file(path).unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stdout)
-    );
-    let requests = server.join().unwrap();
-    assert!(requests[2].contains("unaltered original photo bytes"));
-    assert!(requests[3].starts_with("POST /api/settings/photo-rotation "));
-    let body: Value = serde_json::from_str(requests[3].split("\r\n\r\n").nth(1).unwrap()).unwrap();
-    assert_eq!(body["photo_rotation_degrees"], 90);
-    assert_eq!(body["expected_revision"], 0);
-    let owner: Value = serde_json::from_str(requests[1].split("\r\n\r\n").nth(1).unwrap()).unwrap();
-    assert_eq!(body["session_id"], owner["session_id"]);
-    assert_eq!(body["filename"], owner["filename"]);
-    assert!(requests[4].starts_with("POST /api/unlock-image "));
+fn upload_with_rotation_renews_an_expired_lease_and_respects_takeover() {
+    for taken_over in [false, true] {
+        let count = if taken_over { 5 } else { 6 };
+        let mut renewed = false;
+        let (url, server) = serve_handler(count, move |request, index| {
+            let mut status = "200 OK";
+            let body = match index {
+                0 => r#"{"photo_rotation_supported":true}"#.to_string(),
+                1 => r#"{"locked":true}"#.to_string(),
+                2 => {
+                    // Simulate expiration during upload without a wall-clock sleep.
+                    renewed = false;
+                    let filename = request
+                        .split("filename=\"")
+                        .nth(1)
+                        .unwrap()
+                        .split('"')
+                        .next()
+                        .unwrap();
+                    serde_json::json!({"success":true,"filename":filename}).to_string()
+                }
+                _ if request.starts_with("POST /api/lock-image ") => {
+                    renewed = !taken_over;
+                    serde_json::json!({"locked":renewed,"reason":"Another editor took over"})
+                        .to_string()
+                }
+                _ if request.starts_with("POST /api/settings/photo-rotation ") => {
+                    if renewed {
+                        r#"{"success":true,"photo_rotation_degrees":90,"photo_rotation_revision":1,"needs_processing":true}"#.to_string()
+                    } else {
+                        status = "403 Forbidden";
+                        r#"{"success":false,"message":"Edit lease expired"}"#.to_string()
+                    }
+                }
+                _ => r#"{"unlocked":true}"#.to_string(),
+            };
+            format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body)
+        });
+        let path = std::env::temp_dir().join(format!(
+            "inky-photo-rotation-{}-{taken_over}.jpg",
+            std::process::id()
+        ));
+        std::fs::write(&path, b"unaltered original photo bytes").unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+            .args([
+                "--device",
+                &url,
+                "--json",
+                "upload",
+                path.to_str().unwrap(),
+                "--rotate",
+                "90",
+            ])
+            .output()
+            .unwrap();
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(
+            output.status.success(),
+            !taken_over,
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        let requests = server.join().unwrap();
+        assert!(requests[2].contains("unaltered original photo bytes"));
+        assert!(requests[3].starts_with("POST /api/lock-image "));
+        let owner: Value =
+            serde_json::from_str(requests[1].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        let renewal: Value =
+            serde_json::from_str(requests[3].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(renewal, owner);
+        if taken_over {
+            assert!(!requests
+                .iter()
+                .any(|r| r.starts_with("POST /api/settings/photo-rotation ")));
+            assert!(String::from_utf8_lossy(&output.stdout)
+                .contains(owner["filename"].as_str().unwrap()));
+        } else {
+            assert!(requests[4].starts_with("POST /api/settings/photo-rotation "));
+            let body: Value =
+                serde_json::from_str(requests[4].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+            assert_eq!(body["photo_rotation_degrees"], 90);
+            assert_eq!(body["expected_revision"], 0);
+            assert_eq!(body["session_id"], owner["session_id"]);
+            assert_eq!(body["filename"], owner["filename"]);
+        }
+        assert!(requests
+            .last()
+            .unwrap()
+            .starts_with("POST /api/unlock-image "));
+    }
 }

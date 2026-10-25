@@ -18,6 +18,16 @@ const DEFAULT_FIT_MODE: &str = "contain";
 const CACHE_VERSION: u32 = 2;
 const LEGACY_CACHE_VERSION: u32 = 1;
 
+/// Receipt for the most recent rotation operation, including no-op saves.
+/// Kept with the revision so a lost response can be recovered after restart.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PhotoRotationOperation {
+    pub id: String,
+    pub expected_revision: u64,
+    pub rotation_degrees: u16,
+    pub revision: u64,
+}
+
 /// Metadata stored for each image.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageMetadata {
@@ -45,6 +55,8 @@ pub struct ImageMetadata {
     pub photo_rotation_degrees: u16,
     #[serde(default)]
     pub photo_rotation_revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub photo_rotation_operation: Option<PhotoRotationOperation>,
     #[serde(default)]
     pub cache_photo_revision: u64,
     #[serde(default)]
@@ -96,6 +108,7 @@ impl Default for ImageMetadata {
             dither_rotation_revision: 0,
             photo_rotation_degrees: 0,
             photo_rotation_revision: 0,
+            photo_rotation_operation: None,
             cache_photo_revision: 0,
             thumb_photo_revision: 0,
             dither_photo_revision: 0,
@@ -392,7 +405,9 @@ pub fn migrate_legacy_metadata() {
     for (filename, legacy) in legacy_data {
         let metadata = ImageMetadata {
             filter: legacy.filter,
-            saturation: legacy.last_dithered_saturation.unwrap_or(DEFAULT_SATURATION),
+            saturation: legacy
+                .last_dithered_saturation
+                .unwrap_or(DEFAULT_SATURATION),
             brightness: DEFAULT_BRIGHTNESS,
             contrast: DEFAULT_CONTRAST,
             dither_algorithm: DEFAULT_DITHER_ALGORITHM.to_string(),
