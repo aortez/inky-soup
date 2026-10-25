@@ -4,15 +4,16 @@ import {settingIds} from '../core/settings.js';
 import {getPhoto} from '../services/frame-client.js';
 import {updateBlockReason} from '../core/app-update.js';
 
-export function activity(title, detail = '', error = false, progress = 'none') {
-  el.activity.hidden = false;
-  el.activity.dataset.error = String(error);
-  el['activity-title'].textContent = title;
-  el['activity-detail'].textContent = detail;
-  el['send-progress'].hidden = progress === 'none';
-  el['send-progress'].dataset.state = progress;
-  if (progress === 'complete') el['send-progress'].setAttribute('aria-valuenow', '1');
-  else el['send-progress'].removeAttribute('aria-valuenow');
+export function activity(title, detail = '', error = false, progress = 'none', target = 'editor') {
+  const prefix = target === 'test-card' ? 'test-' : '';
+  el[`${prefix}activity`].hidden = false;
+  el[`${prefix}activity`].dataset.error = String(error);
+  el[`${prefix}activity-title`].textContent = title;
+  el[`${prefix}activity-detail`].textContent = detail;
+  el[`${prefix}send-progress`].hidden = progress === 'none';
+  el[`${prefix}send-progress`].dataset.state = progress;
+  if (progress === 'complete') el[`${prefix}send-progress`].setAttribute('aria-valuenow', '1');
+  else el[`${prefix}send-progress`].removeAttribute('aria-valuenow');
 }
 
 export function controls() {
@@ -34,6 +35,8 @@ export function controls() {
   const existing = state.draft?.sourceFrame === state.frame?.base && state.draft?.sourceFilename;
   const readOnly = Boolean(existing && state.connected && !state.lock?.owned);
   for (const id of settingIds) el[id].disabled = working || readOnly;
+  el.photo_rotation_degrees.disabled ||= !state.config?.photo_rotation_supported;
+  el['test-orientation'].disabled = working || state.connecting || !state.connected || !state.config?.orientation_test_supported || Number(el.orientation.value) !== state.config?.rotation_degrees;
   el.send.disabled = working || state.connecting || readOnly || state.processing || !state.prepared || !state.connected;
   el.save.disabled = el.send.disabled;
   el.delete.hidden = !existing;

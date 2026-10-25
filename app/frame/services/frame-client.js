@@ -1,4 +1,5 @@
 import {imageSettings} from '../core/settings.js';
+import {pendingPhotoRotation} from '../core/photo-rotation.js';
 
 export function normalizeAddress(input) {
   const raw = String(input || '').trim();
@@ -101,7 +102,30 @@ export async function savePhoto({base, draft, prepared, session, onProgress = ()
       original.append('submission.file', draft.blob, filename);
       const uploaded = await request(base, '/upload', {method: 'POST', body: original});
       if (uploaded.filename !== filename) throw new Error('The frame returned an unexpected image name.');
-      await onStored({base, filename});
+      await onStored({base, filename, photo_rotation_revision:0, pending_photo_rotation:null});
+    }
+    if (prepared.photo_rotation_supported) {
+      if (prepared.photo_rotation_degrees !== settings.photo_rotation_degrees) throw new Error('The photo changed. Wait for a new preview.');
+      let revision = existing ? settings.photo_rotation_revision : 0;
+      const pending = existing ? pendingPhotoRotation(draft, base, filename) : null;
+      const applyRotation = async operation => {
+        // Persist before sending: the response can be lost after the server commits.
+        await onStored({base, filename, photo_rotation_revision:revision, pending_photo_rotation:operation});
+        const rotation = await jsonPost(base, '/api/settings/photo-rotation', {filename, session_id:session,
+          operation_id:operation.operation_id, photo_rotation_degrees:operation.photo_rotation_degrees,
+          expected_revision:operation.expected_revision});
+        revision = rotation.photo_rotation_revision;
+        await onStored({base, filename, photo_rotation_revision:revision, pending_photo_rotation:null});
+      };
+      if (pending) await applyRotation(pending);
+      // The user may have chosen another angle since an interrupted save.
+      if (!pending || pending.photo_rotation_degrees !== settings.photo_rotation_degrees) {
+        await applyRotation({base, filename, operation_id:crypto.randomUUID(),
+          photo_rotation_degrees:settings.photo_rotation_degrees, expected_revision:revision});
+      }
+      metadata.photo_rotation_revision = revision;
+    } else if (settings.photo_rotation_degrees || settings.photo_rotation_revision) {
+      throw new Error('Update the frame software before saving a rotated photo.');
     }
     for (const [path, blob, label] of [
       ['/api/upload-cache', prepared.cache, 'Saving the preview…'],
@@ -118,6 +142,7 @@ export async function savePhoto({base, draft, prepared, session, onProgress = ()
     onProgress('Starting the display refresh…');
     const body = form({'submission.filename': filename, 'submission.image_file_path': `images/dithered/${filename}.png`,
       'submission.rotation_revision': prepared.rotation_revision ?? 0,
+      'submission.photo_rotation_revision': metadata.photo_rotation_revision ?? 0,
       'submission.session_id': session, 'submission.flash_twice': false});
     const job = await request(base, '/flash', {method: 'POST', body});
     return {id: job.job_id, filename, base};
@@ -129,6 +154,13 @@ export async function savePhoto({base, draft, prepared, session, onProgress = ()
 
 export async function sendPhoto(options) {
   return savePhoto({...options, display: true});
+}
+
+export async function sendTestCard(base, blob, config) {
+  const body = form({rotation_revision:config.rotation_revision});
+  body.append('file', blob, 'orientation-test-card.png');
+  const job = await request(base, '/api/flash-test-card', {method:'POST', body});
+  return {id:job.job_id, base, filename:'orientation-test-card.png', kind:'test-card'};
 }
 
 export async function deletePhoto(base, filename, session) {

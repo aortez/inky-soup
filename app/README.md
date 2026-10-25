@@ -1,8 +1,9 @@
 # Frame app
 
 The shared modern Frame UI and Android shell live here. The editor is imported
-from the published `aortez.github.io` master revision recorded in `source.json`;
-unmerged work in the website checkout was not imported. Source and worker license
+from the published `aortez.github.io` master revision recorded in `source.json`,
+including its merged photo-rotation and interrupted-save recovery changes. The
+Android platform adaptations remain in this shared source. Source and worker license
 notices are retained in `LICENSE` and `public/frame/vendor/`.
 
 ## Prototype scope (#20)
@@ -12,6 +13,19 @@ IndexedDB draft storage. It can preview both panels in landscape or portrait
 without internet or a connected frame. Settings selects the preview display.
 Android Back returns from Settings to Create, then saves the draft and minimizes
 the app. Cancelling the system photo picker preserves the existing draft.
+
+Photo rotation supports 0°, 90°, 180°, and 270° clockwise before fitting and
+dithering on both platforms. Android's offline preview supports the same control
+for either panel/layout and retains the angle in its draft. Frame mounting and
+test-card submission remain unavailable in the Android shell until native Pi
+networking is implemented.
+
+The web build includes the Settings orientation test card and revision-checked
+photo saves. Pending rotation operations survive reopening, allowing a lost
+response to be retried without duplicating the original or discarding adjustments.
+Copying a draft to another frame or resaving after deletion resets its revision;
+subsequent rotations by another editor still produce a conflict. The imported
+regression suite covers these cases alongside exact rotated pixels and palettes.
 
 This shell does not yet connect to a Pi or perform Bluetooth setup. Those are
 issues #21 and #22; discovery/reconnection and signed public updates follow in
@@ -119,5 +133,7 @@ revision used for each website deployment, and overlay the entire build so HTML,
 workers, and service-worker cache hashes always agree.
 
 The website checkout and live Pages deployment are not modified by building the
-Android prototype. Its active photo-rotation work must be reconciled when that
-consumer migration lands; see the immutable source revision in `source.json`.
+Android prototype. Photo rotation and its retry fixes are synchronized through
+website commit `a44aedb2317d26de24e71be8623ded4ea0ff0e1f`; `source.json` records
+that source revision and the original import. Switching website CI to consume
+this shared build remains a separate migration.

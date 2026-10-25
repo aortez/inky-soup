@@ -10,6 +10,8 @@ test('offline profiles use panel dimensions and preserve native geometry in port
       assert.deepEqual([config.width, config.height], portrait ? [height, width] : [width, height]);
       assert.deepEqual([config.physical_width, config.physical_height], [width, height]);
       assert.equal(config.orientation_supported, false);
+      assert.equal(config.photo_rotation_supported, true);
+      assert.equal(config.orientation_test_supported, false);
     }
   }
   assert.throws(() => previewConfig('unknown'), /supported display/);
