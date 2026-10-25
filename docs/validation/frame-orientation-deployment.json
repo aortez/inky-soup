@@ -1,0 +1,30 @@
+{
+  "display": {
+    "color": "multi",
+    "height": 1200,
+    "model": "impression-13.3-2025",
+    "physical_height": 1200,
+    "physical_width": 1600,
+    "rotation_degrees": 180,
+    "rotation_revision": 0,
+    "thumb_height": 112,
+    "thumb_width": 150,
+    "width": 1600
+  },
+  "ok": true,
+  "revision": "6a61c86f9a92417c142e154c7a416709df531f30",
+  "software_backup": "/var/lib/inky-soup/deployments/b268f8d0349549b59f84e2a4c0daa0d9",
+  "date": "2026-10-25",
+  "hardware": "Original Pi Zero W (ARMv6), Inky 13.3-inch 2025",
+  "transport": "USB Ethernet",
+  "server_sha256": "b56917aa96739376b4ae97499e74fafce93d314fe41b11be384023a77b4e0323",
+  "display_script_sha256": "bee52913856dc1c7a41d69fd11e7e80ce04c646b17e2a489c5d92b7160cbff83",
+  "photo_count": 15,
+  "photo_metadata_settings_hashes_unchanged": true,
+  "installed_files_match_staged_hashes": true,
+  "production_browser_origin_allowed": true,
+  "installed_driver_all_four_rotations_and_palette_check_passed": true,
+  "display_refreshed": false,
+  "service": "inky-soup-server.service",
+  "service_active": true
+}

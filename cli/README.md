@@ -76,6 +76,40 @@ It works over SSH even if the preview HTTP API has failed. Reboot also removes
 the runtime override. Both commands require key access and noninteractive sudo;
 `--ssh-user` selects a different account. The installed binary is not replaced.
 
+## Install an application release
+
+`deploy` installs the server, matching display script, and bundled UI together on
+the normal Yocto service (port 8000). Build the server for the target Pi first;
+the original Zero W requires ARMv6/VFPv2, including the linker's startup objects.
+Stage a directory on the Pi with this layout:
+
+```text
+release/
+  server             # target-native upload-server executable
+  display            # update-image.py from the same revision
+  revision.txt       # source commit
+  Rocket.toml        # upload-server/Rocket.toml
+  templates/         # upload-server/templates
+  static/js/         # upload-server/static/js
+  static/chota.min.css
+  static/favicon.ico
+```
+
+```bash
+scp -r /tmp/inky-release inky@10.55.0.1:/tmp/
+./inky-cli deploy --bundle /tmp/inky-release --json
+./inky-cli status --json
+./inky-cli browser-check --json
+```
+
+The CLI uses SSH and noninteractive sudo, checks the display queue before staging
+and stopping the service, then verifies the orientation API and gallery. It refuses
+an active preview. Failed installation or health checks restore the previous
+software. The JSON result records the deployed revision and a software-only backup
+under `/var/lib/inky-soup/deployments/`. Photo storage and orientation settings are
+not copied or changed. No display refresh is submitted. A power loss during
+installation still requires manual recovery; this is not an A/B firmware update.
+
 ## Mounting orientation
 
 ```bash
@@ -141,7 +175,8 @@ normal help/error output. Without `--json`, results are pretty-printed JSON.
 
 The device API is intended for a trusted local network; it has no client
 authentication. `images` requires the new `/api/images` endpoint. Other commands
-use existing endpoints. The CLI never installs firmware or submits WiFi credentials.
+use existing endpoints. `deploy` updates application files, not the kernel or
+firmware; the CLI never submits WiFi credentials.
 
 ## Checks
 

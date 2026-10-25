@@ -11,7 +11,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod deploy;
 mod preview;
+mod ssh;
 
 #[derive(Parser)]
 #[command(
@@ -59,6 +61,14 @@ enum Command {
         /// Executable already copied to this absolute path on the Pi.
         #[arg(long, default_value = "/usr/bin/inky-soup-server")]
         server_binary: String,
+        #[arg(long, default_value = "inky")]
+        ssh_user: String,
+    },
+    /// Install a staged server, display script, and UI bundle over SSH.
+    Deploy {
+        /// Absolute directory already copied to the Pi; see cli/README.md.
+        #[arg(long)]
+        bundle: String,
         #[arg(long, default_value = "inky")]
         ssh_user: String,
     },
@@ -332,6 +342,11 @@ fn run(args: &Args) -> Result<Value> {
     match &args.command {
         Command::Status => Ok(
             json!({"device":frame.base.as_str(),"display":frame.get("api/display-config")?,"flash":frame.get("api/flash/status")?}),
+        ),
+        Command::Deploy { bundle, ssh_user } => deploy::run(
+            frame.base.host_str().context("Missing device host")?,
+            ssh_user,
+            bundle,
         ),
         Command::Preview {
             action,
