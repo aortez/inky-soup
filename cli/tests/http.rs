@@ -7,6 +7,10 @@ use std::{
 };
 
 fn serve(replies: Vec<&'static str>) -> (String, thread::JoinHandle<Vec<String>>) {
+    serve_responses(replies.into_iter().map(|reply| format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", reply.len(), reply)).collect())
+}
+
+fn serve_responses(replies: Vec<String>) -> (String, thread::JoinHandle<Vec<String>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = format!("http://{}", listener.local_addr().unwrap());
     let task = thread::spawn(move || {
@@ -23,7 +27,7 @@ fn serve(replies: Vec<&'static str>) -> (String, thread::JoinHandle<Vec<String>>
                 request.push(byte[0]);
             }
             requests.push(String::from_utf8(request).unwrap());
-            write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", reply.len(),reply).unwrap();
+            stream.write_all(reply.as_bytes()).unwrap();
         }
         requests
     });
@@ -137,4 +141,71 @@ fn original_upload_preserves_multipart_file_name_and_content_type() {
         "{}",
         String::from_utf8_lossy(&output.stdout)
     );
+}
+
+#[test]
+fn wait_timeout_bounds_a_stalled_status_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = format!("http://{}", listener.local_addr().unwrap());
+    let server = thread::spawn(move || {
+        let (_stream, _) = listener.accept().unwrap();
+        thread::sleep(std::time::Duration::from_secs(3));
+    });
+    let start = std::time::Instant::now();
+    let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+        .args([
+            "--device",
+            &address,
+            "--json",
+            "job",
+            "7",
+            "--wait",
+            "--timeout",
+            "1",
+        ])
+        .output()
+        .unwrap();
+    let elapsed = start.elapsed();
+    server.join().unwrap();
+    assert!(!output.status.success());
+    assert!(
+        elapsed < std::time::Duration::from_millis(2500),
+        "wait exceeded its deadline: {elapsed:?}"
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("Timed out waiting for job 7"));
+}
+
+#[test]
+fn browser_check_requires_origin_method_and_content_type_permission() {
+    for grant_headers in [true, false] {
+        let read = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: https://allan.pizza\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_string();
+        let headers = if grant_headers {
+            "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\n"
+        } else {
+            ""
+        };
+        let preflight = format!("HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: https://allan.pizza\r\n{headers}Connection: close\r\n\r\n");
+        let (address, server) = serve_responses(vec![read, preflight]);
+        let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+            .args(["--device", &address, "--json", "browser-check"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.success(), grant_headers);
+        let requests = server.join().unwrap();
+        assert!(requests[0].starts_with("GET /api/display-config "));
+        assert!(requests[1].starts_with("OPTIONS /api/lock-image "));
+        assert!(requests[1]
+            .to_ascii_lowercase()
+            .contains("access-control-request-headers: content-type"));
+        let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+        if grant_headers {
+            assert_eq!(result["allowed"], true);
+        } else {
+            assert!(result["error"].as_str().unwrap().contains("not allowed"));
+        }
+    }
 }

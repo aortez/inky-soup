@@ -202,6 +202,15 @@ mod tests {
             assert_eq!(response.status(), Status::Forbidden);
         }
         assert_eq!(client.post("/write").dispatch().await.status(), Status::Ok);
+        assert_eq!(
+            client
+                .post("/write")
+                .header(Header::new("Origin", "https://allan.pizza"))
+                .dispatch()
+                .await
+                .status(),
+            Status::Ok
+        );
         let mut local = client
             .post("/write")
             .header(Header::new("Origin", "http://inky-soup.local:8000"));

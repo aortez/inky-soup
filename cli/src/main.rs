@@ -36,6 +36,11 @@ struct Args {
 enum Command {
     /// Display configuration and current queue.
     Status,
+    /// Check whether the device permits a browser app origin.
+    BrowserCheck {
+        #[arg(long, default_value = "https://allan.pizza")]
+        origin: String,
+    },
     /// Display model and exact pixel dimensions.
     Display,
     /// List images and their saved settings.
@@ -140,9 +145,13 @@ impl Frame {
         })
     }
     fn get(&self, path: &str) -> Result<Value> {
+        self.get_with_timeout(path, Duration::from_secs(60))
+    }
+    fn get_with_timeout(&self, path: &str, timeout: Duration) -> Result<Value> {
         decoded(
             self.client
                 .get(self.base.join(path)?)
+                .timeout(timeout)
                 .send()
                 .context("Cannot reach frame")?,
         )
@@ -185,11 +194,30 @@ impl Frame {
             .context("Flash submission failed; check status before retrying because the request may have arrived")
     }
     fn wait(&self, id: u64, timeout: u64, filename: Option<&str>) -> Result<Value> {
-        let deadline = Instant::now() + Duration::from_secs(timeout);
+        let started = Instant::now();
+        let limit = Duration::from_secs(timeout);
+        let timed_out = || {
+            anyhow::anyhow!("Timed out waiting for job {id}; it may still be running. Inspect with `inky-cli job {id}`")
+        };
         let mut identity = None;
         let mut previous = String::new();
         loop {
-            let job = self.get(&format!("api/flash/status/{id}"))?;
+            let remaining = limit.saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                return Err(timed_out());
+            }
+            let job = self
+                .get_with_timeout(
+                    &format!("api/flash/status/{id}"),
+                    remaining.min(Duration::from_secs(60)),
+                )
+                .map_err(|error| {
+                    if started.elapsed() >= limit {
+                        timed_out()
+                    } else {
+                        error
+                    }
+                })?;
             let current = (job["filename"].clone(), job["created_at"].clone());
             if filename.is_some_and(|name| job["filename"] != name)
                 || identity.as_ref().is_some_and(|old| old != &current)
@@ -208,10 +236,7 @@ impl Frame {
                 "Queued" | "Flashing" => {}
                 _ => bail!("Unknown job status: {status}"),
             }
-            if Instant::now() >= deadline {
-                bail!("Timed out waiting for job {id}; it may still be running. Inspect with `inky-cli job {id}`");
-            }
-            thread::sleep(Duration::from_secs(1));
+            thread::sleep(Duration::from_secs(1).min(limit.saturating_sub(started.elapsed())));
         }
     }
 }
@@ -264,6 +289,64 @@ fn run(args: &Args) -> Result<Value> {
         Command::Status => Ok(
             json!({"device":frame.base.as_str(),"display":frame.get("api/display-config")?,"flash":frame.get("api/flash/status")?}),
         ),
+        Command::BrowserCheck { origin } => {
+            let url = Url::parse(origin).context("Use a complete HTTP(S) browser origin")?;
+            if !matches!(url.scheme(), "http" | "https")
+                || url.host_str().is_none()
+                || !url.username().is_empty()
+                || url.password().is_some()
+                || url.path() != "/"
+                || url.query().is_some()
+                || url.fragment().is_some()
+            {
+                bail!(
+                    "Use an HTTP(S) browser origin without credentials, path, query, or fragment"
+                );
+            }
+            let origin = url.origin().ascii_serialization();
+            let read = frame
+                .client
+                .get(frame.base.join("api/display-config")?)
+                .header("Origin", &origin)
+                .send()
+                .context("Cannot reach frame")?;
+            let preflight = frame
+                .client
+                .request(reqwest::Method::OPTIONS, frame.base.join("api/lock-image")?)
+                .header("Origin", &origin)
+                .header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "content-type")
+                .send()?;
+            let allowed = |response: &Response| {
+                response.status().is_success()
+                    && response
+                        .headers()
+                        .get("Access-Control-Allow-Origin")
+                        .and_then(|v| v.to_str().ok())
+                        == Some(origin.as_str())
+            };
+            let allows_header_token = |name: &str, token: &str| {
+                preflight
+                    .headers()
+                    .get(name)
+                    .and_then(|v| v.to_str().ok())
+                    .is_some_and(|value| {
+                        value
+                            .split(',')
+                            .any(|part| part.trim().eq_ignore_ascii_case(token))
+                    })
+            };
+            if !allowed(&read)
+                || !allowed(&preflight)
+                || !allows_header_token("Access-Control-Allow-Methods", "POST")
+                || !allows_header_token("Access-Control-Allow-Headers", "content-type")
+            {
+                bail!("Browser origin {origin} is not allowed: read HTTP {}, preflight HTTP {}. Check INKY_SOUP_CLIENT_ORIGINS on the frame", read.status(), preflight.status());
+            }
+            Ok(
+                json!({"device":frame.base.as_str(),"origin":origin,"read_status":read.status().as_u16(),"preflight_status":preflight.status().as_u16(),"allowed":true}),
+            )
+        }
         Command::Display => frame.get("api/display-config"),
         Command::Images => frame.get("api/images"),
         Command::Job { id, wait, timeout } => {

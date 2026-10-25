@@ -58,7 +58,7 @@ reboot does not remove panel power. Test a patched driver without hardware using
 - `cache_worker.rs`: cache path helper.
 - `cleanup.rs`: periodic cleanup of orphaned derived files.
 
-Unit tests currently live in `flash_queue.rs`. The old `src/tests.rs` file is
+Server unit tests live in `flash_queue.rs` and `browser_access.rs`. The old `src/tests.rs` file is
 unused Rocket example code, not an active integration suite.
 
 ## JavaScript architecture
@@ -101,6 +101,7 @@ The legacy shared metadata file is migrated to per-image files on startup.
 | Method | Route | Purpose |
 | --- | --- | --- |
 | GET | `/` | Gallery page |
+| GET | `/api/images` | Gallery metadata for local/hosted clients |
 | GET | `/api/display-config` | Display and thumbnail dimensions |
 | POST | `/upload` | Store an original image |
 | POST | `/delete` | Delete original and associated data |

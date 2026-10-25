@@ -9,6 +9,7 @@ From the repository root:
 ```bash
 ./inky-cli status
 ./inky-cli display --json
+./inky-cli browser-check --json
 ./inky-cli --device http://inky-soup.local:8000 images
 ```
 
@@ -22,6 +23,18 @@ inky-cli --help
 `--device` or `INKY_SOUP_URL` selects the device. The default is
 `http://10.55.0.1:8000` (USB Ethernet). Hostnames without a port use 8000.
 WiFi uses `http://inky-soup.local:8000` or the Pi’s local IP address.
+
+## Browser connectivity diagnostics
+
+```bash
+./inky-cli browser-check --json
+./inky-cli browser-check --origin http://localhost:4173 --json
+```
+
+This checks a read and a JSON POST preflight against the real frame, including
+origin, method, and content-type permissions. It does not submit a write. It exits
+nonzero when the server does not grant browser access. Browser/Android local-network
+permissions and mixed-content rules still need validation on the actual phone.
 
 ## Photos and display jobs
 
@@ -49,7 +62,7 @@ Uploads receive a unique filename and use the device’s image locks for derived
 files and flash submission.
 
 `--wait` polls an existing job and exits nonzero on a reported failure or timeout.
-A timeout does not cancel the device job. An interrupted flash submission may have
+The wait deadline also bounds stalled status requests. A timeout does not cancel the device job. An interrupted flash submission may have
 reached the frame: inspect `status` before deciding to submit again. Job IDs reset
 when the server restarts; active waits also check the filename and creation time.
 A fresh `job` command cannot identify a job from a previous server lifetime.
