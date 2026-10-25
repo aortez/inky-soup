@@ -52,6 +52,8 @@ enum Command {
     Display,
     /// List images and their saved settings.
     Images,
+    /// Delete an original and its saved versions; refuses locked or pending photos.
+    Delete { filename: String },
     /// Upload an original, or a validated display-ready PNG with --prepared.
     Upload {
         file: PathBuf,
@@ -414,6 +416,17 @@ fn run(args: &Args) -> Result<Value> {
         }
         Command::Display => frame.get("api/display-config"),
         Command::Images => frame.get("api/images"),
+        Command::Delete { filename } => {
+            valid_filename(filename)?;
+            let session = uuid::Uuid::new_v4().to_string();
+            frame.lock(filename, &session)?;
+            let result = frame.json_post(
+                "api/delete-image",
+                &json!({"filename":filename,"session_id":session}),
+            );
+            frame.unlock(filename, &session);
+            result
+        }
         Command::Job { id, wait, timeout } => {
             if *wait {
                 frame.wait(*id, *timeout, None)

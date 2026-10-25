@@ -63,6 +63,9 @@ permissions and mixed-content rules still need validation on the actual phone.
 # Use the exact filename returned by `images` for an existing prepared image.
 ./inky-cli flash 01234567-example.png --wait --timeout 180
 
+# Delete an original and all saved versions (this removes it from the gallery).
+./inky-cli delete 01234567-example.png
+
 # Recover after an interrupted connection without submitting another refresh.
 ./inky-cli status --json
 ./inky-cli job 7 --wait --json
@@ -75,6 +78,10 @@ It does not resize or dither ordinary photos. Prepared uploads save the supplied
 PNG as the original, cache, and dithered image, plus a generated thumbnail.
 Uploads receive a unique filename and use the device’s image locks for derived
 files and flash submission.
+
+`delete` requires the new `/api/delete-image` endpoint. It acquires edit access and
+refuses deletion while another editor owns the photo or it is queued/refreshing.
+The image already on the physical display is unchanged.
 
 `--wait` polls an existing job and exits nonzero on a reported failure or timeout.
 The wait deadline also bounds stalled status requests. A timeout does not cancel the device job. An interrupted flash submission may have

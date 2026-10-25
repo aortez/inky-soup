@@ -7,6 +7,7 @@ mod config;
 mod flash_queue;
 mod image_locks;
 mod metadata;
+mod photo_management;
 
 use glob::glob;
 use log::{debug, error, info, warn};
@@ -816,6 +817,9 @@ async fn submit_flash_image<'r>(
 
     info!("Flash request received: {} (flash_twice: {}, session: {})", filename, flash_twice, session_id);
 
+    // Serialize file validation/enqueue with photo deletion.
+    let mut queue = queue_state.lock().await;
+
     // Verify lock ownership.
     let has_lock = image_locks::verify_lock_ownership(locks_state, &filename, session_id)
         .await
@@ -832,8 +836,7 @@ async fn submit_flash_image<'r>(
         return Err((Status::NotFound, format!("Pre-dithered image not found: {}", filename)));
     }
 
-    // Add to queue.
-    let mut queue = queue_state.lock().await;
+    // Add to queue while file validation is still protected.
     let job_id = queue.enqueue(filename.clone(), dithered_path.to_string_lossy().to_string(), flash_twice);
     let queue_position = queue.get_position(job_id).unwrap_or(0);
     drop(queue);
@@ -1004,6 +1007,7 @@ fn rocket() -> _ {
             browser_access::preflight,
             display_config,
             gallery_images,
+            photo_management::delete_image,
             flash_job_status,
             flash_status,
             lock_image,

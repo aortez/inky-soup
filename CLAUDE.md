@@ -104,7 +104,8 @@ The legacy shared metadata file is migrated to per-image files on startup.
 | GET | `/api/images` | Gallery metadata for local/hosted clients |
 | GET | `/api/display-config` | Display and thumbnail dimensions |
 | POST | `/upload` | Store an original image |
-| POST | `/delete` | Delete original and associated data |
+| POST | `/delete` | Legacy form deletion |
+| POST | `/api/delete-image` | Delete a photo with edit ownership and queue protection |
 | POST | `/api/upload-cache` | Store resized output and settings |
 | POST | `/api/upload-thumb` | Store thumbnail |
 | POST | `/api/upload-dithered` | Store display-ready image and settings |
