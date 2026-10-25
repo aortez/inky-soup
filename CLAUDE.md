@@ -42,6 +42,12 @@ Processing stays in the browser to reduce work on the Pi Zero. The server does
 not provide a fallback for missing pre-dithered assets. The optional second flash
 runs the display script twice to reduce ghosting.
 
+The bundled Inky 2.2.1 driver backports [upstream PR #265](https://github.com/pimoroni/inky/pull/265): EL133UF1 must wait for
+active-low BUSY to clear before sending power-off. Display wait timeouts fail the
+flash job. If BUSY stays stuck, a full power removal may be needed; a software
+reboot does not remove panel power. Test a patched driver without hardware using
+`python3 yocto/scripts/test_inky_refresh.py /path/to/inky_el133uf1.py`.
+
 ## Rust modules
 
 - `main.rs`: routes, forms, display configuration, application state, startup.

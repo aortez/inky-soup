@@ -10,6 +10,7 @@ import argparse
 import os
 import sys
 import time
+import warnings
 
 import numpy
 from PIL import Image
@@ -180,7 +181,10 @@ def main():
 
     print("Sending to display...", flush=True)
     show_start = time.time()
-    inky.show()
+    # Driver timeouts must fail the job instead of reporting a successful flash.
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=r"^(Busy|Refresh) Wait:", category=UserWarning)
+        inky.show()
     print(f"Display refresh complete in {time.time() - show_start:.1f}s", flush=True)
 
     print(f"Total time: {time.time() - start_time:.1f}s", flush=True)
