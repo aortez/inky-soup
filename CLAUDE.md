@@ -7,6 +7,12 @@ are the command references; this file explains the implementation.
 
 ## Components
 
+The modern shared UI and Android prototype live in `app/`. See `app/README.md`
+for builds, platform adapters, source provenance, and website artifact consumption.
+The Android shell currently supports offline editing; native Pi networking and BLE
+setup are tracked separately in issues #21 and #22. The Pi frontend below remains
+until the Android experience passes hardware acceptance (#25 / #26).
+
 1. `upload-server/`: Rust/Rocket server, Tera templates, and browser JavaScript.
 2. `update-image.py`: Python display driver entry point. The Yocto recipe packages
    a copy from `yocto/meta-inky-soup/recipes-inky-soup/inky-soup-display/files/` as

@@ -1,6 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure
+- `app/`: shared modern Frame UI, web/PWA build, and Capacitor Android shell; see `app/README.md`.
 - `cli/`: local Rust client for device control over USB Ethernet or WiFi; `inky-cli` is the checkout wrapper.
 - `upload-server/`: Rust Rocket server plus frontend JS (`static/js/`), templates (`templates/`), and tests (`tests/`, `e2e/`).
 - `update-image.py`: Python script that flashes pre-dithered images to the Inky display.
@@ -9,6 +10,8 @@
 - `upload-server/static/images/`: originals plus derived outputs (`cache/`, `thumbs/`, `dithered/`).
 
 ## Build, Test, and Development Commands
+- From `app/`, use `npm ci`, `npm run test:unit`, `npm test`, `npm run test:pwa`, and `npm run test:android:web` for modern frontend checks.
+- From `app/`, use `npm run build:android` with JDK 21 and Android SDK 36 to build the debug APK.
 - `./inky-cli --help`: discover device commands; see `cli/README.md` for usage and JSON output.
 - `cargo test --locked --manifest-path cli/Cargo.toml`: CLI unit and HTTP integration tests.
 - `cd upload-server && cargo run`: run the local server on port 8000.
@@ -28,6 +31,7 @@
 - JavaScript conventions live in `JS_STYLE_GUIDE.md`.
 - Prefer `async/await`, named exports only, and the module hierarchy `core/ -> services/ -> ui/`.
 - Centralize state in `upload-server/static/js/core/state.js`; cache DOM lookups in `core/dom.js`.
+- The modern app uses `app/frame/core/state.js` and `app/frame/core/dom.js`; its platform adapters live in `app/frame/services/`.
 - Cache, thumb, and dithered files are always PNG and named `{original}.png`.
 
 ## Testing Guidelines

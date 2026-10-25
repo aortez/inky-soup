@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f0e6">
+  <title>Connect your frame · Sparkle Duck</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <main>
+    <header><img src="duck.png" alt="" width="64" height="64"><span>Sparkle Duck</span></header>
+    <p class="eyebrow">DEVICE SETUP</p>
+    <h1>Give your frame<br>a connection.</h1>
+    <p class="intro">Set up WiFi over Bluetooth. Your network details go straight to your device.</p>
+    <section class="card" aria-label="WiFi setup">
+      <p id="device-name" class="device-name">Your frame</p>
+      <p id="status" role="status" aria-live="polite">Ready to connect.</p>
+      <button id="connect" type="button">Connect to a frame <span aria-hidden="true">→</span></button>
+      <form id="wifi-form" hidden>
+        <label for="ssid">WiFi network name</label>
+        <input id="ssid" name="ssid" required autocomplete="off" autocapitalize="none" spellcheck="false">
+        <p class="hint">Use a 2.4 GHz network for a Pi Zero W or Zero 2 W.</p>
+        <label for="password">WiFi password</label>
+        <input id="password" name="password" type="password" autocomplete="off">
+        <label class="check"><input id="show-password" type="checkbox"> Show password</label>
+        <button id="submit" type="submit">Connect to WiFi</button>
+      </form>
+      <a id="device-link" class="primary-link" hidden>Open frame</a>
+      <a id="device-interface-link" hidden>Open the original device interface</a>
+      <button id="cancel" class="secondary" type="button" hidden>Cancel setup</button>
+    </section>
+    <details>
+      <summary>Can’t find or open your frame?</summary>
+      <p>Keep it powered on and nearby. An unconnected frame opens setup for five minutes after startup; restart it to open another window. If your frame is already connected to WiFi, open its app instead of setting it up again.</p>
+      <p>After setup, your phone and frame must be on the same WiFi. Guest networks may block devices from reaching each other.</p>
+      <p>On Android, if the frame’s page won’t open, go to Settings → Apps → Chrome → Permissions → Nearby devices and choose Allow, then retry the link. If Allow already appears selected, tap it again.</p>
+    </details>
+    <footer>No account. No cloud credentials.<br><a href="https://www.improv-wifi.com/">Uses Improv Wi-Fi</a></footer>
+  </main>
+</body>
+</html>

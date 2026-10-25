@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/aortez/inky-soup",
+  "commit": "7dfff1785a6fc57731435f5a644bd98b45c83c73",
+  "files": [
+    {
+      "path": "upload-server/static/js/dither.js",
+      "sha256": "8d37cfd7308fa119145ca3e6aca5c96cc2c6e6aff3ab452b1a2dcd5653998887"
+    },
+    {
+      "path": "upload-server/static/js/filters.js",
+      "sha256": "20374cc1f8d1349d7a8e03a05ef5d01ded9a2e039c6ed98e32026e07c03f4af6"
+    }
+  ]
+}

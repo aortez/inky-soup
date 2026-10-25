@@ -1,0 +1,19 @@
+{
+  "origin": "https://localhost",
+  "platform": "android",
+  "title": "Sparkle Duck · Your frame",
+  "photoEnabled": true,
+  "dimensions": "600 × 448",
+  "storedDraft": null,
+  "workers": 0,
+  "resources": [
+    "https://localhost/assets/frame-Dn4iqyt7.js",
+    "https://localhost/frame/icon.svg",
+    "https://localhost/assets/frame-CtmiGwl6.css",
+    "https://localhost/frame/icon.svg",
+    "https://localhost/assets/native-app-DcHkJOf5.js"
+  ],
+  "wifi": "0",
+  "mobileData": "0",
+  "passed": true
+}
