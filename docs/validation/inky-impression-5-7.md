@@ -155,3 +155,7 @@ The final test passed against the real Pi both idle and during a refresh, plus
 local 448 × 600 portrait and 1600 × 1200 profiles. The hosted app's CORS check
 passed. Disposable test images were removed, and the final gallery and saved
 adjustments matched the pre-deployment state.
+
+The deployment CLI update (`fc81260`, PR #13) merged while finalizing this PR.
+After incorporating it, all 17 CLI tests passed. That integration changed none
+of the server, frontend, or display-script files used in the hardware smoke test.
