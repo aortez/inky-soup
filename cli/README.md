@@ -102,10 +102,20 @@ scp -r /tmp/inky-release inky@10.55.0.1:/tmp/
 ./inky-cli browser-check --json
 ```
 
-The CLI uses SSH and noninteractive sudo, checks the display queue before staging
-and stopping the service, then verifies the orientation API and gallery. It refuses
-an active preview. Failed installation or health checks restore the previous
-software. The JSON result records the deployed revision and a software-only backup
+The CLI uses SSH and noninteractive sudo. A device-wide kernel lock covers
+validation, staging, installation, health checks, cleanup, and rollback; another
+deployment fails immediately with a retry message. The lock is released when the
+installer exits, including after a failure. The file at
+`/run/lock/inky-soup-deploy.lock` remains in place and must not be deleted to bypass
+a running deployment. An interrupted SSH client can leave its installer running;
+wait for it to finish before retrying.
+
+The CLI checks the display queue before staging and stopping the service, then
+verifies the orientation API, status endpoint, and gallery. It refuses an active
+preview. Once the server restarts, newly accepted display jobs do not count as a
+health-check failure. Failed copies remove partial staged files and directories.
+Failed installation or health checks restore the previous software.
+The JSON result records the deployed revision and a software-only backup
 under `/var/lib/inky-soup/deployments/`. Photo storage and orientation settings are
 not copied or changed. No display refresh is submitted. A power loss during
 installation still requires manual recovery; this is not an A/B firmware update.

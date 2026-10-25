@@ -1,5 +1,6 @@
 """Install a staged application release on a Yocto frame; never touch photos."""
 
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -47,7 +48,9 @@ def health_check():
                 raise RuntimeError("Server did not expose the orientation API")
             if not isinstance(get_json("/api/images"), list):
                 raise RuntimeError("Server returned an invalid gallery")
-            require_idle(get_json("/api/flash/status"))
+            # The restarted server can already accept jobs. A busy display is
+            # healthy and must not cause a rollback that interrupts its refresh.
+            get_json("/api/flash/status")
             with urllib.request.urlopen("http://127.0.0.1:8000/", timeout=3) as response:
                 response.read()
             return display
@@ -68,6 +71,20 @@ def copy(source, target):
 
 
 def deploy(bundle, root=Path("/"), command=run, health=health_check, status=get_json):
+    root = Path(root)
+    lock_path = root / "run/lock/inky-soup-deploy.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    # Keep the same inode across invocations. Closing the descriptor releases
+    # the kernel lock; unlinking the file would let contenders lock another inode.
+    with lock_path.open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise RuntimeError("Another deployment is already running; wait for it to finish before retrying") from error
+        return _deploy_locked(bundle, root, command, health, status)
+
+
+def _deploy_locked(bundle, root, command, health, status):
     bundle = Path(bundle)
     # Validate the entire release before stopping a working server.
     for name in FILES:
@@ -106,8 +123,8 @@ def deploy(bundle, root=Path("/"), command=run, health=health_check, status=get_
             else:
                 shutil.copy2(target, previous)
             next_path = target.with_name(target.name + ".next-" + release)
-            copy(bundle / name, next_path)
             staged.append(next_path)
+            copy(bundle / name, next_path)
         # Recheck immediately before the brief interruption, after staging copies.
         require_idle(status("/api/flash/status"))
         stopped = True
