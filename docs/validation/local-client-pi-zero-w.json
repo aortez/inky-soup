@@ -1,0 +1,39 @@
+{
+  "date": "2026-10-24",
+  "hardware": "Original Pi Zero W; Inky Impression 13.3-inch 2025, 1600 x 1200",
+  "transportChecks": [
+    "USB Ethernet http://10.55.0.1:8000",
+    "WiFi http://inky-soup.local:8000"
+  ],
+  "commands": [
+    "status --json",
+    "display --json",
+    "images --json",
+    "upload prepared.png --prepared --json",
+    "flash <uploaded-filename> --wait --json",
+    "job 1 --wait --json"
+  ],
+  "cliFlash": {
+    "created_at": 1792893931013,
+    "dithered_path": "/data/inky-soup/images/dithered/50a07478-f26b-470f-b4d0-4141c0c4d78c.png.png",
+    "error_message": null,
+    "filename": "50a07478-f26b-470f-b4d0-4141c0c4d78c.png",
+    "finished_at": 1792893972916,
+    "flash_twice": false,
+    "job_id": 2,
+    "started_at": 1792893931185,
+    "status": "Completed"
+  },
+  "phoneJobWatchedByCli": {
+    "created_at": 1792893469881,
+    "dithered_path": "/data/inky-soup/images/dithered/8efad0fd-e405-4994-af44-4039fda775e3.png.png",
+    "error_message": null,
+    "filename": "8efad0fd-e405-4994-af44-4039fda775e3.png",
+    "finished_at": 1792893512159,
+    "flash_twice": false,
+    "job_id": 1,
+    "started_at": 1792893469918,
+    "status": "Completed"
+  },
+  "note": "Jobs completed according to the controller and server. This run did not request a separate human inspection of the physical panel. The earlier six-color physical test was confirmed by the user."
+}
