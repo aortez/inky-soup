@@ -77,16 +77,74 @@ def require_setup_idle(command, executable):
         raise RuntimeError("Wait for Bluetooth setup to close before deploying its provisioner")
 
 
-def provisioner_health(command, executable):
+def provisioner_invocation(command):
+    invocation = command("systemctl", "show", PROVISIONER_SERVICE, "-p", "InvocationID", "--value")
+    if not invocation:
+        raise RuntimeError("Provisioner has no active service invocation")
+    return invocation
+
+
+def check_provisioner(command, executable, invocation):
+    command("systemctl", "is-active", PROVISIONER_SERVICE)
+    if provisioner_invocation(command) != invocation:
+        raise RuntimeError("Provisioner restarted during deployment")
+    result = provisioner_status(command, executable)
+    # The client can finish just as the daemon exits. Check both sides of IPC.
+    command("systemctl", "is-active", PROVISIONER_SERVICE)
+    if provisioner_invocation(command) != invocation:
+        raise RuntimeError("Provisioner restarted during deployment")
+    return result
+
+
+def provisioner_health(command, executable, invocation=None):
+    if invocation is None:
+        invocation = provisioner_invocation(command)
     deadline = time.monotonic() + 30
     while True:
         try:
-            command("systemctl", "is-active", PROVISIONER_SERVICE)
-            return provisioner_status(command, executable)
+            return check_provisioner(command, executable, invocation)
         except Exception:
             if time.monotonic() >= deadline:
                 raise
             time.sleep(1)
+
+
+def rollback(stopped, replaced, command, root, keep_server=False):
+    errors = []
+    safe_to_restore = set()
+    failed_assets = set()
+    for service in stopped:
+        if service == SERVICE and keep_server:
+            errors.append("Server left running because the display queue is busy or unavailable")
+            continue
+        try:
+            command("systemctl", "stop", service)
+            safe_to_restore.add(service)
+        except Exception as error:
+            errors.append(f"Stop {service}: {error}")
+    for target, old_path in reversed(replaced):
+        service = PROVISIONER_SERVICE if target == root / PROVISIONER_PATH else SERVICE
+        # Keep the old files for manual recovery if the owning service could not
+        # be stopped. Never let one component's failure skip the other's recovery.
+        if service not in safe_to_restore:
+            continue
+        try:
+            if target.is_dir():
+                shutil.rmtree(target)
+            elif target.exists():
+                target.unlink()
+            old_path.rename(target)
+        except Exception as error:
+            failed_assets.add(service)
+            errors.append(f"Restore {target}: {error}")
+    for service in reversed(stopped):
+        if service not in safe_to_restore or service in failed_assets:
+            continue
+        try:
+            command("systemctl", "start", service)
+        except Exception as error:
+            errors.append(f"Start {service}: {error}")
+    return errors
 
 
 def copy(source, target):
@@ -158,6 +216,7 @@ def _deploy_locked(bundle, root, command, health, status):
     replaced = []
     stopped = []
     provisioner = None
+    server_healthy = False
     try:
         for name, destination in files.items():
             target = root / destination
@@ -191,21 +250,29 @@ def _deploy_locked(bundle, root, command, health, status):
         os.sync()
         if has_provisioner:
             command("systemctl", "start", PROVISIONER_SERVICE)
-            provisioner = provisioner_health(command, root / PROVISIONER_PATH)
+            invocation = provisioner_invocation(command)
+            provisioner_health(command, root / PROVISIONER_PATH, invocation)
         command("systemctl", "start", SERVICE)
         display = health()
+        server_healthy = True
+        if has_provisioner:
+            provisioner = check_provisioner(command, root / PROVISIONER_PATH, invocation)
     except Exception as error:
+        recovery_errors = []
         if stopped:
-            for service in stopped:
-                command("systemctl", "stop", service)
-            for target, old_path in reversed(replaced):
-                if target.is_dir():
-                    shutil.rmtree(target)
-                elif target.exists():
-                    target.unlink()
-                old_path.rename(target)
-            for service in reversed(stopped):
-                command("systemctl", "start", service)
+            keep_server = False
+            if server_healthy:
+                try:
+                    require_idle(status("/api/flash/status"))
+                except Exception:
+                    # A late provisioner failure must not interrupt a refresh
+                    # accepted by the healthy server after its restart.
+                    keep_server = True
+            recovery_errors = rollback(stopped, replaced, command, root, keep_server)
+        if recovery_errors:
+            details = "; ".join(recovery_errors)
+            raise RuntimeError(f"Deployment failed: {error}; recovery incomplete: {details}; "
+                               f"software backup: {backup}") from error
         recovery = "previous software restored" if stopped else "installed software unchanged"
         raise RuntimeError(f"Deployment failed; {recovery}: {error}") from error
     finally:
