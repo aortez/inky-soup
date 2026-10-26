@@ -55,15 +55,18 @@ workflow refuses a tag that does not match the merged `package.json`.
 1. Merge the version bump to `main`.
 2. Tag that commit and push the tag deliberately, for example
    `git tag app-v0.2.0 && git push origin app-v0.2.0`.
-3. The workflow checks the tag, runs the app unit tests, builds the bundled assets,
-   builds and signs the release APK, runs the Java unit tests and Android lint on the
-   release variant, verifies the signature with `apksigner`, and writes the release
+3. The workflow checks that the tag matches `package.json` and points at a commit
+   on `main`, runs the app unit tests, builds the bundled assets, builds and signs
+   the release APK, runs the Java unit tests and Android lint on the release
+   variant, verifies the signature with `apksigner`, and writes the release
    metadata with `app/tools/release-manifest.mjs`.
 4. It publishes a versioned release named after the tag with generated notes and
    three assets: `frame.apk`, `frame.apk.sha256`, and `frame-release.json`.
 5. It replaces the same three assets on the rolling `frame-app` release, which is
-   created on the first run. That release only ever carries app assets, so the links
-   below stay valid when server or image releases are added later.
+   created on the first run and never marked as GitHub's latest release. That
+   release only ever carries app assets, so the links below stay valid when server
+   or image releases are added later. Re-running a failed job replaces the assets
+   on both releases instead of failing on the existing one.
 
 `workflow_dispatch` builds and uploads the signed files as a workflow artifact
 without publishing. Every run needs the signing secrets.
@@ -79,7 +82,8 @@ Stable links:
 `frame-release.json` records `application_id`, `version_name`, `version_code`,
 `min_sdk`, `apk_url` (the versioned asset), `apk_sha256`, `apk_size`,
 `signing_sha256` (the signer certificate digest printed by `apksigner`), optional
-`notes`, `release_url`, and `published_at`. The app validates every field.
+`notes`, `release_url`, and `published_at`. The app validates every field it uses;
+`published_at` is informational. `apk_url` must point at the manifest's own host.
 
 ## First installation
 
@@ -107,7 +111,8 @@ internet access to GitHub; using a frame on the local network never does.
   never followed. A release is offered only when it names the same application ID
   and signing certificate as the installed app, its `min_sdk` is not above the
   phone's Android version, and its `version_code` is higher. Other outcomes are
-  explained without a download.
+  explained without a download. When a due check cannot reach GitHub, the last
+  remembered release and any verified download stay available.
 - **Download**: the APK streams into app-private cache storage with progress and a
   64 MiB limit. The size and SHA-256 must match the metadata, otherwise the file is
   discarded and the release stays available for a retry. The user can cancel.
@@ -115,10 +120,14 @@ internet access to GitHub; using a frame on the local network never does.
   before installation.
 - **Install**: the app's own **Install unknown apps** permission is required. The
   first attempt opens that Android Settings page; return to the app and tap
-  **Install update** again. The app then saves the draft and opens Android's
-  installer through a `FileProvider` URI. Confirming replaces the app and the user
-  reopens it as the new version; cancelling returns to the app with the download
-  still ready.
+  **Install update** again. The app saves the draft, hashes the package again, and
+  parses it: its package name and signing certificate must match the installed app
+  and its version code must be higher, so a manipulated manifest cannot turn the
+  updater into a prompt to install some other app. Only then does Android's
+  installer open through a `FileProvider` URI. Confirming replaces the app and the
+  user reopens it as the new version; cancelling returns to the app with the
+  download still ready. A package that is missing, altered, or rejected is
+  discarded and the release goes back to **Download update**.
 - **Deferral**: installation waits while photos are processing, uploading, or
   importing, while a connection is in progress, and while a display refresh is
   being tracked. The banner and Settings explain what to finish first. Checking and
@@ -128,9 +137,11 @@ internet access to GitHub; using a frame on the local network never does.
 | Situation | Result |
 | --- | --- |
 | No internet or GitHub unreachable | Background checks stay silent; a manual check reports the problem |
-| Metadata malformed or served over HTTP | "The update information could not be read" and no download |
+| Metadata malformed, on another host, or served over HTTP | "The update information could not be read" and no download |
+| Redirect to a non-HTTPS address | "The update server redirected to an address the app does not trust" |
 | Different signing key or application ID | Explained, no download; keep using the installed build |
 | Download interrupted, truncated, or altered | Partial file removed; **Download update** retries |
+| Retained package missing, altered, or not this app's newer build | Package discarded; **Download update** returns |
 | Installer permission declined | Notice to allow installs in Android Settings; retry later |
 | Installer cancelled | App continues; the verified package remains ready |
 | Phone without a package installer | Error message; the installed app keeps working |

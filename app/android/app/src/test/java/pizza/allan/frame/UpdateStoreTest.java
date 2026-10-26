@@ -72,9 +72,11 @@ public class UpdateStoreTest {
             assertEquals(UpdateStore.MISMATCH, assertThrows(IOException.class, () -> store.download(client, server.url("/frame.apk"), PACKAGE.length, "c".repeat(64), call -> {}, received -> {})).getMessage());
             server.enqueue(new MockResponse().setResponseCode(503));
             assertTrue(assertThrows(IOException.class, () -> store.download(client, server.url("/frame.apk"), PACKAGE.length, sha256, call -> {}, received -> {})).getMessage().contains("503"));
+            server.enqueue(new MockResponse().setResponseCode(302).setHeader("Location", "https://github.com/frame.apk"));
+            assertEquals(UpdateManifest.REDIRECTED, assertThrows(IOException.class, () -> store.download(client, server.url("/frame.apk"), PACKAGE.length, sha256, call -> {}, received -> {})).getMessage());
             // An oversized release is refused before any request is made.
             assertThrows(IOException.class, () -> store.download(client, server.url("/frame.apk"), UpdatePolicy.MAXIMUM_APK + 1, sha256, call -> {}, received -> {}));
-            assertEquals(4, server.getRequestCount());
+            assertEquals(5, server.getRequestCount());
             assertNull(store.downloaded());
             assertEquals(0, directory.list().length);
             assertThrows(IOException.class, () -> store.verified(sha256));

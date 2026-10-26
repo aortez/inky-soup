@@ -3,6 +3,7 @@ export const releaseManifestUrl = 'https://github.com/aortez/inky-soup/releases/
 // Automatic checks are rare so launches never wait on GitHub; Settings can always check now.
 export const updateCheckInterval = 6 * 60 * 60 * 1000;
 export const updateCheckKey = 'sparkle-update-check';
+const manifestHost = new URL(releaseManifestUrl).host;
 const maximumApk = 64 * 1024 * 1024;
 
 export function updateBlockReason(state, action = 'Reload', doing = 'reloading') {
@@ -18,10 +19,12 @@ export function updateBlockReason(state, action = 'Reload', doing = 'reloading')
 const digest = value => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
 const integer = (value, maximum) => Number.isSafeInteger(value) && value >= 1 && value <= maximum;
 const applicationId = value => typeof value === 'string' && /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/i.test(value);
-function httpsUrl(value) {
+function httpsUrl(value, host = '') {
   if (typeof value !== 'string' || value.length > 2048) return false;
-  try {const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password;}
-  catch {return false;}
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password && (!host || url.host.toLowerCase() === host.toLowerCase());
+  } catch {return false;}
 }
 
 // The installed description comes from the native plugin; a malformed bridge must not look like an update.
@@ -37,10 +40,11 @@ export function validateInstalled(value) {
   };
 }
 
-export function validateRelease(value) {
+// Packages must come from the manifest's own host, so a manipulated manifest cannot name another server.
+export function validateRelease(value, host = manifestHost) {
   const valid = value && typeof value === 'object' && applicationId(value.application_id)
     && typeof value.version_name === 'string' && /^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(value.version_name)
-    && integer(value.version_code, 2100000000) && integer(value.min_sdk, 1000) && httpsUrl(value.apk_url)
+    && integer(value.version_code, 2100000000) && integer(value.min_sdk, 1000) && httpsUrl(value.apk_url, host)
     && digest(value.apk_sha256) && integer(value.apk_size, maximumApk) && digest(value.signing_sha256)
     && (value.notes === undefined || value.notes === null || typeof value.notes === 'string')
     && (value.release_url === undefined || value.release_url === null || value.release_url === '' || httpsUrl(value.release_url));

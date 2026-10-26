@@ -329,9 +329,11 @@ installation, and the release checklist are documented in
 Settings shows the installed version under **This app**. The native `FrameUpdate`
 plugin reads the release metadata over HTTPS, offers a release only when it is
 newer, is signed with the installed app's certificate, and supports the phone's
-Android version, then streams the APK into private storage with size and SHA-256
-verification. Installation goes through Android's package installer after the
-user grants the app's **Install unknown apps** permission and confirms. It is
+Android version, then streams the APK from the manifest's host into private
+storage with size and SHA-256 verification. Before Android's package installer
+opens, the package is parsed and must be this app's own newer build signed with the
+installed key. Installation needs the app's **Install unknown apps** permission
+and the user's confirmation. It is
 deferred while photos are processing or importing and while a display refresh is
 tracked; the draft is saved first. Automatic checks run at launch and resume at
 most every six hours and never block local frame use. `tests/android-update.spec.js`

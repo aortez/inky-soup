@@ -27,16 +27,17 @@ function updateControls() {
   el['check-updates'].textContent = status === 'checking' ? 'Checking…' : 'Check for updates';
   el['download-update'].hidden = !['available', 'downloading'].includes(status);
   el['download-update'].textContent = status === 'downloading' ? 'Cancel download' : 'Download update';
+  el['download-update'].disabled = status === 'downloading' && !update.cancelReady;
   el['install-update'].hidden = !['downloaded', 'installing'].includes(status);
   el['install-update'].disabled = status === 'installing' || Boolean(installBlocked);
   el['update-progress'].hidden = status !== 'downloading';
   el['update-progress'].max = update?.total || update?.release?.apk_size || 1;
   el['update-progress'].value = update?.received || 0;
   el['update-status'].textContent = detail;
-  // The banner mirrors Settings so a ready update is visible from every view.
-  el['app-update'].hidden = !['available', 'downloaded'].includes(status);
-  el['reload-app'].textContent = status === 'downloaded' ? 'Install' : 'Download';
-  el['reload-app'].disabled = status === 'downloaded' && Boolean(installBlocked);
+  // The banner mirrors Settings so a pending update and its progress are visible from every view.
+  el['app-update'].hidden = !['available', 'downloading', 'downloaded', 'installing'].includes(status);
+  el['reload-app'].textContent = {downloading: 'Downloading…', downloaded: 'Install', installing: 'Installing…'}[status] || 'Download';
+  el['reload-app'].disabled = ['downloading', 'installing'].includes(status) || (status === 'downloaded' && Boolean(installBlocked));
   el['app-update-detail'].textContent = detail;
 }
 

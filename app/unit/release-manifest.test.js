@@ -1,6 +1,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
+import {fileURLToPath} from 'node:url';
+import {readFileSync} from 'node:fs';
 import {validateRelease} from '../frame/core/app-update.js';
 import {versionCode, releaseTag, signingDigest, minimumSdk, releaseManifest} from '../tools/release-manifest.mjs';
 
@@ -36,4 +39,15 @@ test('release metadata satisfies the app updater contract and ties the tag to th
   assert.equal(manifest.published_at, '2026-10-25T00:00:00.000Z');
   assert.throws(() => releaseManifest({...input, tag: 'app-v0.3.0'}), /does not match/);
   assert.throws(() => releaseManifest({...input, repository: 'bad repo'}), /repository/);
+});
+
+test('the command line tag check that gates the release workflow passes only the package version', () => {
+  const script = fileURLToPath(new URL('../tools/release-manifest.mjs', import.meta.url));
+  const {version} = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const matching = spawnSync(process.execPath, [script, '--check-tag', `app-v${version}`], {encoding: 'utf8'});
+  assert.equal(matching.status, 0, matching.stderr);
+  assert.match(matching.stdout, /matches app version/);
+  const other = spawnSync(process.execPath, [script, '--check-tag', 'app-v999.0.0'], {encoding: 'utf8'});
+  assert.notEqual(other.status, 0);
+  assert.match(other.stderr, /does not match/);
 });

@@ -35,7 +35,7 @@ test('release decisions compare application, signing key, Android version, and v
 });
 
 test('release manifests are validated and normalized', () => {
-  const release = {application_id: 'pizza.allan.frame', version_name: '0.2.0', version_code: 2000, min_sdk: 24, apk_url: 'https://example.test/frame.apk',
+  const release = {application_id: 'pizza.allan.frame', version_name: '0.2.0', version_code: 2000, min_sdk: 24, apk_url: 'https://github.com/aortez/inky-soup/releases/download/app-v0.2.0/frame.apk',
     apk_sha256: 'c'.repeat(64), apk_size: 8_000_000, signing_sha256: 'a'.repeat(64), notes: ` ${'n'.repeat(1200)} `, release_url: null, extra: true};
   const normalized = validateRelease(release);
   assert.equal(normalized.notes.length, 1000);
@@ -45,7 +45,11 @@ test('release manifests are validated and normalized', () => {
   // A remembered release is the normalized form, so validation must accept its own output.
   assert.deepEqual(validateRelease(normalized), normalized);
   assert.deepEqual(validateRelease(validateRelease({...release, release_url: 'https://example.test/notes'})).release_url, 'https://example.test/notes');
-  for (const patch of [{apk_url: 'http://example.test/frame.apk'}, {apk_url: 'https://example.test/' + 'x'.repeat(2048)}, {release_url: 'ftp://example.test'},
+  // Packages come from the manifest host unless a caller names another host explicitly.
+  assert.throws(() => validateRelease({...release, apk_url: 'https://objects.githubusercontent.com/frame.apk'}), /update information/);
+  assert.equal(validateRelease({...release, apk_url: 'https://example.test/frame.apk'}, 'example.test').apk_url, 'https://example.test/frame.apk');
+  assert.equal(validateRelease({...release, apk_url: 'https://GitHub.com/frame.apk'}).apk_url, 'https://GitHub.com/frame.apk');
+  for (const patch of [{apk_url: 'http://github.com/frame.apk'}, {apk_url: 'https://github.com/' + 'x'.repeat(2048)}, {release_url: 'ftp://example.test'},
     {min_sdk: 0}, {version_code: 2 ** 31}, {apk_sha256: 'c'.repeat(63)}, {signing_sha256: null}, null, 'text']) {
     assert.throws(() => validateRelease(patch && typeof patch === 'object' ? {...release, ...patch} : patch), /update information/, JSON.stringify(patch));
   }
@@ -71,7 +75,7 @@ test('status text covers every update stage and prefers the blocking reason whil
 test('automatic checks run at most once per interval and recover from clock changes or missing storage', () => {
   const entries = new Map();
   const storage = {getItem: key => entries.get(key) ?? null, setItem: (key, value) => entries.set(key, value)};
-  const release = {application_id: 'pizza.allan.frame', version_name: '0.2.0', version_code: 2000, min_sdk: 24, apk_url: 'https://example.test/frame.apk',
+  const release = {application_id: 'pizza.allan.frame', version_name: '0.2.0', version_code: 2000, min_sdk: 24, apk_url: 'https://github.com/aortez/inky-soup/releases/download/app-v0.2.0/frame.apk',
     apk_sha256: 'c'.repeat(64), apk_size: 8_000_000, signing_sha256: 'a'.repeat(64)};
   assert.equal(updateCheckDue(storage, 1000), true);
   assert.equal(rememberedRelease(storage), null);
@@ -93,7 +97,7 @@ test('automatic checks run at most once per interval and recover from clock chan
 
 test('a remembered release resolves against the installed app, including an earlier verified download', () => {
   const installed = {applicationId: 'pizza.allan.frame', versionName: '0.1.0', versionCode: 1000, sdk: 36, signingSha256: 'a'.repeat(64), canInstall: true, downloadedSha256: null};
-  const release = {application_id: 'pizza.allan.frame', version_name: '0.2.0', version_code: 2000, min_sdk: 24, apk_url: 'https://example.test/frame.apk',
+  const release = {application_id: 'pizza.allan.frame', version_name: '0.2.0', version_code: 2000, min_sdk: 24, apk_url: 'https://github.com/aortez/inky-soup/releases/download/app-v0.2.0/frame.apk',
     apk_sha256: 'c'.repeat(64), apk_size: 8_000_000, signing_sha256: 'a'.repeat(64)};
   assert.equal(resolveUpdate(installed, release).status, 'available');
   assert.equal(resolveUpdate({...installed, downloadedSha256: 'c'.repeat(64)}, release).status, 'downloaded');

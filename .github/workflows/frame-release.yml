@@ -25,6 +25,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '24'
@@ -47,6 +48,11 @@ jobs:
         run: |
           if [ "$EVENT_NAME" = push ]; then
             node tools/release-manifest.mjs --check-tag "$REF_NAME"
+            # Releases are cut from main so every published build has reviewed history.
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+              echo "::error::Tag $REF_NAME does not point at a commit on main."
+              exit 1
+            fi
             echo "name=$REF_NAME" >> "$GITHUB_OUTPUT"
           else
             echo "name=app-v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
@@ -95,10 +101,16 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           cd "$RUNNER_TEMP/release"
-          gh release create "$TAG" --repo "$REPOSITORY" --verify-tag --title "Frame app $TAG" --generate-notes \
-            frame.apk frame.apk.sha256 frame-release.json
+          # A re-run after a partial failure replaces the assets instead of failing on the existing release.
+          if gh release view "$TAG" --repo "$REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" --repo "$REPOSITORY" --clobber frame.apk frame.apk.sha256 frame-release.json
+          else
+            gh release create "$TAG" --repo "$REPOSITORY" --verify-tag --title "Frame app $TAG" --generate-notes \
+              frame.apk frame.apk.sha256 frame-release.json
+          fi
+          NOTES="Stable download links for the newest Frame app release, currently $TAG. frame.apk is the first-install link and the app reads frame-release.json to find updates. The versioned releases hold the notes and history."
           if ! gh release view frame-app --repo "$REPOSITORY" > /dev/null 2>&1; then
-            gh release create frame-app --repo "$REPOSITORY" --target "$GITHUB_SHA" --title "Frame app (current release)" \
-              --notes "Stable download links for the newest Frame app release. frame.apk is the first-install link; the app reads frame-release.json to find updates. The versioned releases hold the history."
+            gh release create frame-app --repo "$REPOSITORY" --target "$GITHUB_SHA" --latest=false --title "Frame app (current release)" --notes "$NOTES"
           fi
           gh release upload frame-app --repo "$REPOSITORY" --clobber frame.apk frame.apk.sha256 frame-release.json
+          gh release edit frame-app --repo "$REPOSITORY" --latest=false --notes "$NOTES"

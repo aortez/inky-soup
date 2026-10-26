@@ -487,16 +487,19 @@ el['discover-frames'].addEventListener('click', async () => {
   } catch (error) {el['connection-status'].textContent = error.message;}
   finally {state.connecting = false; controls();}
 });
+// The last answer still describes a pending or already downloaded release without the network.
+function rememberedUpdate() {
+  const remembered = rememberedRelease(localStorage);
+  const result = remembered && state.installed && resolveUpdate(state.installed, remembered);
+  return result && ['available', 'downloaded'].includes(result.status) ? result : null;
+}
+
 async function checkForUpdates({automatic = false} = {}) {
   if (!state.updates || !state.installed || ['checking', 'downloading', 'installing'].includes(state.update?.status)) return;
-  if (automatic && !updateCheckDue(localStorage)) {
-    // Inside the check interval, the last answer still tells the user about a pending release.
-    const remembered = rememberedRelease(localStorage);
-    const result = remembered && resolveUpdate(state.installed, remembered);
-    if (result && ['available', 'downloaded'].includes(result.status) && !state.update) {state.update = result; controls();}
-    return;
+  if (automatic && (!updateCheckDue(localStorage) || !navigator.onLine)) {
+    if (!state.update) state.update = rememberedUpdate();
+    controls(); return;
   }
-  if (automatic && !navigator.onLine) return;
   const previous = state.update;
   state.update = {status: 'checking'}; controls();
   try {
@@ -505,16 +508,20 @@ async function checkForUpdates({automatic = false} = {}) {
     state.installed = result.installed;
     state.update = automatic && result.status === 'current' ? null : result;
   } catch (error) {
-    // A quiet background check keeps the last known release; a manual check reports the problem.
-    state.update = automatic ? previous : {status: 'error', error: error.message};
+    // A failed check never hides a release that was already offered or downloaded; manual checks report the problem.
+    const remembered = rememberedUpdate();
+    if (automatic) state.update = previous || remembered;
+    else state.update = remembered ? {...remembered, error: error.message} : {status: 'error', error: error.message};
   } finally {controls();}
 }
 
 async function startDownload() {
   const update = state.update;
-  if (update?.status === 'downloading') {await cancelDownload(state.updates); return;}
+  if (update?.status === 'downloading') {if (update.cancelReady) await cancelDownload(state.updates); return;}
   if (update?.status !== 'available') return;
-  Object.assign(update, {status: 'downloading', received: 0, total: update.release.apk_size, error: ''}); controls();
+  Object.assign(update, {status: 'downloading', received: 0, total: update.release.apk_size, error: '', cancelReady: false}); controls();
+  // A second tap right after starting is more likely a double tap than a cancellation.
+  setTimeout(() => {if (state.update === update && update.status === 'downloading') {update.cancelReady = true; controls();}}, 600);
   try {
     await downloadUpdate(state.updates, update.release, (received, total) => {
       if (state.update !== update) return;
@@ -532,6 +539,7 @@ async function startInstall() {
   const update = state.update;
   if (update?.status !== 'downloaded' || updateBlockReason(state, 'Install', 'installing')) return;
   Object.assign(update, {status: 'installing', error: '', notice: ''}); controls();
+  let status = 'downloaded';
   try {
     // Android replaces the process, so unsaved work is written before the installer opens.
     if (state.draft) await saveDraft(state.draft);
@@ -539,8 +547,13 @@ async function startInstall() {
     update.notice = outcome === 'permission'
       ? 'Allow Sparkle Duck to install updates in Android Settings, then tap Install update again.'
       : 'Confirm the update in the Android installer. The app reopens as the new version.';
-  } catch (error) {update.error = error.message;}
-  finally {if (state.update === update) update.status = 'downloaded'; controls();}
+  } catch (error) {
+    update.error = error.message;
+    // A missing or rejected package goes back to a downloadable release instead of a stuck Install.
+    try {state.installed = await installedApp(state.updates);} catch { /* Keep the last known description. */ }
+    const resolved = resolveUpdate(state.installed, update.release);
+    status = resolved.status; update.reason = resolved.reason;
+  } finally {if (state.update === update) update.status = status; controls();}
 }
 
 el['reload-app'].addEventListener('click', () => {
@@ -665,6 +678,7 @@ window.addEventListener('appinstalled', () => {el.install.hidden = true;});
 
 async function start() {
   await sessionReady;
+  let installedReady = Promise.resolve();
   if (androidApp) {
     try {await restoreRegistry();}
     catch (error) {el['connection-status'].textContent = error.message;}
@@ -683,8 +697,9 @@ async function start() {
     state.discovery = registerPlugin('FrameDiscovery');
     state.updates = registerPlugin('FrameUpdate');
     el['app-card'].hidden = false;
-    try {state.installed = await installedApp(state.updates);}
-    catch { /* A shell without the native plugin shows no version and offers no updates. */ }
+    // Describing the installed app parses any retained package, so it must not delay the frame connection.
+    // A shell without the native plugin shows no version and offers no updates.
+    installedReady = installedApp(state.updates).then(installed => {state.installed = installed;}, () => {});
     renderFrames();
     const setup = await setupDialog({bridge: registerPlugin('FrameBle'), connected: async () => {
       await acquireEditLock();
@@ -732,7 +747,7 @@ async function start() {
   if (androidApp) state.reconnectTimer = setTimeout(checkConnection, 15000);
   if (import.meta.env.PROD && !androidApp) watchAppUpdates(controls).catch(() => {});
   if (!handoff && remembered?.base && (androidApp || navigator.onLine)) connectFrame();
-  if (androidApp) void checkForUpdates({automatic: true});
+  if (androidApp) void installedReady.then(() => {controls(); return checkForUpdates({automatic: true});});
 }
 window.addEventListener('offline', () => {
   state.connected = false;
@@ -744,7 +759,7 @@ window.addEventListener('offline', () => {
   controls();
 });
 window.addEventListener('online', () => {
-  if (androidApp) {void reconnect(); return;}
+  if (androidApp) {void reconnect(); void checkForUpdates({automatic: true}); return;}
   if (!el['setup-dialog'].open && !state.connected && !state.busy && !state.job && state.frame?.base === el.address.value) connectFrame();
 });
 start();

@@ -61,6 +61,7 @@ final class UpdateStore {
         call.timeout().timeout(10, TimeUnit.MINUTES);
         started.accept(call);
         try (Response response = call.execute()) {
+            if (response.isRedirect()) throw new IOException(UpdateManifest.REDIRECTED);
             if (!response.isSuccessful()) throw new IOException("The update server answered with status " + response.code() + ". Try again later.");
             MessageDigest digest = sha256();
             long received = 0, reported = 0;

@@ -11,7 +11,7 @@ async function bridge(page, scenario = {}) {
       localStorage.setItem('initialized', '1');
       if (scenario.frame) localStorage.setItem('sparkle-frames-v1', JSON.stringify({version:1, selected:frame.id, frames:[frame]}));
       if (scenario.job) localStorage.setItem('sparkle-job', JSON.stringify({id:7, deviceId:frame.id, instanceId:frame.instance_id, base:frame.base, filename:'photo.jpg', createdAt:123}));
-      if (scenario.lastCheck) localStorage.setItem('sparkle-update-check', JSON.stringify(scenario.lastCheck));
+      if (scenario.lastCheckAge) localStorage.setItem('sparkle-update-check', JSON.stringify({at: Date.now() - scenario.lastCheckAge, release}));
     }
     window.updateCalls = []; window.apiCalls = []; window.scenario = scenario;
     const listeners = {}, files = new Map(); let counter = 0;
@@ -35,7 +35,10 @@ async function bridge(page, scenario = {}) {
           if (window.scenario.holdDownload) await new Promise((resolve, reject) => {window.finishDownload = resolve; window.rejectDownload = reject;});
           return {};
         }
-        if (method === 'install') return {status: window.scenario.permission ? 'permission' : 'launched'};
+        if (method === 'install') {
+          if (window.scenario.installFails) {installed.downloadedSha256 = null; throw Error('Download the update again before installing it.');}
+          return {status: window.scenario.permission ? 'permission' : 'launched'};
+        }
         if (method === 'cancel') {window.rejectDownload?.(Error('Download cancelled.')); return {};}
         return {};
       }
@@ -104,6 +107,11 @@ test('a failed or cancelled download keeps the release available and can be retr
   await expect(page.locator('#update-progress')).toBeVisible();
   await expect(page.locator('#update-status')).toHaveText('Downloading version 0.2.0… 4.1 MB of 8.2 MB.');
   await expect(page.locator('#check-updates')).toBeDisabled();
+  await expect(page.locator('#app-update')).toBeVisible();
+  await expect(page.locator('#reload-app')).toHaveText('Downloading…');
+  await expect(page.locator('#reload-app')).toBeDisabled();
+  // Cancel arms shortly after the download starts so a double tap does not abort it.
+  await expect(page.locator('#download-update')).toBeEnabled();
   await page.locator('#download-update').click();
   await expect(page.locator('#update-status')).toContainText('Download cancelled.');
   await expect(page.locator('#download-update')).toHaveText('Download update');
@@ -145,6 +153,29 @@ test('current, incompatible, and unreachable releases are explained without down
   await page.locator('#check-updates').click();
   await expect(page.locator('#update-status')).toHaveText('Cannot reach the update server. Check your internet connection.');
   expect(await page.evaluate(() => window.updateCalls.filter(call => call.method === 'download').length)).toBe(0);
+});
+
+for (const age of [1000, 7 * 3600 * 1000]) test(`a verified download stays installable without the update server; checkAge=${age}`, async ({page}) => {
+  await bridge(page, {installed:{downloadedSha256:digest}, offline:true, lastCheckAge:age}); await page.goto('/');
+  await expect(page.locator('#reload-app')).toHaveText('Install');
+  await page.locator('#settings-tab').click();
+  await expect(page.locator('#install-update')).toBeVisible();
+  expect(await page.evaluate(() => window.updateCalls.map(call => call.method))).toEqual(age > 3600 * 1000 ? ['installed', 'installed', 'check'] : ['installed']);
+  // A manual check that fails reports the problem but keeps the package installable.
+  await page.locator('#check-updates').click();
+  await expect(page.locator('#update-status')).toContainText('Cannot reach the update server');
+  await expect(page.locator('#install-update')).toBeVisible();
+  await expect(page.locator('#reload-app')).toHaveText('Install');
+});
+
+test('an install rejected for a missing or altered package offers the download again', async ({page}) => {
+  await bridge(page, {installed:{downloadedSha256:digest}, installFails:true}); await page.goto('/');
+  await page.locator('#settings-tab').click();
+  await page.locator('#install-update').click();
+  await expect(page.locator('#update-status')).toHaveText('Download the update again before installing it. Version 0.2.0 is available (8.2 MB). Faster gallery.');
+  await expect(page.locator('#download-update')).toBeVisible();
+  await expect(page.locator('#install-update')).toBeHidden();
+  await expect(page.locator('#reload-app')).toHaveText('Download');
 });
 
 test('a shell without the update plugin shows no version and makes no release requests', async ({page}) => {

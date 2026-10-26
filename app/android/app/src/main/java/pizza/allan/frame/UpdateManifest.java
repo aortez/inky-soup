@@ -16,18 +16,22 @@ import org.json.JSONObject;
 /** The release description published beside each signed APK; every field is validated before use. */
 final class UpdateManifest {
     static final String UNREADABLE = "The update information could not be read. Try again later.";
+    static final String REDIRECTED = "The update server redirected to an address the app does not trust.";
     final String applicationId, versionName, apkUrl, apkSha256, signingSha256, notes, releaseUrl;
     final long versionCode, apkSize;
     final int minSdk;
 
-    private UpdateManifest(JSONObject json) throws JSONException {
+    private UpdateManifest(JSONObject json, String host) throws JSONException {
         applicationId = json.getString("application_id");
         if (!applicationId.matches("(?i)[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+")) throw new JSONException("application_id");
         versionName = json.getString("version_name");
         if (!versionName.matches("\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}")) throw new JSONException("version_name");
         versionCode = bounded(json, "version_code", 2100000000L);
         minSdk = (int)bounded(json, "min_sdk", 1000);
-        apkUrl = UpdatePolicy.url(json.getString("apk_url")).toString();
+        HttpUrl apk = UpdatePolicy.url(json.getString("apk_url"));
+        // Packages come from the same host as the manifest, so a manipulated manifest cannot name another server.
+        if (!apk.host().equalsIgnoreCase(host)) throw new JSONException("apk_url");
+        apkUrl = apk.toString();
         apkSha256 = UpdatePolicy.digest(json.getString("apk_sha256"));
         apkSize = bounded(json, "apk_size", UpdatePolicy.MAXIMUM_APK);
         signingSha256 = UpdatePolicy.digest(json.getString("signing_sha256"));
@@ -53,8 +57,8 @@ final class UpdateManifest {
         return number;
     }
 
-    static UpdateManifest parse(String text) throws IOException {
-        try { return new UpdateManifest(new JSONObject(text)); }
+    static UpdateManifest parse(String text, String host) throws IOException {
+        try { return new UpdateManifest(new JSONObject(text), host); }
         catch (JSONException | IllegalArgumentException error) { throw new IOException(UNREADABLE, error); }
     }
 
@@ -62,8 +66,9 @@ final class UpdateManifest {
         Call call = client.newCall(new Request.Builder().url(url).header("Accept", "application/json").build());
         call.timeout().timeout(20, TimeUnit.SECONDS);
         try (Response response = call.execute()) {
+            if (response.isRedirect()) throw new IOException(REDIRECTED);
             if (!response.isSuccessful()) throw new IOException("The update server answered with status " + response.code() + ". Try again later.");
-            return parse(new String(read(response.body().byteStream(), UpdatePolicy.MAXIMUM_MANIFEST), StandardCharsets.UTF_8));
+            return parse(new String(read(response.body().byteStream(), UpdatePolicy.MAXIMUM_MANIFEST), StandardCharsets.UTF_8), url.host());
         }
     }
 
