@@ -1,0 +1,312 @@
+{
+  "events": [
+    {
+      "at": 1792984977.6921365,
+      "event": "initial",
+      "rescue": {
+        "card_active": false,
+        "connected": true,
+        "enabled": true,
+        "error": null,
+        "grace_seconds": 300,
+        "manual_card": false,
+        "offline_seconds": null,
+        "outage_handled": false,
+        "probe_error": null,
+        "recovery_seconds": 30,
+        "restore_available": true
+      }
+    },
+    {
+      "at": 1792984979.9604974,
+      "event": "disconnected"
+    },
+    {
+      "at": 1792984981.7041447,
+      "event": "offline_bluetooth_startup",
+      "status": {
+        "ok": true,
+        "remaining": 300,
+        "state": "advertising",
+        "wifi_connected": false
+      }
+    },
+    {
+      "at": 1792985273.0961423,
+      "event": "offline_sample",
+      "elapsed": 293.1,
+      "rescue": {
+        "card_active": false,
+        "connected": false,
+        "enabled": true,
+        "error": null,
+        "grace_seconds": 300,
+        "manual_card": false,
+        "offline_seconds": 286,
+        "outage_handled": false,
+        "probe_error": null,
+        "recovery_seconds": 30,
+        "restore_available": true
+      },
+      "flash": {
+        "current_job": null,
+        "queue": [],
+        "queue_length": 0
+      }
+    },
+    {
+      "at": 1792985283.137507,
+      "event": "offline_sample",
+      "elapsed": 303.2,
+      "rescue": {
+        "card_active": false,
+        "connected": false,
+        "enabled": true,
+        "error": null,
+        "grace_seconds": 300,
+        "manual_card": false,
+        "offline_seconds": 297,
+        "outage_handled": false,
+        "probe_error": null,
+        "recovery_seconds": 30,
+        "restore_available": true
+      },
+      "flash": {
+        "current_job": null,
+        "queue": [],
+        "queue_length": 0
+      }
+    },
+    {
+      "at": 1792985293.1840255,
+      "event": "offline_sample",
+      "elapsed": 313.2,
+      "rescue": {
+        "card_active": false,
+        "connected": false,
+        "enabled": true,
+        "error": null,
+        "grace_seconds": 300,
+        "manual_card": false,
+        "offline_seconds": 307,
+        "outage_handled": false,
+        "probe_error": null,
+        "recovery_seconds": 30,
+        "restore_available": true
+      },
+      "flash": {
+        "current_job": null,
+        "queue": [],
+        "queue_length": 0
+      }
+    },
+    {
+      "at": 1792985303.2511292,
+      "event": "offline_sample",
+      "elapsed": 323.3,
+      "rescue": {
+        "card_active": true,
+        "connected": false,
+        "enabled": true,
+        "error": null,
+        "grace_seconds": 300,
+        "manual_card": false,
+        "offline_seconds": 317,
+        "outage_handled": true,
+        "probe_error": null,
+        "recovery_seconds": 30,
+        "restore_available": true
+      },
+      "flash": {
+        "current_job": {
+          "source": "rescue",
+          "job_id": 4,
+          "filename": "offline-rescue.png",
+          "dithered_path": "/data/inky-soup/flash-jobs/1792985294509730896-3.png",
+          "flash_twice": false,
+          "rotation_degrees": 180,
+          "status": "Flashing",
+          "created_at": 1792985294510,
+          "started_at": 1792985294764,
+          "finished_at": null,
+          "error_message": null
+        },
+        "queue": [],
+        "queue_length": 0
+      }
+    },
+    {
+      "at": 1792985313.2957966,
+      "event": "offline_sample",
+      "elapsed": 333.3,
+      "rescue": {
+        "card_active": true,
+        "connected": false,
+        "enabled": true,
+        "error": null,
+        "grace_seconds": 300,
+        "manual_card": false,
+        "offline_seconds": 327,
+        "outage_handled": true,
+        "probe_error": null,
+        "recovery_seconds": 30,
+        "restore_available": true
+      },
+      "flash": {
+        "current_job": {
+          "source": "rescue",
+          "job_id": 4,
+          "filename": "offline-rescue.png",
+          "dithered_path": "/data/inky-soup/flash-jobs/1792985294509730896-3.png",
+          "flash_twice": false,
+          "rotation_degrees": 180,
+          "status": "Flashing",
+          "created_at": 1792985294510,
+          "started_at": 1792985294764,
+          "finished_at": null,
+          "error_message": null
+        },
+        "queue": [],
+        "queue_length": 0
+      }
+    },
+    {
+      "at": 1792985323.3367743,
+      "event": "offline_sample",
+      "elapsed": 343.4,
+      "rescue": {
+        "card_active": true,
+        "connected": false,
+        "enabled": true,
+        "error": null,
+        "grace_seconds": 300,
+        "manual_card": false,
+        "offline_seconds": 337,
+        "outage_handled": true,
+        "probe_error": null,
+        "recovery_seconds": 30,
+        "restore_available": true
+      },
+      "flash": {
+        "current_job": {
+          "source": "rescue",
+          "job_id": 4,
+          "filename": "offline-rescue.png",
+          "dithered_path": "/data/inky-soup/flash-jobs/1792985294509730896-3.png",
+          "flash_twice": false,
+          "rotation_degrees": 180,
+          "status": "Flashing",
+          "created_at": 1792985294510,
+          "started_at": 1792985294764,
+          "finished_at": null,
+          "error_message": null
+        },
+        "queue": [],
+        "queue_length": 0
+      }
+    },
+    {
+      "at": 1792985333.376562,
+      "event": "offline_sample",
+      "elapsed": 353.4,
+      "rescue": {
+        "card_active": true,
+        "connected": false,
+        "enabled": true,
+        "error": null,
+        "grace_seconds": 300,
+        "manual_card": false,
+        "offline_seconds": 347,
+        "outage_handled": true,
+        "probe_error": null,
+        "recovery_seconds": 30,
+        "restore_available": true
+      },
+      "flash": {
+        "current_job": {
+          "source": "rescue",
+          "job_id": 4,
+          "filename": "offline-rescue.png",
+          "dithered_path": "/data/inky-soup/flash-jobs/1792985294509730896-3.png",
+          "flash_twice": false,
+          "rotation_degrees": 180,
+          "status": "Flashing",
+          "created_at": 1792985294510,
+          "started_at": 1792985294764,
+          "finished_at": null,
+          "error_message": null
+        },
+        "queue": [],
+        "queue_length": 0
+      }
+    },
+    {
+      "at": 1792985343.423347,
+      "event": "offline_sample",
+      "elapsed": 363.5,
+      "rescue": {
+        "card_active": true,
+        "connected": false,
+        "enabled": true,
+        "error": null,
+        "grace_seconds": 300,
+        "manual_card": false,
+        "offline_seconds": 357,
+        "outage_handled": true,
+        "probe_error": null,
+        "recovery_seconds": 30,
+        "restore_available": true
+      },
+      "flash": {
+        "current_job": null,
+        "queue": [],
+        "queue_length": 0
+      }
+    },
+    {
+      "at": 1792985407.082322,
+      "event": "network_restored",
+      "errors": []
+    },
+    {
+      "at": 1792985407.379169,
+      "event": "failed",
+      "error": "Automatic rescue card did not complete"
+    }
+  ],
+  "server_journal": [
+    "Oct 26 03:28:14 inky-soup inky-soup-server[4435]: Processing flash job 4: offline-rescue.png (flash_twice: false, mount_rotation: 180, flash_rotation: 180)",
+    "Oct 26 03:28:57 inky-soup inky-soup-server[4435]: Flash job 4 completed successfully",
+    "Oct 26 03:30:38 inky-soup inky-soup-server[4435]: Processing flash job 5: rescue-restore.png (flash_twice: false, mount_rotation: 180, flash_rotation: 180)",
+    "Oct 26 03:31:21 inky-soup inky-soup-server[4435]: Flash job 5 completed successfully"
+  ],
+  "automatic_restore_job": {
+    "created_at": 1792985438821,
+    "dithered_path": "/data/inky-soup/flash-jobs/1792985438805072465-4.png",
+    "error_message": null,
+    "filename": "rescue-restore.png",
+    "finished_at": 1792985481652,
+    "flash_twice": false,
+    "job_id": 5,
+    "rotation_degrees": 180,
+    "source": "restore",
+    "started_at": 1792985438884,
+    "status": "Completed"
+  },
+  "final_rescue_status": {
+    "card_active": false,
+    "connected": true,
+    "enabled": true,
+    "error": null,
+    "grace_seconds": 300,
+    "manual_card": false,
+    "offline_seconds": null,
+    "outage_handled": false,
+    "probe_error": null,
+    "recovery_seconds": 30,
+    "restore_available": true
+  },
+  "gallery_count": 15,
+  "owner_visual_check": "Text, orientation, and QR setup link confirmed",
+  "harness_note": "The temporary script waited for completion in current_job, which clears on completion; it timed out and restored networking. Server journal confirms successful automatic card job 4, and the CLI observed automatic restore job 5 complete. The script has been corrected to poll job IDs; the full outage was not repeated."
+}

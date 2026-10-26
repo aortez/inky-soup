@@ -1,0 +1,310 @@
+{
+  "validated_at_utc": "2026-10-26T04:28:17.057776+00:00",
+  "phone": {
+    "model": "Pixel 9 Pro XL",
+    "android": 17,
+    "apk_sha256": "778fcec306d7c04a9f41c27462b6ec922d4c7158a0a4c1ec987e4f3dcbade4af"
+  },
+  "server_revision": "ac70c96f416c9487c9e8e82938cb32e3cd839af7",
+  "small_deployment": {
+    "display": {
+      "color": "multi",
+      "height": 448,
+      "model": "impression-5.7",
+      "orientation_test_supported": true,
+      "photo_rotation_supported": true,
+      "physical_height": 448,
+      "physical_width": 600,
+      "rotation_degrees": 0,
+      "rotation_revision": 0,
+      "thumb_height": 112,
+      "thumb_width": 150,
+      "width": 600
+    },
+    "ok": true,
+    "provisioner": {
+      "revision": "2751dc863af2d2019976ee9087a0589d15811973",
+      "status": {
+        "ok": true,
+        "state": "idle",
+        "wifi_connected": true
+      }
+    },
+    "revision": "ac70c96f416c9487c9e8e82938cb32e3cd839af7",
+    "software_backup": "/var/lib/inky-soup/deployments/a0b551809c89458eb2b3a583da388d8c"
+  },
+  "large_deployment": {
+    "display": {
+      "color": "multi",
+      "height": 1200,
+      "model": "impression-13.3-2025",
+      "orientation_test_supported": true,
+      "photo_rotation_supported": true,
+      "physical_height": 1200,
+      "physical_width": 1600,
+      "rotation_degrees": 180,
+      "rotation_revision": 3,
+      "thumb_height": 112,
+      "thumb_width": 150,
+      "width": 1600
+    },
+    "ok": true,
+    "revision": "ac70c96f416c9487c9e8e82938cb32e3cd839af7",
+    "software_backup": "/var/lib/inky-soup/deployments/c2567680dfe84cd2a9719fd42e1a4a88"
+  },
+  "final_small_refresh": {
+    "created_at": 1792988682894,
+    "dithered_path": "/data/inky-soup/flash-jobs/1792988682892608074-1.png",
+    "error_message": null,
+    "filename": "8a7c252b-95f3-422d-89f3-0560b3872180.jpg",
+    "finished_at": 1792988719671,
+    "flash_twice": false,
+    "job_id": 2,
+    "rotation_degrees": 0,
+    "source": "manual",
+    "started_at": 1792988683175,
+    "status": "Completed"
+  },
+  "outage_events": [
+    {
+      "at": 1792987509.6264307,
+      "event": "prepared",
+      "rescue": {
+        "card_active": false,
+        "connected": true,
+        "enabled": true,
+        "error": null,
+        "grace_seconds": 300,
+        "manual_card": false,
+        "offline_seconds": null,
+        "outage_handled": false,
+        "probe_error": null,
+        "recovery_seconds": 30,
+        "restore_available": true
+      },
+      "snapshots": {
+        "image-1792987420350-1.png": "241d649e06086f1526454278752421e5b038a070b273a4c61ee39dfb496f03ea"
+      },
+      "identity": {
+        "id": "72d38d6af1b56f99ae0fb4407f44f621",
+        "instance_id": "662a6a4a63e4348f03e8282f8f706638",
+        "name": "inky-soup-small",
+        "api_version": 1,
+        "capabilities": [
+          "device-identity-v1",
+          "display-config",
+          "improv-ble"
+        ]
+      }
+    },
+    {
+      "at": 1792987794.8920527,
+      "event": "disconnected"
+    },
+    {
+      "at": 1792988080.615293,
+      "event": "offline",
+      "elapsed": 285.7,
+      "rescue": {
+        "card_active": false,
+        "connected": false,
+        "enabled": true,
+        "error": null,
+        "grace_seconds": 300,
+        "manual_card": false,
+        "offline_seconds": 285,
+        "outage_handled": false,
+        "probe_error": null,
+        "recovery_seconds": 30,
+        "restore_available": true
+      },
+      "flash": {
+        "current_job": null,
+        "queue": [],
+        "queue_length": 0
+      }
+    },
+    {
+      "at": 1792988135.7876606,
+      "event": "card_completed",
+      "job": {
+        "source": "rescue",
+        "job_id": 2,
+        "filename": "offline-rescue.png",
+        "dithered_path": "/data/inky-soup/flash-jobs/1792988097425886907-1.png",
+        "flash_twice": false,
+        "rotation_degrees": 0,
+        "status": "Completed",
+        "created_at": 1792988097426,
+        "started_at": 1792988097494,
+        "finished_at": 1792988133918,
+        "error_message": null
+      },
+      "rescue": {
+        "card_active": true,
+        "connected": false,
+        "enabled": true,
+        "error": null,
+        "grace_seconds": 300,
+        "manual_card": false,
+        "offline_seconds": 340,
+        "outage_handled": true,
+        "probe_error": null,
+        "recovery_seconds": 30,
+        "restore_available": true
+      }
+    },
+    {
+      "at": 1792988155.7899384,
+      "event": "rebooting_offline"
+    }
+  ],
+  "bluetooth_recovery": {
+    "detail": "Connected \u00b7 600 \u00d7 448",
+    "status": "Connected directly over your local WiFi.",
+    "address": "http://inky-soup-small.local:8000",
+    "registry": {
+      "version": 1,
+      "selected": "72d38d6af1b56f99ae0fb4407f44f621",
+      "frames": [
+        {
+          "id": "aa3cdd6af7762024fb2812013228463c",
+          "instance_id": "45befd211f1ec435cb220bcad96af9f3",
+          "name": "inky-soup",
+          "api_version": 1,
+          "capabilities": [
+            "device-identity-v1",
+            "display-config",
+            "improv-ble"
+          ],
+          "base": "http://192.168.1.109:8000",
+          "config": {
+            "width": 1600,
+            "height": 1200,
+            "thumb_width": 150,
+            "thumb_height": 112,
+            "model": "impression-13.3-2025",
+            "color": "multi",
+            "physical_width": 1600,
+            "physical_height": 1200,
+            "rotation_degrees": 180,
+            "rotation_revision": 3,
+            "photo_rotation_supported": true,
+            "orientation_test_supported": true,
+            "orientation_supported": true
+          }
+        },
+        {
+          "id": "72d38d6af1b56f99ae0fb4407f44f621",
+          "instance_id": "4e5977c8861080db961bc09df3ef68e1",
+          "name": "inky-soup-small",
+          "api_version": 1,
+          "capabilities": [
+            "device-identity-v1",
+            "display-config",
+            "improv-ble"
+          ],
+          "base": "http://inky-soup-small.local:8000",
+          "config": {
+            "width": 600,
+            "height": 448,
+            "thumb_width": 150,
+            "thumb_height": 112,
+            "model": "impression-5.7",
+            "color": "multi",
+            "physical_width": 600,
+            "physical_height": 448,
+            "rotation_degrees": 0,
+            "rotation_revision": 0,
+            "photo_rotation_supported": true,
+            "orientation_test_supported": true,
+            "orientation_supported": true
+          }
+        }
+      ]
+    },
+    "job": null,
+    "lock": "",
+    "activity": "",
+    "activityDetail": "",
+    "preview": "Ready. The screen\u2019s ink colors may look softer than this preview.",
+    "disabled": [
+      "send",
+      "fit"
+    ],
+    "setup": "Your frame is connected and ready for photos."
+  },
+  "automatic_restoration": {
+    "rescue": {
+      "card_active": false,
+      "connected": true,
+      "enabled": true,
+      "error": null,
+      "grace_seconds": 300,
+      "manual_card": false,
+      "offline_seconds": null,
+      "outage_handled": false,
+      "probe_error": null,
+      "recovery_seconds": 30,
+      "restore_available": true
+    },
+    "job": {
+      "source": "restore",
+      "job_id": 1,
+      "filename": "rescue-restore.png",
+      "dithered_path": "/data/inky-soup/flash-jobs/1792988350559506076-0.png",
+      "flash_twice": false,
+      "rotation_degrees": 0,
+      "status": "Completed",
+      "created_at": 1792988350571,
+      "started_at": 1792988350972,
+      "finished_at": 1792988389011,
+      "error_message": null
+    }
+  },
+  "final_rescue": {
+    "card_active": false,
+    "connected": true,
+    "enabled": true,
+    "error": null,
+    "grace_seconds": 300,
+    "manual_card": false,
+    "offline_seconds": null,
+    "outage_handled": false,
+    "probe_error": null,
+    "recovery_seconds": 30,
+    "restore_available": true
+  },
+  "gallery_counts": {
+    "small": 3,
+    "large": 15,
+    "unchanged_filenames": true
+  },
+  "snapshot_matches_prepared_photo_sha256": "241d649e06086f1526454278752421e5b038a070b273a4c61ee39dfb496f03ea",
+  "owner_confirmation": {
+    "small_color_test": "Yes, it looks correct",
+    "small_recovery_card": "Yes, both are readable and upright"
+  },
+  "checks": [
+    "Manual address selected the large frame without forgetting the small frame",
+    "Native NSD found both frames",
+    "Picker selected the small frame and retained it across immediate force-stop/relaunch",
+    "Forget and re-add left all 15 large-frame photos intact",
+    "APK update retained frame registry and draft",
+    "Final small refresh survived app restart and restored its edit lease; no duplicate submission",
+    "Offline grace, automatic rescue card, offline reboot, native BLE WiFi handoff and automatic photo restoration passed"
+  ],
+  "cleanup": {
+    "original_wifi_and_usb_profiles_restored": true,
+    "usb_recovery_timer_active": true,
+    "failsafe_timer_disabled_and_removed": true,
+    "phone_bluetooth": false,
+    "phone_keep_awake": 0,
+    "temporary_credentials_deleted": true
+  },
+  "notes": [
+    "First GCC-linked ARM build failed on the original Zero W; installer rolled back. Rust 1.85.0 with the proven Zig ARMv6 linker passed.",
+    "One BLE attempt overlapped the harness reboot and disconnected. Rescan/retry through the app succeeded after boot.",
+    "Software reboot exercised the startup setup window; physical power removal was not performed."
+  ]
+}

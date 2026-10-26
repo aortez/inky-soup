@@ -71,7 +71,7 @@ enum Command {
         #[arg(long, default_value = "inky")]
         ssh_user: String,
     },
-    /// Install a staged server, display script, and UI bundle over SSH.
+    /// Install a staged server/UI bundle, optionally with its Bluetooth provisioner.
     Deploy {
         /// Absolute directory already copied to the Pi; see cli/README.md.
         #[arg(long)]

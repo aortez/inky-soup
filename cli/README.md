@@ -94,6 +94,8 @@ release/
   static/js/         # upload-server/static/js
   static/chota.min.css
   static/favicon.ico
+  provisioner        # optional target-native wifi-provisioner executable
+  provisioner-revision.txt # required with provisioner: shared source commit
 ```
 
 ```bash
@@ -102,6 +104,24 @@ scp -r /tmp/inky-release inky@10.55.0.1:/tmp/
 ./inky-cli status --json
 ./inky-cli browser-check --json
 ```
+
+Include `provisioner` when a release also changes Bluetooth/Wi-Fi setup. Build it
+from the pinned `yocto/pi-base/wifi-provisioner` source for the target CPU and
+installed libdbus ABI; write that source commit to `provisioner-revision.txt`.
+Its existing systemd unit and configuration stay in place. The CLI checks the
+staged executable on the Pi, requires the normal provisioner service and a closed
+setup window, and rechecks the window immediately before stopping services.
+Wait for any phone's setup session to finish before deploying.
+
+The optional daemon is backed up and installed in the same transaction. Its
+control endpoint must return valid status before the server starts and again
+after the server health check. The systemd invocation must remain unchanged;
+a daemon restart during validation is a failure even if its endpoint recovers.
+The JSON result includes its source revision and the final status.
+Omitting the optional files preserves server-only deployment
+behavior. This does not install changed systemd units or new library dependencies;
+those require a matching system image. For larger bundles, stage under `/data`
+rather than the Pi's small RAM-backed `/tmp`.
 
 The CLI uses SSH and noninteractive sudo. A device-wide kernel lock covers
 validation, staging, installation, health checks, cleanup, and rollback; another
@@ -116,6 +136,16 @@ verifies the orientation API, status endpoint, and gallery. It refuses an active
 preview. Once the server restarts, newly accepted display jobs do not count as a
 health-check failure. Failed copies remove partial staged files and directories.
 Failed installation or health checks restore the previous software.
+Recovery attempts each service independently, so a provisioner stop, file-restore,
+or restart failure does not prevent server recovery. Incomplete recovery reports
+the original failure, recovery errors, and the software backup path; files that
+could not be restored remain available for manual recovery. A service whose
+files could not all be restored is left stopped. If the server passed its health
+check and accepted a display job before the final provisioner check failed,
+recovery leaves that server running and restores only the provisioner. The same
+precaution applies if the healthy server's queue cannot be checked. This returns
+an error, not deployment success; retry after the queue is idle and the reported
+failure is addressed.
 The JSON result records the deployed revision and a software-only backup
 under `/var/lib/inky-soup/deployments/`. Photo storage and orientation settings are
 not copied or changed. No display refresh is submitted. A power loss during
