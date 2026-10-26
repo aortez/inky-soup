@@ -153,7 +153,12 @@ impl Slideshow {
         if job.source == FlashSource::Automatic {
             settings.last_rotated_filename = Some(job.filename.clone());
         }
-        if let Err(error) = self.commit(settings) {
+        if let Err(error) = self.commit(settings.clone()) {
+            // The panel has already changed: unlike a rejected settings write,
+            // this completion cannot be rolled back. Keep it for the next save
+            // or configuration retry; storage_error blocks automatic work until
+            // that retry persists the completion together with any new settings.
+            self.settings = settings;
             log::error!("Display succeeded but slideshow completion could not be saved: {error}");
         }
         self.retry_not_before = 0;
@@ -493,6 +498,81 @@ mod tests {
         fs::write(&state.path, b"broken settings").unwrap();
         assert!(Slideshow::load(state.path.clone(), 1200).is_err());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn successful_flash_completion_survives_failed_retries_and_settings_recovery() {
+        for source in [FlashSource::Automatic, FlashSource::Manual] {
+            let (root, mut state) = fixture(&format!("completion-{source:?}"));
+            state
+                .configure(&Configure {
+                    rotation_enabled: Some(true),
+                    rotation_interval_hours: Some(1),
+                })
+                .unwrap();
+            let mut queue = FlashQueue::new();
+            queue.enqueue_with_source(
+                "previous.png".into(),
+                "unused".into(),
+                false,
+                0,
+                FlashSource::Automatic,
+            );
+            state.flash_finished(&queue.get_queued_jobs()[0], true, 200);
+            queue.enqueue_with_source("new.png".into(), "unused".into(), false, 0, source);
+            let blocker = state.path.with_extension("json.tmp");
+            fs::create_dir(&blocker).unwrap();
+
+            state.flash_finished(&queue.get_queued_jobs()[1], true, 900);
+            let completion = state.settings.clone();
+            assert_eq!(completion.rotation_anchor_at, 900);
+            assert_eq!(completion.last_flash_source, Some(source));
+            assert_eq!(
+                completion.last_rotated_filename.as_deref(),
+                Some(if source == FlashSource::Automatic {
+                    "new.png"
+                } else {
+                    "previous.png"
+                })
+            );
+            assert_eq!(
+                state.paused_reason(1000, false, true, 2, 2),
+                Some("storage_error")
+            );
+            // A failed content/settings write must not lose the physical completion
+            // or claim that the rejected write changed the interval or timer.
+            assert!(state.content_completed(1000).is_err());
+            assert!(state
+                .configure(&Configure {
+                    rotation_enabled: Some(false),
+                    rotation_interval_hours: Some(2),
+                })
+                .is_err());
+            assert_eq!(state.settings, completion);
+            let persisted: Settings =
+                serde_json::from_slice(&fs::read(&state.path).unwrap()).unwrap();
+            assert_eq!(persisted.rotation_anchor_at, 200);
+
+            fs::remove_dir(blocker).unwrap();
+            state
+                .configure(&Configure {
+                    rotation_enabled: None,
+                    rotation_interval_hours: Some(2),
+                })
+                .unwrap();
+            assert_eq!(state.settings.rotation_anchor_at, 900);
+            assert_eq!(
+                state.settings.last_rotated_filename,
+                completion.last_rotated_filename
+            );
+            assert_eq!(state.next_due_at(), 900 + 2 * HOUR_MS);
+            assert_eq!(state.paused_reason(1000, false, true, 2, 2), None);
+            assert_eq!(
+                Slideshow::load(state.path.clone(), 1000).unwrap().settings,
+                state.settings
+            );
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 
     #[test]

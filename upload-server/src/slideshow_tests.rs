@@ -328,6 +328,7 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
         inspect_or_tick(&reloaded, orientation, queue, locks, now, false).await["settings"],
         slideshow_status(client).await["settings"]
     );
+    check_flash_completion_storage_recovery(client).await;
     assert_eq!(
         client
             .post("/api/settings/slideshow")
@@ -338,4 +339,81 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
             .status(),
         Status::Ok
     );
+}
+
+async fn check_flash_completion_storage_recovery(client: &Client) {
+    use slideshow::{inspect_or_tick, SlideshowState};
+    let state = client.rocket().state::<SlideshowState>().unwrap();
+    let orientation = client
+        .rocket()
+        .state::<orientation::OrientationState>()
+        .unwrap();
+    let queue = client.rocket().state::<FlashQueueState>().unwrap();
+    let locks = client.rocket().state::<ImageLocksState>().unwrap();
+    locks.lock().await.clear();
+    state.lock().await.content_completed(0).unwrap();
+    inspect_or_tick(
+        state,
+        orientation,
+        queue,
+        locks,
+        flash_queue::current_time_millis(),
+        true,
+    )
+    .await;
+    let first = queue.lock().await.get_queued_jobs()[0].clone();
+    let blocker = config::settings_dir().join("slideshow.json.tmp");
+    fs::create_dir(&blocker).unwrap();
+    std::env::set_var("INKY_SOUP_DISPLAY_COMMAND", "/bin/true");
+    assert!(flash_queue::process_next(queue, state).await);
+    let completed = slideshow_status(client).await;
+    assert_eq!(completed["paused_reason"], "storage_error");
+    assert_eq!(
+        completed["settings"]["last_rotated_filename"],
+        first.filename
+    );
+    assert_eq!(
+        queue.lock().await.find_job(first.job_id).unwrap().status,
+        flash_queue::FlashJobStatus::Completed
+    );
+    let anchor = completed["settings"]["rotation_anchor_at"]
+        .as_u64()
+        .unwrap();
+    assert!(anchor > 0);
+    // Even overdue, no further display is allowed until completion is persisted.
+    assert!(
+        inspect_or_tick(state, orientation, queue, locks, anchor + 3_600_000, true).await
+            ["queued_job_id"]
+            .is_null()
+    );
+    fs::remove_dir(blocker).unwrap();
+    assert_eq!(
+        client
+            .post("/api/settings/slideshow")
+            .header(ContentType::JSON)
+            .body(r#"{"rotation_interval_hours":1}"#)
+            .dispatch()
+            .await
+            .status(),
+        Status::Ok
+    );
+    let recovered = slideshow_status(client).await;
+    assert_eq!(recovered["settings"], completed["settings"]);
+    assert!(recovered["storage_error"].is_null());
+    // Recovery must not repeat A immediately or lose its round-robin position.
+    assert!(inspect_or_tick(
+        state,
+        orientation,
+        queue,
+        locks,
+        anchor + 3_600_000 - 1,
+        true
+    )
+    .await["queued_job_id"]
+        .is_null());
+    inspect_or_tick(state, orientation, queue, locks, anchor + 3_600_000, true).await;
+    let next = queue.lock().await.get_queued_jobs()[0].clone();
+    assert_ne!(next.filename, first.filename);
+    assert!(flash_queue::process_next(queue, state).await);
+    std::env::remove_var("INKY_SOUP_DISPLAY_COMMAND");
 }

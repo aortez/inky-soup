@@ -273,9 +273,16 @@ success advances the cursor; manual success (including test cards/nonfavorites)
 only resets the timer/source. Automatic failure leaves both untouched and backs
 off for 60 seconds. The backoff is runtime-only; after restart an overdue schedule
 may retry once. If completion persistence fails, `storage_error` pauses automatic
-work until storage is repaired and a save/settings write succeeds.
+work until storage is repaired and a save/settings write succeeds. A successful
+physical refresh is retained in memory even if its completion cannot be written;
+the next successful save/settings write persists that completion before rotation
+resumes. Rejected settings writes do not replace the retained completion. An
+unpersisted completion cannot survive a process restart.
 
-Existing clients save in cache -> thumbnail -> dithered order. The final dithered
+Clients save in cache -> thumbnail -> dithered order. The bundled web UI's Save
+button also rebuilds all three assets from the original using captured settings,
+via the shared generation pipeline; it does not queue a display refresh. It
+reports success only after the final upload succeeds. The final dithered
 upload resets the anchor only after metadata saves and all assets are current.
 Original/cache/dithered uploads mark `processing_pending` before writing, so an
 interrupted write cannot make a photo eligible. Original replacement invalidates

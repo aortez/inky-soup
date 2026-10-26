@@ -4,7 +4,7 @@
  */
 
 import {
-  getCurrentPhotoRotation, getFilterWorker,
+  getCurrentPhotoRevision, getCurrentPhotoRotation, getFilterWorker,
   setFilterWorker,
   getCurrentFilter,
   setCurrentFilter,
@@ -21,14 +21,12 @@ import {
   getOriginalImageCache,
   getDisplayWidth,
   getDisplayHeight,
-  getThumbWidth,
-  getThumbHeight,
 } from '../core/state.js';
 import { elements, query, queryAll } from '../core/dom.js';
 import { applyDither } from './dither-service.js';
-import { uploadCache, uploadThumb } from './api-client.js';
+import { generateThumbnails } from './upload-service.js';
 import { loadOriginal } from './image-loader.js';
-import { createImageDataFromImage, drawImageToFit } from '../utils/image-utils.js';
+import { createImageDataFromImage } from '../utils/image-utils.js';
 import { CACHE_VERSION } from '../core/constants.js';
 
 // Track filter operation start time for logging.
@@ -211,18 +209,17 @@ export async function applyFilter() {
   const contrast = getCurrentContrast();
   const ditherAlgorithm = getCurrentDitherAlgorithm();
 
+  const photoRotation = getCurrentPhotoRotation();
+  const photoRevision = getCurrentPhotoRevision();
+
   statusEl.textContent = 'Saving...';
 
   try {
-    // Convert filter canvas to blob.
-    const cacheBlob = await new Promise((resolve) => {
-      elements.filterCanvas.toBlob(resolve, 'image/png');
-    });
-
-    // Upload cache image with all current settings.
-    const data = await uploadCache(
-      filename,
-      cacheBlob,
+    // Rebuild from the original with the captured settings, rather than saving
+    // a preview canvas that may still be processing. The final dithered upload
+    // commits the save and restarts the slideshow without refreshing the panel.
+    const original = await loadOriginal(filename);
+    const { thumbData } = await generateThumbnails(original.src, filename, {
       filter,
       fitMode,
       saturation,
@@ -230,30 +227,10 @@ export async function applyFilter() {
       contrast,
       ditherAlgorithm,
       sessionId,
-    );
-
-    if (!data.success) {
-      statusEl.textContent = `Error: ${data.message}`;
-      statusEl.style.color = '#ff4444';
-      return;
-    }
-
-    setCurrentCacheVersion(CACHE_VERSION);
-
-    // Also regenerate thumbnail.
-    const thumbW = getThumbWidth();
-    const thumbH = getThumbHeight();
-    const thumbCanvas = document.createElement('canvas');
-    thumbCanvas.width = thumbW;
-    thumbCanvas.height = thumbH;
-    const thumbCtx = thumbCanvas.getContext('2d');
-    drawImageToFit(thumbCtx, elements.filterCanvas, thumbW, thumbH, fitMode);
-
-    const thumbBlob = await new Promise((resolve) => {
-      thumbCanvas.toBlob(resolve, 'image/png');
+      photoRotation,
+      photoRevision,
     });
-
-    const thumbData = await uploadThumb(filename, thumbBlob);
+    setCurrentCacheVersion(CACHE_VERSION);
 
     statusEl.textContent = '✓ Filter saved';
     statusEl.style.color = '#6B8E4E';

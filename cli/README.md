@@ -292,7 +292,10 @@ and ready counts, `last_flash_source` (`manual`/`automatic`/null), and a
 `needs_processing`, `retry_backoff`, `storage_error`, or null. Times are UTC Unix
 milliseconds, matching display job timestamps. Failed automatic jobs retry after
 at least 60 seconds and do not advance the cursor or timer. A storage error pauses
-automatic work; repair storage and retry the failed save/settings request.
+automatic work; repair storage and retry the failed save/settings request. A
+successful refresh's timestamp and cursor are retained in memory during recovery,
+then included in the next successful save/settings write. They cannot survive a
+restart until that write succeeds.
 
 The interval starts again after a successful display job or a complete saved
 photo (cache, thumbnail, then dithered upload). Uploading just an original,
