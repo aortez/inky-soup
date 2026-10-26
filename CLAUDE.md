@@ -61,6 +61,7 @@ reboot does not remove panel power. Test a patched driver without hardware using
 - `metadata.rs`: per-image settings, validation, migration, atomic JSON writes.
 - `image_locks.rs`: editing sessions and lock expiry.
 - `flash_queue.rs`: queue, job status/history, background display worker.
+- `slideshow.rs`: persisted favorites scheduling, status, and completion tracking.
 - `cache_worker.rs`: cache path helper.
 - `cleanup.rs`: periodic cleanup of orphaned derived files.
 
@@ -107,7 +108,10 @@ The legacy shared metadata file is migrated to per-image files on startup.
 | Method | Route | Purpose |
 | --- | --- | --- |
 | GET | `/` | Gallery page |
-| GET | `/api/images` | Gallery metadata for local/hosted clients |
+| GET | `/api/images` | Gallery metadata, including `favorite` and processing readiness |
+| POST | `/api/settings/favorite` | Set a photo favorite with edit ownership |
+| GET | `/api/slideshow` | Settings, next due time, and pause reason |
+| POST | `/api/settings/slideshow` | Configure enabled state and interval in hours |
 | GET | `/api/display-config` | Display and thumbnail dimensions |
 | POST | `/api/settings/display-rotation` | Persist mount orientation with an expected revision |
 | POST | `/upload` | Store an original image |
@@ -149,7 +153,7 @@ storage, settings, symlinks, and subdirectories.
 Deploy the server and both copies of the display script together. The temporary
 `inky-cli preview` command replaces only the server, so it cannot by itself test
 a release that also changes the driver. `INKY_SOUP_DISPLAY_COMMAND` can select a
-matching executable for isolated testing. Favorites/scheduling remain issue #4.
+matching executable for isolated testing.
 
 ## Runtime and deployment
 
@@ -213,3 +217,84 @@ Full PNG decoding/palette validation remains in the display script. The API's
 clients to disable these controls on old servers. CLI commands are documented in
 `cli/README.md`; its photo rotations are settings changes, with rebuilding in the
 browser client, just as for mounting changes.
+
+
+### Favorites and slideshow API
+
+`POST /api/settings/favorite` takes JSON `{filename, session_id, favorite}` under
+an unexpired edit lock. `GET /api/images` includes `favorite` (false for old
+metadata). Saving other image settings preserves this flag.
+
+`POST /api/settings/slideshow` takes either or both `rotation_enabled: bool` and
+`rotation_interval_hours: integer` (1–168). It patches only supplied fields;
+unknown/read-only fields and empty updates are rejected. All new write endpoints
+use the existing browser-origin guard. `GET /api/slideshow` returns:
+
+```json
+{
+  "settings": {
+    "rotation_enabled": false,
+    "rotation_interval_hours": 24,
+    "rotation_anchor_at": 1792900000000,
+    "last_rotated_filename": null,
+    "last_flash_source": null
+  },
+  "next_due_at": 1792986400000,
+  "paused_reason": "disabled",
+  "last_flash_source": null,
+  "next_filename": null,
+  "favorite_count": 0,
+  "ready_count": 0,
+  "queued_job_id": null,
+  "retry_not_before": 0,
+  "storage_error": null
+}
+```
+
+Timestamps are UTC Unix milliseconds. Settings, anchor and successful automatic
+cursor are atomically persisted in `INKY_SOUP_DATA_DIR/settings/slideshow.json`.
+New installations default to disabled/24 hours. Invalid or unreadable settings
+fail startup rather than silently overwriting the user's schedule. Changing
+settings or favorites preserves the anchor. `next_due_at` remains available when
+paused, representing the deadline to resume from, not a promise to refresh then.
+
+The scheduler checks once per second, using the same immutable snapshot/queue as
+manual flashing. It serializes checks and enqueue with orientation changes, edit
+locks, and queue operations. Only idle queues with no active edit locks can accept
+an automatic job. Eligible favorites have all three current derived assets and no
+incomplete upload; sort filenames lexically, choose after the successful cursor,
+then wrap. Deleted/unfavorited cursor photos do not disrupt this order. Stale
+favorites are skipped; with none ready, status reports `needs_processing`.
+There is no server-side rendering. Stopping does not cancel an accepted job.
+
+The queue worker resets the anchor on **successful completion**, before exposing
+an idle queue, and records `source: manual|automatic` in job status. Automatic
+success advances the cursor; manual success (including test cards/nonfavorites)
+only resets the timer/source. Automatic failure leaves both untouched and backs
+off for 60 seconds. The backoff is runtime-only; after restart an overdue schedule
+may retry once. If completion persistence fails, `storage_error` pauses automatic
+work until storage is repaired and a save/settings write succeeds. A successful
+physical refresh is retained in memory even if its completion cannot be written;
+the next successful save/settings write persists that completion before rotation
+resumes. Rejected settings writes do not replace the retained completion. An
+unpersisted completion cannot survive a process restart.
+
+Clients save in cache -> thumbnail -> dithered order. The bundled web UI's Save
+button also rebuilds all three assets from the original using captured settings,
+via the shared generation pipeline; it does not queue a display refresh. It
+reports success only after the final upload succeeds. The final dithered
+upload resets the anchor only after metadata saves and all assets are current.
+Original/cache/dithered uploads mark `processing_pending` before writing, so an
+interrupted write cannot make a photo eligible. Original replacement invalidates
+old assets. An incomplete photo cannot be manually flashed until saved. Standalone
+angle changes invalidate pixels but are not a complete rendered save. Failures,
+partial uploads and intermediate settings do not reset the timer.
+
+For hardware-free testing, debug binaries accept
+`INKY_SOUP_TEST_ROTATION_HOUR_MS=2000` (one logical hour = two seconds). Release
+binaries ignore it; API/CLI intervals remain 1–168 hours. Combine with disposable
+`INKY_SOUP_DATA_DIR`/`INKY_SOUP_IMAGES_DIR` and `INKY_SOUP_DISPLAY_COMMAND=/bin/true`.
+The API fixture in `slideshow_tests.rs` shares the orientation test's image root,
+exercises the real worker with successful/failing commands, and injects time into
+scheduler checks without waiting for real hours. CLI commands are in `cli/README.md`.
+Android/web controls and physical acceptance remain follow-ups to issue #4.

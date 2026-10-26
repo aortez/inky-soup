@@ -448,3 +448,46 @@ test.describe('Cache Optimization', () => {
     expect(cacheRequests.length).toBeGreaterThan(0);
   });
 });
+
+test.describe('Slideshow Save regression', () => {
+  test.use({ viewport: { width: 1280, height: 1100 } });
+  test('Save persists all derived images and resets the timer without flashing', async ({ withImage }) => {
+    const page = withImage;
+    const filename = await page.evaluate(() => window._testFilename);
+    await openDetailView(page);
+    const before = await (await page.request.get('/api/slideshow')).json();
+    const writes = [];
+    page.on('request', request => {
+      if (request.method() === 'POST') writes.push(new URL(request.url()).pathname);
+    });
+    await page.locator('.apply-filter-btn').click();
+    await expect(page.locator('#filterStatus')).toHaveText('✓ Filter saved', { timeout: 15000 });
+    expect(writes.filter(url => url.startsWith('/api/upload-'))).toEqual([
+      '/api/upload-cache', '/api/upload-thumb', '/api/upload-dithered',
+    ]);
+    expect(writes).not.toContain('/flash');
+    const after = await (await page.request.get('/api/slideshow')).json();
+    expect(after.settings.rotation_anchor_at).toBeGreaterThan(before.settings.rotation_anchor_at);
+    const images = await (await page.request.get('/api/images')).json();
+    expect(images.find(image => image.filename === filename).needs_processing).toBe(false);
+  });
+
+  test('failed Save leaves the timer unchanged and never submits the final image', async ({ withImage }) => {
+    const page = withImage;
+    await openDetailView(page);
+    const before = await (await page.request.get('/api/slideshow')).json();
+    const writes = [];
+    page.on('request', request => {
+      if (request.method() === 'POST') writes.push(new URL(request.url()).pathname);
+    });
+    await page.route('**/api/upload-thumb', route => route.fulfill({
+      json: { success: false, message: 'Thumbnail interrupted' },
+    }));
+    await page.locator('.apply-filter-btn').click();
+    await expect(page.locator('#filterStatus')).toHaveText('Error: Thumbnail interrupted', { timeout: 15000 });
+    expect(writes).not.toContain('/api/upload-dithered');
+    expect(writes).not.toContain('/flash');
+    const after = await (await page.request.get('/api/slideshow')).json();
+    expect(after.settings.rotation_anchor_at).toBe(before.settings.rotation_anchor_at);
+  });
+});

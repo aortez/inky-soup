@@ -3,7 +3,7 @@ use rocket::http::ContentType;
 use rocket::local::asynchronous::Client;
 use serde_json::{json, Value};
 
-fn multipart(fields: &[(&str, String)], file: bool) -> (ContentType, String) {
+pub(crate) fn multipart(fields: &[(&str, String)], file: bool) -> (ContentType, String) {
     let mut body = String::new();
     for (name, value) in fields {
         body.push_str(&format!(
@@ -46,6 +46,10 @@ async fn orientation_api_preserves_jobs_and_recovers_after_restart() {
         rocket::build()
             .manage(browser_access::BrowserAccess::from_env())
             .manage(orientation::OrientationState::default())
+            .manage(Arc::new(Mutex::new(
+                slideshow::Slideshow::load(config::settings_dir().join("slideshow.json"), 100)
+                    .unwrap(),
+            )) as slideshow::SlideshowState)
             .manage(locks)
             .manage(queue.clone())
             .mount(
@@ -195,6 +199,7 @@ async fn orientation_api_preserves_jobs_and_recovers_after_restart() {
         2
     );
     check_rotation_retry_after_restart(&restarted).await;
+    crate::slideshow_tests::check_slideshow_api_and_worker(&restarted).await;
     drop(restarted);
     fs::remove_dir_all(root).unwrap();
 }

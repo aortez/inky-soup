@@ -12,6 +12,9 @@ mod metadata;
 mod orientation;
 mod photo_management;
 mod photo_rotation;
+mod slideshow;
+#[cfg(test)]
+mod slideshow_tests;
 mod test_card;
 #[cfg(test)]
 mod orientation_tests;
@@ -82,6 +85,7 @@ struct SubmitNewImage<'v> {
 #[derive(Serialize, Clone)]
 #[serde(crate = "rocket::serde")]
 struct GalleryImage {
+    favorite: bool,
     path: String,
     filename: String,
     thumb_ready: bool,
@@ -266,13 +270,14 @@ fn get_gallery_images() -> Vec<GalleryImage> {
                 let meta = metadata::get_all_metadata(&filename);
 
                 images.push(GalleryImage {
+                    favorite: meta.favorite,
                     path: image_path,
                     filename: filename.clone(),
                     thumb_ready: thumb_ready && meta.thumb_rotation_revision == revision
                         && meta.thumb_photo_revision == meta.photo_rotation_revision,
                     photo_rotation_degrees: meta.photo_rotation_degrees,
                     photo_rotation_revision: meta.photo_rotation_revision,
-                    needs_processing: !thumb_ready
+                    needs_processing: meta.processing_pending || !thumb_ready
                         || !config::cache_path(&filename).exists()
                         || !config::dithered_path(&filename).exists()
                         || meta.cache_rotation_revision != revision
@@ -524,6 +529,7 @@ struct FlashResponse {
 #[derive(Serialize)]
 #[serde(crate = "rocket::serde")]
 struct FlashJobSummary {
+    source: slideshow::FlashSource,
     job_id: u64,
     filename: String,
     flash_twice: bool,
@@ -546,6 +552,7 @@ async fn upload_dithered(
     mut form: Form<DitheredUpload<'_>>,
     locks_state: &State<ImageLocksState>,
     orientation: &State<orientation::OrientationState>,
+    slideshow: &State<slideshow::SlideshowState>,
 ) -> Json<UploadDitheredResponse> {
     let _orientation = orientation.lock().await;
     let revision = display_settings::load_runtime_settings().rotation_revision;
@@ -608,6 +615,12 @@ async fn upload_dithered(
     // Save dithered image to dithered directory (always as PNG).
     let dithered_path = config::dithered_path(&filename);
 
+    let mut pending = metadata::get_all_metadata(&filename);
+    pending.processing_pending = true;
+    if let Err(error) = metadata::try_save_metadata(&filename, &pending) {
+        return Json(UploadDitheredResponse { success: false,
+            message: format!("Could not start display image save: {error}"), path: None });
+    }
     match form.file.copy_to(&dithered_path).await {
         Ok(()) => {
             // Store all settings in metadata.
@@ -615,19 +628,35 @@ async fn upload_dithered(
                 "Saving metadata for {}: filter={}, fit={}, sat={}, bright={}, contrast={}, dither={}",
                 filename, filter, fit_mode, saturation, brightness, contrast, dither_algorithm
             );
-            metadata::save_dither_settings(
-                &filename,
-                &filter,
-                &fit_mode,
-                saturation,
-                brightness,
-                contrast,
-                &dither_algorithm,
-            );
             let mut meta = metadata::get_all_metadata(&filename);
+            meta.filter = filter;
+            meta.fit_mode = fit_mode;
+            meta.saturation = saturation;
+            meta.brightness = brightness;
+            meta.contrast = contrast;
+            meta.dither_algorithm = dither_algorithm;
             meta.dither_rotation_revision = revision;
             meta.dither_photo_revision = meta.photo_rotation_revision;
-            metadata::save_metadata(&filename, &meta);
+            meta.processing_pending = !(config::cache_path(&filename).is_file()
+                && config::thumb_path(&filename).is_file()
+                && meta.cache_rotation_revision == revision && meta.thumb_rotation_revision == revision
+                && meta.cache_photo_revision == meta.photo_rotation_revision
+                && meta.thumb_photo_revision == meta.photo_rotation_revision);
+            if let Err(error) = metadata::try_save_metadata(&filename, &meta) {
+                return Json(UploadDitheredResponse {
+                    success: false, message: format!("Could not save image settings: {error}"), path: None,
+                });
+            }
+            // Clients commit a complete save/upload in cache -> thumbnail -> dithered
+            // order. Partial uploads and settings that still need rendering do not
+            // postpone the slideshow.
+            if get_gallery_images().iter().any(|image| image.filename == filename && !image.needs_processing) {
+                if let Err(error) = slideshow.lock().await.content_completed(flash_queue::current_time_millis()) {
+                    return Json(UploadDitheredResponse {
+                        success: false, message: format!("Could not save slideshow completion: {error}"), path: None,
+                    });
+                }
+            }
             debug!("Saved dithered image: {}", filename);
 
             Json(UploadDitheredResponse {
@@ -719,50 +748,35 @@ async fn upload_cache(
     // Save cache image to cache directory.
     let cache_path = config::cache_path(&filename);
 
+    let mut pending = metadata::get_all_metadata(&filename);
+    pending.processing_pending = true;
+    if let Err(error) = metadata::try_save_metadata(&filename, &pending) {
+        return Json(UploadCacheResponse { success: false,
+            message: format!("Could not start image save: {error}"), path: None });
+    }
+    if let Err(error) = fs::remove_file(config::dithered_path(&filename)) {
+        if error.kind() != std::io::ErrorKind::NotFound {
+            return Json(UploadCacheResponse { success: false,
+                message: format!("Could not invalidate display image: {error}"), path: None });
+        }
+    }
     match form.file.copy_to(&cache_path).await {
         Ok(()) => {
-            // Save settings if any are provided.
-            if filter.is_some() || fit_mode.is_some() || saturation.is_some() || brightness.is_some()
-                || contrast.is_some() || dither_algorithm.is_some() {
-
-                // Load current metadata to preserve any settings not provided.
-                let current = metadata::get_all_metadata(&filename);
-
-                let final_filter = filter.as_deref().unwrap_or(&current.filter);
-                let final_fit_mode = fit_mode.as_deref().unwrap_or(&current.fit_mode);
-                let final_saturation = saturation.unwrap_or(current.saturation);
-                let final_brightness = brightness.unwrap_or(current.brightness);
-                let final_contrast = contrast.unwrap_or(current.contrast);
-                let final_dither = dither_algorithm.as_deref().unwrap_or(&current.dither_algorithm);
-
-                info!(
-                    "Saving metadata for {}: filter={}, fit={}, sat={}, bright={}, contrast={}, dither={}",
-                    filename, final_filter, final_fit_mode, final_saturation, final_brightness, final_contrast, final_dither
-                );
-
-                metadata::save_all_settings(
-                    &filename,
-                    final_filter,
-                    final_fit_mode,
-                    final_saturation,
-                    final_brightness,
-                    final_contrast,
-                    final_dither,
-                );
-
-                // Remove dithered file if it exists since cache changed.
-                let dithered_path = config::dithered_path(&filename);
-                if dithered_path.exists() {
-                    let _ = fs::remove_file(&dithered_path);
-                    debug!("Removed dithered cache: {}", filename);
-                }
-            }
-            debug!("Saved cache image: {}", filename);
-
             let mut meta = metadata::get_all_metadata(&filename);
+            if let Some(value) = filter { meta.filter = value; }
+            if let Some(value) = fit_mode { meta.fit_mode = value; }
+            if let Some(value) = saturation { meta.saturation = value; }
+            if let Some(value) = brightness { meta.brightness = value; }
+            if let Some(value) = contrast { meta.contrast = value; }
+            if let Some(value) = dither_algorithm { meta.dither_algorithm = value; }
+            meta.cache_version = 2;
             meta.cache_rotation_revision = revision;
             meta.cache_photo_revision = meta.photo_rotation_revision;
-            metadata::save_metadata(&filename, &meta);
+            if let Err(error) = metadata::try_save_metadata(&filename, &meta) {
+                return Json(UploadCacheResponse {
+                    success: false, message: format!("Could not save image settings: {error}"), path: None,
+                });
+            }
             Json(UploadCacheResponse {
                 success: true,
                 message: "Cache image uploaded successfully".to_string(),
@@ -827,7 +841,10 @@ async fn upload_thumb(
             let mut meta = metadata::get_all_metadata(&filename);
             meta.thumb_rotation_revision = revision;
             meta.thumb_photo_revision = meta.photo_rotation_revision;
-            metadata::save_metadata(&filename, &meta);
+            if let Err(error) = metadata::try_save_metadata(&filename, &meta) {
+                return Json(UploadThumbResponse { success: false,
+                    message: format!("Could not save thumbnail metadata: {error}"), path: None });
+            }
             debug!("Saved gallery thumbnail: {}", filename);
             Json(UploadThumbResponse {
                 success: true,
@@ -858,7 +875,8 @@ fn upload_form() -> Template {
 }
 
 #[post("/delete", data = "<form>")]
-async fn submit_delete_image<'r>(_origin: BrowserWrite, mut form: Form<Contextual<'r, SubmitDeleteImage>>) -> Result<Redirect, (Status, String)> {
+async fn submit_delete_image<'r>(_origin: BrowserWrite, mut form: Form<Contextual<'r, SubmitDeleteImage>>, orientation: &State<orientation::OrientationState>) -> Result<Redirect, (Status, String)> {
+    let _orientation = orientation.lock().await;
     let submission = match form.value {
         Some(ref mut s) => s,
         None => {
@@ -956,6 +974,9 @@ async fn submit_flash_image<'r>(
             "Display orientation changed. Regenerate this photo before displaying it.".into()));
     }
     let photo = metadata::get_all_metadata(&filename);
+    if photo.processing_pending {
+        return Err((Status::Conflict, "Finish saving this photo before displaying it.".into()));
+    }
     if submission.submission.photo_rotation_revision.unwrap_or(0) != photo.photo_rotation_revision
         || photo.dither_photo_revision != photo.photo_rotation_revision {
         return Err((Status::Conflict, "Photo rotation changed. Regenerate this photo before displaying it.".into()));
@@ -1006,6 +1027,7 @@ async fn flash_status(queue_state: &State<FlashQueueState>) -> Json<FlashStatusR
         .iter()
         .enumerate()
         .map(|(idx, job)| FlashJobSummary {
+            source: job.source,
             job_id: job.job_id,
             filename: job.filename.clone(),
             flash_twice: job.flash_twice,
@@ -1035,8 +1057,10 @@ async fn flash_job_status(job_id: u64, queue_state: &State<FlashQueueState>) -> 
 #[post("/upload", data = "<form>")]
 async fn submit_new_image<'r>(
     _origin: BrowserWrite,
-    mut form: Form<Contextual<'r, SubmitNewImage<'r>>>
+    mut form: Form<Contextual<'r, SubmitNewImage<'r>>>,
+    orientation: &State<orientation::OrientationState>,
 ) -> Json<UploadResponse> {
+    let _orientation = orientation.lock().await;
     match form.value {
         Some(ref mut submission) => {
             let file = &mut submission.submission.file;
@@ -1054,8 +1078,24 @@ async fn submit_new_image<'r>(
 
             // Save as new image in gallery.
             let image_file_path = config::original_path(&filename);
+            let mut pending = metadata::get_all_metadata(&filename);
+            pending.processing_pending = true;
+            if let Err(error) = metadata::try_save_metadata(&filename, &pending) {
+                return Json(UploadResponse { success: false,
+                    message: format!("Could not start image upload: {error}"), filename: None });
+            }
             match file.copy_to(&image_file_path).await {
                 Ok(_) => {
+                    // Replacing an original cannot leave the previous photo eligible
+                    // for automatic display while its new pixels are being prepared.
+                    for path in [config::cache_path(&filename), config::thumb_path(&filename), config::dithered_path(&filename)] {
+                        if let Err(error) = fs::remove_file(&path) {
+                            if error.kind() != std::io::ErrorKind::NotFound {
+                                return Json(UploadResponse { success: false,
+                                    message: format!("Could not invalidate old image: {error}"), filename: None });
+                            }
+                        }
+                    }
                     info!("Upload completed: {}", filename);
                     // Cache is now generated client-side and uploaded separately via /api/upload-cache.
                     Json(UploadResponse {
@@ -1121,7 +1161,11 @@ impl Fairing for FlashQueueFairing {
             .state::<FlashQueueState>()
             .expect("FlashQueueState not in managed state")
             .clone();
-        flash_queue::spawn_flash_worker(queue_state);
+        let slideshow = rocket.state::<slideshow::SlideshowState>().expect("Slideshow state").clone();
+        flash_queue::spawn_flash_worker(queue_state.clone(), slideshow.clone());
+        slideshow::spawn(slideshow,
+            rocket.state::<orientation::OrientationState>().expect("Orientation state").clone(),
+            queue_state, rocket.state::<ImageLocksState>().expect("Image locks").clone(), rocket.shutdown());
     }
 }
 
@@ -1155,6 +1199,9 @@ fn rocket() -> _ {
         .manage(browser_access::BrowserAccess::from_env())
         .attach(browser_access::Cors)
         .manage(orientation::OrientationState::default())
+        .manage(Arc::new(Mutex::new(slideshow::Slideshow::load(
+            config::settings_dir().join("slideshow.json"), flash_queue::current_time_millis()
+        ).expect("Could not load slideshow settings"))) as slideshow::SlideshowState)
         .manage(flash_queue_state)
         .manage(image_locks_state)
         .mount("/", routes![
@@ -1162,6 +1209,9 @@ fn rocket() -> _ {
             display_config,
             orientation::update_display_rotation,
             gallery_images,
+            slideshow::set_favorite,
+            slideshow::configure,
+            slideshow::status,
             photo_management::delete_image,
             flash_job_status,
             flash_status,
