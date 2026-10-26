@@ -21,10 +21,13 @@ FILES = {
     "Rocket.toml": "usr/share/inky-soup/Rocket.toml",
 }
 SERVICE = "inky-soup-server.service"
+PROVISIONER_SERVICE = "wifi-provisioner.service"
+PROVISIONER_PATH = "usr/bin/wifi-provisioner"
 
 
 def run(*args):
-    return subprocess.run(args, check=True, capture_output=True, text=True).stdout.strip()
+    timeout = 15 if args[-1:] == ("--status",) else None
+    return subprocess.run(args, check=True, capture_output=True, text=True, timeout=timeout).stdout.strip()
 
 
 def get_json(path):
@@ -60,6 +63,32 @@ def health_check():
             time.sleep(1)
 
 
+def provisioner_status(command, executable):
+    result = json.loads(command(str(executable), "--status"))
+    if (result.get("ok") is not True
+            or not isinstance(result.get("wifi_connected"), bool)
+            or result.get("state") not in ("idle", "advertising", "connected", "provisioning")):
+        raise RuntimeError("Provisioner returned an invalid status")
+    return result
+
+
+def require_setup_idle(command, executable):
+    if provisioner_status(command, executable)["state"] != "idle":
+        raise RuntimeError("Wait for Bluetooth setup to close before deploying its provisioner")
+
+
+def provisioner_health(command, executable):
+    deadline = time.monotonic() + 30
+    while True:
+        try:
+            command("systemctl", "is-active", PROVISIONER_SERVICE)
+            return provisioner_status(command, executable)
+        except Exception:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(1)
+
+
 def copy(source, target):
     if source.is_dir():
         shutil.copytree(source, target)
@@ -67,7 +96,7 @@ def copy(source, target):
             path.chmod(0o755 if path.is_dir() else 0o644)
     else:
         shutil.copyfile(source, target)
-        target.chmod(0o755 if source.name in ("server", "display") else 0o644)
+        target.chmod(0o755 if source.name in ("server", "display", "provisioner") else 0o644)
 
 
 def deploy(bundle, root=Path("/"), command=run, health=health_check, status=get_json):
@@ -86,8 +115,16 @@ def deploy(bundle, root=Path("/"), command=run, health=health_check, status=get_
 
 def _deploy_locked(bundle, root, command, health, status):
     bundle = Path(bundle)
+    files = dict(FILES)
+    has_provisioner = (bundle / "provisioner").exists() or (bundle / "provisioner").is_symlink()
+    provisioner_revision = None
+    if has_provisioner:
+        files["provisioner"] = PROVISIONER_PATH
+        provisioner_revision = (bundle / "provisioner-revision.txt").read_text().strip()
+        if not provisioner_revision:
+            raise RuntimeError("Missing provisioner source revision")
     # Validate the entire release before stopping a working server.
-    for name in FILES:
+    for name in files:
         source = bundle / name
         if not source.exists() or source.is_symlink():
             raise RuntimeError("Missing or linked release asset: " + name)
@@ -95,6 +132,15 @@ def _deploy_locked(bundle, root, command, health, status):
             raise RuntimeError("Linked release asset: " + name)
     if not (bundle / "server").read_bytes().startswith(b"\x7fELF"):
         raise RuntimeError("Server must be a target-native ELF executable")
+    if has_provisioner:
+        if not (bundle / "provisioner").read_bytes().startswith(b"\x7fELF"):
+            raise RuntimeError("Provisioner must be a target-native ELF executable")
+        command("systemctl", "is-active", PROVISIONER_SERVICE)
+        execution = command("systemctl", "show", PROVISIONER_SERVICE, "-p", "ExecStart", "--value")
+        if "path=/usr/bin/wifi-provisioner ;" not in execution:
+            raise RuntimeError("Restore the normal provisioner service before deploying")
+        # Running the staged client also checks its target ABI and shared libraries.
+        require_setup_idle(command, bundle / "provisioner")
     compile((bundle / "display").read_text(), "display", "exec")
     if "--rotation" not in command("python3", str(bundle / "display"), "--help"):
         raise RuntimeError("Display script does not support orientation")
@@ -110,9 +156,10 @@ def _deploy_locked(bundle, root, command, health, status):
     backup.mkdir(parents=True)
     staged = []
     replaced = []
-    stopped = False
+    stopped = []
+    provisioner = None
     try:
-        for name, destination in FILES.items():
+        for name, destination in files.items():
             target = root / destination
             if not target.exists() or target.is_symlink():
                 raise RuntimeError("Missing or linked installed asset: " + destination)
@@ -126,10 +173,15 @@ def _deploy_locked(bundle, root, command, health, status):
             staged.append(next_path)
             copy(bundle / name, next_path)
         # Recheck immediately before the brief interruption, after staging copies.
+        if has_provisioner:
+            require_setup_idle(command, bundle / "provisioner")
         require_idle(status("/api/flash/status"))
-        stopped = True
+        stopped.append(SERVICE)
         command("systemctl", "stop", SERVICE)
-        for name, destination in FILES.items():
+        if has_provisioner:
+            stopped.append(PROVISIONER_SERVICE)
+            command("systemctl", "stop", PROVISIONER_SERVICE)
+        for name, destination in files.items():
             target = root / destination
             next_path = target.with_name(target.name + ".next-" + release)
             old_path = target.with_name(target.name + ".old-" + release)
@@ -137,18 +189,23 @@ def _deploy_locked(bundle, root, command, health, status):
             replaced.append((target, old_path))
             next_path.rename(target)
         os.sync()
+        if has_provisioner:
+            command("systemctl", "start", PROVISIONER_SERVICE)
+            provisioner = provisioner_health(command, root / PROVISIONER_PATH)
         command("systemctl", "start", SERVICE)
         display = health()
     except Exception as error:
         if stopped:
-            command("systemctl", "stop", SERVICE)
+            for service in stopped:
+                command("systemctl", "stop", service)
             for target, old_path in reversed(replaced):
                 if target.is_dir():
                     shutil.rmtree(target)
                 elif target.exists():
                     target.unlink()
                 old_path.rename(target)
-            command("systemctl", "start", SERVICE)
+            for service in reversed(stopped):
+                command("systemctl", "start", service)
         recovery = "previous software restored" if stopped else "installed software unchanged"
         raise RuntimeError(f"Deployment failed; {recovery}: {error}") from error
     finally:
@@ -163,4 +220,8 @@ def _deploy_locked(bundle, root, command, health, status):
         else:
             old_path.unlink()
     (backup / "deployed-revision.txt").write_text(revision + "\n")
-    return {"ok": True, "revision": revision, "software_backup": str(backup), "display": display}
+    result = {"ok": True, "revision": revision, "software_backup": str(backup), "display": display}
+    if has_provisioner:
+        (backup / "deployed-provisioner-revision.txt").write_text(provisioner_revision + "\n")
+        result["provisioner"] = {"revision": provisioner_revision, "status": provisioner}
+    return result

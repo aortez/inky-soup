@@ -93,6 +93,8 @@ release/
   static/js/         # upload-server/static/js
   static/chota.min.css
   static/favicon.ico
+  provisioner        # optional target-native wifi-provisioner executable
+  provisioner-revision.txt # required with provisioner: shared source commit
 ```
 
 ```bash
@@ -101,6 +103,22 @@ scp -r /tmp/inky-release inky@10.55.0.1:/tmp/
 ./inky-cli status --json
 ./inky-cli browser-check --json
 ```
+
+Include `provisioner` when a release also changes Bluetooth/Wi-Fi setup. Build it
+from the pinned `yocto/pi-base/wifi-provisioner` source for the target CPU and
+installed libdbus ABI; write that source commit to `provisioner-revision.txt`.
+Its existing systemd unit and configuration stay in place. The CLI checks the
+staged executable on the Pi, requires the normal provisioner service and a closed
+setup window, and rechecks the window immediately before stopping services.
+Wait for any phone's setup session to finish before deploying.
+
+The optional daemon is backed up and installed in the same transaction. Its
+control endpoint must return valid status before the server starts; failure in
+either service's health check restores both. The JSON result includes its source
+revision and status. Omitting the optional files preserves server-only deployment
+behavior. This does not install changed systemd units or new library dependencies;
+those require a matching system image. For larger bundles, stage under `/data`
+rather than the Pi's small RAM-backed `/tmp`.
 
 The CLI uses SSH and noninteractive sudo. A device-wide kernel lock covers
 validation, staging, installation, health checks, cleanup, and rollback; another

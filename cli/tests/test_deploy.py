@@ -46,9 +46,115 @@ class DeploymentTests(unittest.TestCase):
 
     def command(self, *args):
         self.commands.append(args)
+        if args[-1] == "--status":
+            return json.dumps({"ok": True, "state": "idle", "wifi_connected": True})
+        if args[:3] == ("systemctl", "show", deploy.PROVISIONER_SERVICE):
+            return "path=/usr/bin/wifi-provisioner ;"
         if args[0] == "python3":
             return "--rotation"
         return "path=/usr/bin/inky-soup-server ;"
+
+    def add_provisioner(self):
+        (self.bundle / "provisioner").write_bytes(b"\x7fELFprovisioner")
+        (self.bundle / "provisioner-revision.txt").write_text("shared-revision")
+        (self.root / deploy.PROVISIONER_PATH).write_bytes(b"old provisioner")
+
+    def test_optional_provisioner_installs_and_checks_health_before_starting_server(self):
+        self.add_provisioner()
+        result = self.apply()
+        self.assertEqual(result["provisioner"]["revision"], "shared-revision")
+        installed = self.root / deploy.PROVISIONER_PATH
+        self.assertEqual(installed.read_bytes(), b"\x7fELFprovisioner")
+        self.assertEqual(installed.stat().st_mode & 0o777, 0o755)
+        backup = Path(result["software_backup"])
+        self.assertEqual((backup / "provisioner").read_bytes(), b"old provisioner")
+        self.assertEqual((backup / "deployed-provisioner-revision.txt").read_text(), "shared-revision\n")
+        self.assertLess(self.commands.index((str(installed), "--status")),
+                        self.commands.index(("systemctl", "start", deploy.SERVICE)))
+        self.assert_preserved()
+
+    def test_server_only_bundle_never_touches_provisioner(self):
+        result = self.apply()
+        self.assertNotIn("provisioner", result)
+        self.assertFalse(any("provisioner" in " ".join(args) for args in self.commands))
+
+    def test_provisioner_or_server_health_failure_restores_both_binaries(self):
+        self.add_provisioner()
+        for failing in ("provisioner", "server"):
+            with self.subTest(failing=failing):
+                self.commands.clear()
+                def unhealthy():
+                    if failing == "server":
+                        raise RuntimeError("server unavailable")
+                    return {}
+                def command(*args):
+                    if args == (str(self.root / deploy.PROVISIONER_PATH), "--status") and failing == "provisioner":
+                        raise RuntimeError("provisioner unavailable")
+                    return self.command(*args)
+                with patch.object(deploy.time, "monotonic", side_effect=[0, 31]):
+                    with self.assertRaisesRegex(RuntimeError, "previous software restored"):
+                        self.apply(command=command, health=unhealthy)
+                self.assertEqual((self.root / deploy.PROVISIONER_PATH).read_bytes(), b"old provisioner")
+                self.assertEqual((self.root / "usr/bin/inky-soup-server").read_bytes(), b"old")
+                self.assertEqual(self.commands[-2:], [("systemctl", "start", deploy.PROVISIONER_SERVICE),
+                                                     ("systemctl", "start", deploy.SERVICE)])
+                self.assert_preserved()
+
+    def test_active_setup_at_preflight_or_after_staging_prevents_installation(self):
+        self.add_provisioner()
+        for busy_check in (1, 2):
+            for state in ("advertising", "connected", "provisioning"):
+                with self.subTest(busy_check=busy_check, state=state):
+                    self.commands.clear()
+                    checks = 0
+                    def command(*args):
+                        nonlocal checks
+                        if args[-1] == "--status":
+                            checks += 1
+                            if checks == busy_check:
+                                return json.dumps({"ok": True, "state": state, "wifi_connected": True})
+                        return self.command(*args)
+                    with self.assertRaisesRegex(RuntimeError, "Wait for Bluetooth setup"):
+                        self.apply(command=command)
+                    self.assertFalse(any(args[:2] == ("systemctl", "stop") for args in self.commands))
+                    self.assertEqual((self.root / deploy.PROVISIONER_PATH).read_bytes(), b"old provisioner")
+
+    def test_invalid_optional_provisioner_never_stops_services(self):
+        self.add_provisioner()
+        (self.bundle / "provisioner").write_bytes(b"not executable")
+        with self.assertRaisesRegex(RuntimeError, "target-native ELF"):
+            self.apply()
+        self.assertEqual(self.commands, [])
+        (self.bundle / "provisioner").unlink()
+        (self.bundle / "provisioner").symlink_to(self.root / deploy.PROVISIONER_PATH)
+        with self.assertRaisesRegex(RuntimeError, "Missing or linked"):
+            self.apply()
+        self.assertEqual(self.commands, [])
+
+    def test_provisioner_health_retries_startup_and_rejects_invalid_status(self):
+        responses = iter(["not json", '{"ok":false}',
+                          '{"ok":true,"state":"idle"}',
+                          '{"ok":true,"state":"unknown","wifi_connected":true}',
+                          '{"ok":true,"state":"idle","wifi_connected":true}'])
+        def command(*args):
+            return next(responses) if args[-1] == "--status" else "active"
+        with patch.object(deploy.time, "sleep"):
+            self.assertTrue(deploy.provisioner_health(command, Path("/usr/bin/wifi-provisioner"))["ok"])
+
+    def test_failed_provisioner_replacement_restores_server_and_provisioner(self):
+        self.add_provisioner()
+        rename = Path.rename
+        def fail_install(source, target):
+            if source.name.startswith("wifi-provisioner.next-"):
+                raise OSError("injected rename failure")
+            return rename(source, target)
+        with patch.object(Path, "rename", new=fail_install):
+            with self.assertRaisesRegex(RuntimeError, "previous software restored"):
+                self.apply()
+        self.assertEqual((self.root / deploy.PROVISIONER_PATH).read_bytes(), b"old provisioner")
+        self.assertEqual((self.root / "usr/bin/inky-soup-server").read_bytes(), b"old")
+        self.assertEqual(list(self.root.rglob("*.next-*")), [])
+        self.assert_preserved()
 
     def apply(self, **kwargs):
         return deploy.deploy(self.bundle, self.root, command=kwargs.get("command", self.command),
