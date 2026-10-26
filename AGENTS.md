@@ -15,7 +15,7 @@
 - `./inky-cli --help`: discover device commands; see `cli/README.md` for usage and JSON output.
 - `cargo test --locked --manifest-path cli/Cargo.toml`: CLI unit and HTTP integration tests.
 - `cd upload-server && cargo run`: run the local server on port 8000.
-- `cd upload-server && cargo test --locked`: Rust tests.
+- `cd upload-server && cargo test --locked`: Rust tests; initialize `yocto/pi-base` first for the shared connectivity fixtures.
 - `python3 -m unittest discover -s tests -v`: display image decoding tests (Pillow and NumPy required).
 - `cd upload-server && npm ci`: install the locked JS dependencies.
 - `cd upload-server && ./run-tests.sh`: lint + JS unit + Docker E2E suite; removes the Docker test volume on exit.

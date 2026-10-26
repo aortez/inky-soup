@@ -158,6 +158,17 @@ impl Rescue {
         )
     }
 
+    /// Clear the crash marker only after the latest known display state is durable.
+    /// The marker may belong to an earlier refresh whose backup or manifest failed.
+    fn commit_display_state(&self) -> io::Result<()> {
+        self.persist()?;
+        match fs::remove_file(self.directory.join("normal-in-progress")) {
+            Ok(()) => fs::File::open(&self.directory)?.sync_all(),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+
     pub fn blocks_slideshow(&self) -> bool {
         self.saved.active
             || (self.enabled && self.offline_since.is_some_and(|t| t.elapsed() >= GRACE))
@@ -235,18 +246,19 @@ impl Rescue {
                     self.persist()?;
                 }
                 if matches!(job.source, FlashSource::Manual | FlashSource::Automatic) {
-                    fs::remove_file(self.directory.join("normal-in-progress"))?;
+                    self.commit_display_state()?;
                 }
                 return Ok(());
             }
             match job.source {
                 FlashSource::Rescue => {
                     self.card_before_flash = None;
+                    self.commit_display_state()?;
                 }
                 FlashSource::Restore => {
                     self.saved.active = false;
                     self.saved.manual = false;
-                    self.persist()?;
+                    self.commit_display_state()?;
                 }
                 FlashSource::Manual | FlashSource::Automatic => {
                     let old = self.saved.previous.clone();
@@ -262,8 +274,7 @@ impl Rescue {
                         file: file.clone(),
                         display,
                     });
-                    self.persist()?;
-                    fs::remove_file(self.directory.join("normal-in-progress"))?;
+                    self.commit_display_state()?;
                     if let Some(old) = old {
                         if old.file != file {
                             let _ = fs::remove_file(self.directory.join(old.file));
@@ -644,6 +655,31 @@ mod tests {
         );
     }
     #[test]
+    fn network_detection_agrees_with_provisioning_fixtures() {
+        let cases: Value = serde_json::from_str(include_str!(
+            "../../yocto/pi-base/wifi-provisioner/tests/fixtures/connectivity.json"
+        ))
+        .unwrap();
+        for case in cases.as_array().unwrap() {
+            let connected = classify_network(case["output"].as_str().unwrap(), |device| {
+                case["carrier"][device]
+                    .as_bool()
+                    .ok_or_else(|| "carrier unavailable".into())
+            });
+            if case["rescue_connected"].is_null() {
+                assert!(connected.is_err(), "{}", case["name"]);
+            } else {
+                assert_eq!(
+                    connected.unwrap(),
+                    case["rescue_connected"].as_bool().unwrap(),
+                    "{}",
+                    case["name"]
+                );
+            }
+        }
+    }
+
+    #[test]
     fn transient_and_unknown_samples_restart_the_grace_period() {
         let directory =
             std::env::temp_dir().join(format!("inky-rescue-observe-{}", std::process::id()));
@@ -661,5 +697,168 @@ mod tests {
         assert_eq!(state.offline_since, None);
         assert!(state.online_since.is_some());
         fs::remove_dir_all(directory).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use super::*;
+    use crate::flash_queue::FlashJobStatus;
+
+    fn fixture() -> (Rescue, FlashJob) {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "inky-rescue-persistence-{}-{unique}",
+            std::process::id()
+        ));
+        let state = Rescue::load(directory.clone(), false);
+        let job = FlashJob {
+            automatic_recovery: false,
+            rescue_display: Some(DisplayStamp {
+                model: "impression-13.3-2025".into(),
+                width: 1600,
+                height: 1200,
+                rotation: 0,
+                revision: 0,
+            }),
+            source: FlashSource::Manual,
+            job_id: 1,
+            filename: "photo.png".into(),
+            dithered_path: directory.join("source.png").to_string_lossy().into(),
+            flash_twice: false,
+            rotation_degrees: 0,
+            status: FlashJobStatus::Flashing,
+            created_at: 100,
+            started_at: None,
+            finished_at: None,
+            error_message: None,
+        };
+        (state, job)
+    }
+
+    fn complete(state: &mut Rescue, job: &FlashJob, pixels: &[u8]) {
+        fs::write(&job.dithered_path, pixels).unwrap();
+        state.before_flash(job).unwrap();
+        state.finished(job, true);
+    }
+
+    fn previous(state: &Rescue) -> Option<Vec<u8>> {
+        state
+            .saved
+            .previous
+            .as_ref()
+            .map(|p| fs::read(state.directory.join(&p.file)).unwrap())
+    }
+
+    #[test]
+    fn failed_refresh_cannot_bless_a_stale_manifest_after_backup_failure() {
+        for backup_failure in ["manifest", "snapshot"] {
+            for later_failure in ["display", "intent", "manifest"] {
+                let (mut state, mut job) = fixture();
+                let directory = state.directory.clone();
+                complete(&mut state, &job, b"photo A");
+                assert!(state.error.is_none());
+
+                // B physically succeeds, but cannot save either its PNG or manifest.
+                job.job_id = 2;
+                let obstruction = directory.join(if backup_failure == "manifest" {
+                    "state.tmp"
+                } else {
+                    "image-100-2.tmp"
+                });
+                fs::create_dir(&obstruction).unwrap();
+                complete(&mut state, &job, b"photo B");
+                assert!(state.error.is_some());
+                assert!(directory.join("normal-in-progress").exists());
+                fs::remove_dir(obstruction).unwrap();
+
+                // C fails. It must not clear B's marker while A is still on disk.
+                job.job_id = 3;
+                let obstruction = directory.join(match later_failure {
+                    "intent" => "normal-in-progress.tmp",
+                    _ => "state.tmp",
+                });
+                if later_failure != "display" {
+                    fs::create_dir(&obstruction).unwrap();
+                }
+                let prepared = state.before_flash(&job);
+                assert_eq!(prepared.is_err(), later_failure == "intent");
+                state.finished(&job, false);
+                if later_failure == "manifest" {
+                    assert!(directory.join("normal-in-progress").exists());
+                }
+                if later_failure != "display" {
+                    fs::remove_dir(obstruction).unwrap();
+                }
+
+                let restarted = Rescue::load(directory.clone(), false);
+                let expected = if backup_failure == "manifest" && later_failure != "manifest" {
+                    Some(b"photo B".to_vec())
+                } else {
+                    None
+                };
+                assert_eq!(
+                    previous(&restarted),
+                    expected,
+                    "{backup_failure}/{later_failure}"
+                );
+                // The invalidation must itself survive another restart.
+                let restarted = Rescue::load(directory.clone(), false);
+                assert_eq!(previous(&restarted), expected);
+                fs::remove_dir_all(directory).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn a_failed_refresh_preserves_a_committed_previous_image() {
+        let (mut state, mut job) = fixture();
+        complete(&mut state, &job, b"photo A");
+        job.job_id = 2;
+        state.before_flash(&job).unwrap();
+        state.finished(&job, false);
+        assert!(!state.directory.join("normal-in-progress").exists());
+        let restarted = Rescue::load(state.directory.clone(), false);
+        assert_eq!(previous(&restarted), Some(b"photo A".to_vec()));
+        fs::remove_dir_all(state.directory).unwrap();
+    }
+
+    #[test]
+    fn successful_refresh_or_rescue_commits_the_latest_state_before_clearing_marker() {
+        for source in [
+            FlashSource::Manual,
+            FlashSource::Rescue,
+            FlashSource::Restore,
+        ] {
+            let (mut state, mut job) = fixture();
+            complete(&mut state, &job, b"photo A");
+            fs::create_dir(state.directory.join("state.tmp")).unwrap();
+            job.job_id = 2;
+            complete(&mut state, &job, b"photo B");
+            assert!(state.directory.join("normal-in-progress").exists());
+            fs::remove_dir(state.directory.join("state.tmp")).unwrap();
+            job.job_id = 3;
+            job.source = source;
+            complete(&mut state, &job, b"photo C");
+            assert!(state.error.is_none());
+            assert!(!state.directory.join("normal-in-progress").exists());
+            let restarted = Rescue::load(state.directory.clone(), false);
+            assert_eq!(
+                previous(&restarted),
+                Some(
+                    if source == FlashSource::Manual {
+                        b"photo C"
+                    } else {
+                        b"photo B"
+                    }
+                    .to_vec()
+                )
+            );
+            assert_eq!(restarted.saved.active, source == FlashSource::Rescue);
+            fs::remove_dir_all(state.directory).unwrap();
+        }
     }
 }

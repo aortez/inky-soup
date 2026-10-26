@@ -5,7 +5,10 @@ reconnection card. The card is a prepared black/white PNG with a QR code for
 <https://allan.pizza/setup/>. It tells the owner to reconnect power, then open
 Android Chrome and connect over Bluetooth within five minutes. That reuses the
 existing bounded provisioning window; rescue does not keep Bluetooth setup open
-or depend on the native Android provisioning work in #22.
+or depend on the native Android provisioning work in #22. The provisioner only
+closes its startup window after Wi-Fi is fully activated with a usable address
+and carrier. Authentication/DHCP in progress and link-local-only addresses leave
+the bounded window open; USB connectivity does not close Wi-Fi setup.
 
 ## Network detection
 
@@ -28,7 +31,7 @@ jobs that have not begun. An in-progress physical refresh finishes normally.
 
 Cards for 600×448 and 1600×1200, in both landscape and portrait, are compiled
 into the server binary. Mounting compensation uses the existing display worker.
-No fonts, QR generator, network service, or photo renderer runs on the Pi.
+No fonts, QR generator, or photo renderer is required on the Pi.
 Regenerate the committed assets with `tools/generate-rescue-cards.py` on a
 workstation (Pillow 13.0.0, qrcode 8.2, DejaVu Sans).
 
@@ -48,6 +51,9 @@ captured panel/mounting revision under `/data/inky-soup/rescue/` (or
 gallery photo. Replacement removes the previous snapshot; startup removes
 orphaned snapshots. A crash marker prevents restoring an older image over an
 interrupted manual refresh. State/snapshot writes use atomic rename and fsync.
+The crash marker is cleared only after the latest known state is saved or
+invalidated, including when a later refresh fails. Successful recovery operations
+also finish that state commit before clearing an older marker.
 A failure to record intent fails the refresh before the display is touched;
 backup errors after a successful physical refresh appear in rescue status.
 
@@ -85,9 +91,17 @@ and off on a development workstation. `INKY_SOUP_RESCUE=1` forces it on;
 snapshot tracking still work with monitoring off. Set this through a systemd
 service environment override if needed. Existing CLI server deployment carries
 the embedded cards with the binary; no separate asset installation is needed.
-The Yocto recipe declares the NetworkManager CLI dependency.
+The Yocto recipe declares the NetworkManager CLI dependency and pins the updated
+shared Wi-Fi provisioner. **The Bluetooth fix requires that provisioner update as
+well as the server update**; deploying only a new server binary cannot change the
+existing daemon's startup behavior. Rebuilding the Pi image includes both fixes.
 
 ## Validation
+
+Initialize `yocto/pi-base` with `git submodule update --init --recursive` before
+running server tests: both components exercise the shared connectivity fixtures.
+CI also tests the provisioner and checks that its recipe's source pin matches
+the tested code.
 
 Automated tests cover network/address/carrier classification, transient and
 unknown observations, grace/recovery timers, queue and editor conflicts,
