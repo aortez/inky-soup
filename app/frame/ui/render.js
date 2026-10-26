@@ -50,6 +50,8 @@ export function controls() {
   el['send-label'].textContent = state.job ? 'Refreshing…' : state.busy && state.view === 'editor' ? 'Working…' : 'Display this photo';
   el['send-panel'].setAttribute('aria-busy', String(working && state.view === 'editor'));
   el['setup-link'].hidden = androidApp || working;
+  el['add-frame'].hidden = !androidApp;
+  el['add-frame'].disabled = working || state.connecting || !state.session;
   el['preview-profile'].hidden = !androidApp || state.connected;
   for (const id of ['preview-model', 'preview-layout']) el[id].disabled = working || state.connected || state.connecting;
 }

@@ -1,4 +1,7 @@
 export const elements = Object.fromEntries([
+  'add-frame', 'setup-dialog', 'setup-name', 'setup-status', 'setup-devices', 'setup-scan',
+  'setup-wifi', 'setup-ssid', 'setup-password', 'setup-show-password', 'setup-submit',
+  'setup-retry', 'setup-done', 'setup-cancel', 'setup-help', 'setup-radio', 'setup-permissions', 'setup-location',
   'connection', 'connect-form', 'address', 'connect', 'connection-status', 'frame-name',
   'frame-detail', 'gallery', 'gallery-empty', 'refresh-gallery', 'pick-photo', 'photo',
   'editor', 'preview', 'preview-empty', 'preview-status', 'dimensions', 'fit', 'saturation',

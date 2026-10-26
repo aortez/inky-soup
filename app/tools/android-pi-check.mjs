@@ -8,7 +8,7 @@ import {_android} from 'playwright';
 
 const {values} = parseArgs({options: {
   serial:{type:'string'}, device:{type:'string'}, photo:{type:'string'},
-  flash:{type:'boolean',default:false}, output:{type:'string',default:'/tmp/inky-android-pi.json'},
+  flash:{type:'boolean',default:false}, connected:{type:'boolean',default:false}, output:{type:'string',default:'/tmp/inky-android-pi.json'},
 }});
 if (!values.device || !values.photo) throw new Error('Supply --device http://WIFI_IP:8000 and --photo DISPOSABLE_PHOTO; add --flash to refresh the physical display.');
 const base = new URL(values.device).origin;
@@ -34,9 +34,12 @@ try {
   page.on('pageerror',error=>errors.push(error.message));
   page.on('request',request=>{if (/^https?:/.test(request.url()) && !request.url().startsWith('https://localhost/')) external.push(request.url());});
   await page.waitForFunction(()=>!document.querySelector('#connect').disabled);
-  await page.locator('#connection').evaluate(el=>el.open=true);
-  await page.locator('#address').fill(base);
-  await page.locator('#connect').click();
+  if (!values.connected) {
+    await page.locator('#connection').evaluate(el=>el.open=true);
+    await page.locator('#address').fill(base);
+    await page.locator('#connect').click();
+  }
+  record.connectedAddress = await page.locator('#address').inputValue();
   await page.waitForFunction(()=>document.querySelector('#frame-detail').textContent.startsWith('Connected'),null,{timeout:60000});
   await page.locator('#gallery-tab').click();
   await page.waitForFunction(()=>[...document.querySelectorAll('#gallery img')].every(img=>img.complete && img.naturalWidth>0),null,{timeout:30000});

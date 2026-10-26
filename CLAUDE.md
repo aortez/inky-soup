@@ -10,7 +10,7 @@ are the command references; this file explains the implementation.
 The modern shared UI and Android prototype live in `app/`. See `app/README.md`
 for builds, platform adapters, source provenance, and website artifact consumption.
 The Android app supports offline editing and direct native Pi networking (#21);
-native BLE setup is tracked in #22. The Pi frontend below remains
+native Improv BLE setup is implemented in #22. The Pi frontend below remains
 until the Android experience passes hardware acceptance (#25 / #26).
 
 1. `upload-server/`: Rust/Rocket server, Tera templates, and browser JavaScript.
@@ -181,8 +181,10 @@ The USB setup and diagnostics are documented in the Yocto guide.
 The shared `yocto/pi-base/wifi-provisioner` daemon implements Improv BLE. Its
 recipe pins the daemon source separately from the submodule revision: update
 both when taking provisioner changes. Inky's recipe append sets the success URL
-port to 8000. The client lives in the standalone `aortez.github.io` checkout under
-`setup/`, published at https://allan.pizza/setup/; `/wifi/` redirects there.
+port to 8000. The shared browser client lives in `app/setup/`, published at https://allan.pizza/setup/;
+`/wifi/` redirects there. Android uses the same encoder/decoder through
+`app/frame/services/native-setup.js` and its `FrameBle` Capacitor plugin. The native
+Add frame dialog provisions WiFi and confirms the local API connection inside the app.
 
 The setup window is closed when already connected, and bounded to five minutes
 when opened. Use `wifi-provisioner --start|--stop|--status` over USB/SSH. The client

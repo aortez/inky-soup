@@ -1,0 +1,33 @@
+{
+  "model": "Pixel 9 Pro XL",
+  "android": "17",
+  "bleId": "88:A2:9E:B1:73:79",
+  "checks": [
+    "Explicit peripheral selection, cancel, and reconnect succeed on native GATT.",
+    "Closing the firmware setup window produces recoverable feedback and closes GATT.",
+    "101-byte UTF-8 credential packet reaches firmware; nonexistent network reports WiFi failure and clears credentials.",
+    "WiFi retry and direct native API configuration/gallery handoff succeed for the selected small Pi."
+  ],
+  "discovered": [
+    "sw-picade · D6:C5:5C · Strong signal",
+    "inky-soup-small · B1:73:79 · Strong signal",
+    "sw-picade-2 · 82:36:12 · Strong signal",
+    "spacewars · 14:62:63 · Weak signal"
+  ],
+  "failure": "Could not join WiFi. Check the network name and password, then scan again to retry.",
+  "result": "Your frame is connected and ready for photos.",
+  "address": "http://inky-soup-small.local:8000",
+  "profile": "Connected · 600 × 448",
+  "pageErrors": [],
+  "webView": "Mozilla/5.0 (Linux; Android 17; Pixel 9 Pro XL Build/CP2A.260605.016; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/155.0.8059.39 Mobile Safari/537.36",
+  "passed": true,
+  "apkSha256": "246d6880c12505db4c07bc1b95fea6c25b3c3d04a03c038f2e426843fa30780a",
+  "manualChecks": [
+    "Denied Nearby devices permission, retried, and granted it at scan time.",
+    "Bluetooth-off message and Android settings link verified; enabled Bluetooth for the hardware pass."
+  ],
+  "restoredPhoneSettings": {
+    "bluetooth_on": 0,
+    "stay_on_while_plugged_in": 0
+  }
+}

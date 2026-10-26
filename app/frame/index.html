@@ -28,7 +28,7 @@
           <div class="address-row"><input id="address" type="text" inputmode="url" value="inky-soup.local:8000" autocomplete="off" autocapitalize="none" spellcheck="false" required><button id="connect" type="submit">Connect</button></div>
           <p id="connection-status" role="status">Keep your phone and frame on the same WiFi.</p>
         </form>
-        <div class="connection-actions"><a id="setup-link" href="/setup/?return=frame">Set up WiFi over Bluetooth</a><button id="forget" class="text-button" type="button" hidden>Forget frame</button></div>
+        <div class="connection-actions"><button id="add-frame" type="button" hidden>Add frame over Bluetooth</button><a id="setup-link" href="/setup/?return=frame">Set up WiFi over Bluetooth</a><button id="forget" class="text-button" type="button" hidden>Forget frame</button></div>
         <details class="help"><summary>Need a hand connecting?</summary><p>Allow the browser to access devices on your local network. On Android, Chrome also needs Nearby devices permission. Guest WiFi may prevent your phone and frame from finding each other.</p><p>Your frame may need a software update to connect here. You can still open its address directly to use the original interface.</p></details>
       </details>
       <section id="editor-panel" aria-labelledby="editor-heading">
@@ -109,5 +109,32 @@
     <nav class="bottom-nav" aria-label="App views"><button id="choose-tab" aria-current="page"><span aria-hidden="true">▧</span> Create</button><button id="gallery-tab"><span aria-hidden="true">▦</span> On frame</button><button id="settings-tab"><span aria-hidden="true">⚙</span> Settings</button></nav>
   </div>
   <dialog id="delete-dialog" aria-labelledby="delete-heading"><h2 id="delete-heading">Delete this photo?</h2><p id="delete-name"></p><p>This removes the photo and its saved versions from the frame. The image currently on the display stays until the next refresh.</p><div class="dialog-actions"><button id="cancel-delete" class="secondary">Keep photo</button><button id="confirm-delete" class="danger-button">Delete photo</button></div></dialog>
+  <dialog id="setup-dialog" aria-labelledby="setup-name">
+    <h2 id="setup-name">Add a frame</h2>
+    <p id="setup-status" role="status" aria-live="polite"></p>
+    <p>Keep your phone near the frame. Setup closes after five minutes. You can open a new window on the frame and retry.</p>
+    <div id="setup-devices" class="setup-devices" aria-label="Nearby frames"></div>
+    <button id="setup-scan" type="button">Scan for frames</button>
+    <form id="setup-wifi" hidden autocomplete="off">
+      <label for="setup-ssid">WiFi network name</label>
+      <input id="setup-ssid" type="text" required autocomplete="off" autocapitalize="none" spellcheck="false">
+      <label for="setup-password">WiFi password</label>
+      <input id="setup-password" type="password" autocomplete="off" autocapitalize="none" spellcheck="false">
+      <label class="setup-show"><input id="setup-show-password" type="checkbox"> Show password</label>
+      <p>WiFi settings are sent only to the frame you selected. Use an empty password for an open network.</p>
+      <button id="setup-submit" type="submit">Connect frame to WiFi</button>
+    </form>
+    <button id="setup-retry" type="button" hidden>Retry frame connection</button>
+    <details id="setup-help"><summary>Bluetooth or permission trouble?</summary>
+      <p>Turn on Bluetooth and allow Nearby devices for this app. Android 11 and earlier also need Location permission and Location turned on for discovery. Return here and scan again.</p>
+      <button id="setup-radio" type="button">Bluetooth settings</button>
+      <button id="setup-permissions" type="button">App permissions</button>
+      <button id="setup-location" type="button">Location settings</button>
+    </details>
+    <div class="dialog-actions">
+      <button id="setup-cancel" type="button">Cancel setup</button>
+      <button id="setup-done" type="button" hidden>Open editor</button>
+    </div>
+  </dialog>
 </body>
 </html>

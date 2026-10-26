@@ -1,6 +1,7 @@
 import {editSession} from './edit-session.js';
 
 export const state = {
+  setup: null,
   frame: null, config: null, images: [], draft: null, prepared: null,
   connected: false, connecting: false, galleryGeneration: 0,
   busy: false, processing: false, processor: null, generation: 0,
