@@ -5,7 +5,7 @@ import {identifyFrame, locateFrame, discoverFrames} from './services/frame-disco
 import {androidApp} from './core/platform.js';
 import {previewConfig, savedPreviewConfig, rememberPreviewConfig} from './core/preview-profile.js';
 import {elements as el} from './core/dom.js';
-import {state, sessionReady, rememberFrame, savedFrame, rememberJob, savedJob, registry} from './core/state.js';
+import {state, sessionReady, rememberFrame, savedFrame, rememberJob, savedJob, forgetSavedJob, registry} from './core/state.js';
 import {normalizeAddress, request, validateConfig, savePhoto, deletePhoto, jsonPost, getPhoto, sendTestCard} from './services/frame-client.js';
 import {imageSettings, settingIds, validatePhoto} from './core/settings.js';
 import {pendingPhotoRotation} from './core/photo-rotation.js';
@@ -379,11 +379,19 @@ async function chooseFiles(files) {
 
 async function finishJob(job) {
   if (state.job !== job) return;
+  if (state.connected && state.frame?.base === job.base) {
+    // Keep the job active until editing is restored, so frame selection cannot
+    // race the gallery request or acquire a lease on the wrong frame.
+    try {await refreshGallery();}
+    catch (error) {el['gallery-status'].textContent = error.message;}
+    if (state.job !== job || state.connecting) return;
+    await acquireEditLock();
+    if (state.job !== job) return;
+  }
   rememberJob(null); controls();
   if (!state.connected || state.frame?.base !== job.base) return;
   try {
-    await refreshGallery();
-    if (state.frame?.base === job.base) await regenerateGallery();
+    await regenerateGallery();
   } catch (error) {el['gallery-status'].textContent = error.message;}
 }
 
@@ -550,7 +558,10 @@ el.forget.addEventListener('click', async () => {
   if (state.busy || state.job || state.connecting) return;
   state.busy = true; controls();
   await releaseEditLock();
-  if (androidApp && state.frame?.id) registry.forget(state.frame.id);
+  if (androidApp && state.frame?.id) {
+    registry.forget(state.frame.id);
+    forgetSavedJob(state.frame.id);
+  }
   try { localStorage.removeItem('sparkle-frame'); } catch { /* Storage can be disabled. */ }
   state.frame = null; state.config = androidApp ? savedPreviewConfig() : null; state.connected = false;
   state.images = []; state.processor?.abort(); ++state.generation; state.processing = false; state.prepared = null;

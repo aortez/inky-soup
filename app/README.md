@@ -287,7 +287,10 @@ network permission or system service picker flow.
 A connected draft follows its source device ID, including pending rotation
 receipts. Legacy drafts with only an address become independent copies on first
 identity-aware connection; an address cannot prove ownership of an old original.
-Saved display jobs carry both device ID and server instance. Reconnect only reads
+Saved display jobs carry both device ID and server instance. Receipts are kept
+independently for each frame, so using another frame cannot discard an unavailable
+frame’s pending refresh. Finishing a refresh restores the draft’s edit lease
+before enabling controls. Reconnect only reads
 status, never resubmits a refresh. A restarted server invalidates the old job and
 the app asks the user to check the screen before sending again.
 

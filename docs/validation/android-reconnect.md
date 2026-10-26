@@ -70,3 +70,21 @@ value of 0.
 
 Keep #23 open and the implementation PR in draft until the reserved-device and
 #17 integration acceptance can be completed.
+
+## PR review fixes
+
+Both reported bugs were reproduced with Android bundle tests before the fixes:
+selecting another frame after an unavailable startup discarded its saved job,
+and completing a remembered refresh left the original draft read-only.
+
+Job receipts now persist per device, migrate the prior single receipt, and expire
+independently when completed or explicitly forgotten. Completion restores the
+current draft's edit lease before releasing the job's UI guard. Tests cover
+switching away and back across app restart, retaining two jobs, completed/failed
+refreshes, and selection staying disabled while completion cleanup is pending.
+
+Updated validation: 50 app unit tests, 25 Android bundle tests, 51 web tests, and
+8 PWA tests passed. The updated APK builds successfully. These review fixes have
+not been installed or physically retested on the phone; the hardware record and
+APK checksum above describe the preceding build. The remaining acceptance list
+is unchanged.

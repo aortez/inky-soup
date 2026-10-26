@@ -4,7 +4,7 @@ async function bridge(page, scenario = {}) {
   await page.addInitScript(scenario => {
     const small = {id:'a'.repeat(32),instance_id:'c'.repeat(32),name:'Kitchen',api_version:1,capabilities:['device-identity-v1'],base:'http://192.168.1.2:8000'};
     const large = {...small,id:'b'.repeat(32),name:'Kitchen',base:'http://192.168.1.3:8000'};
-    const config = model => model === 'small' ? {model:'impression-5.7',width:600,height:448,physical_width:600,physical_height:448,rotation_revision:0} : {model:'impression-13.3-2025',width:1600,height:1200,physical_width:1600,physical_height:1200,rotation_revision:0};
+    const config = model => model === 'small' ? {model:'impression-5.7',width:600,height:448,thumb_width:150,thumb_height:112,physical_width:600,physical_height:448,rotation_revision:0} : {model:'impression-13.3-2025',width:1600,height:1200,thumb_width:400,thumb_height:300,physical_width:1600,physical_height:1200,rotation_revision:0};
     small.config=config('small'); large.config=config('large');
     if (!localStorage.getItem('initialized')) {
       localStorage.setItem('initialized','1');
@@ -12,7 +12,7 @@ async function bridge(page, scenario = {}) {
       if (scenario.job) localStorage.setItem('sparkle-job',JSON.stringify({id:7,deviceId:small.id,instanceId:small.instance_id,base:small.base,filename:'photo.jpg',createdAt:123}));
     }
     window.services=[{base:'http://192.168.1.9:8000'},{base:large.base}];
-    window.apiCalls=[]; window.discoveries=0; window.scenario=scenario;
+    window.apiCalls=[]; window.discoveries=0; window.scenario={...scenario,...JSON.parse(localStorage.getItem('test-network') || '{}')};
     let counter=0;const files=new Map(),listeners={};
     window.resumeFrame=()=>listeners.appStateChange?.({isActive:true});
     window.Capacitor={PluginHeaders:['FrameTransport','FrameDiscovery','FrameBle','App'].map(name=>({name,methods:[
@@ -32,11 +32,16 @@ async function bridge(page, scenario = {}) {
       if(method==='request'){
         window.apiCalls.push({base:args.base,path:args.path,method:args.method});
         if(window.scenario.missing)throw Error('Cannot reach frame');
+        if(args.path.startsWith('/api/flash/status/')) window.reconciledJob=true;
+        if(args.path==='/api/images'&&window.reconciledJob&&window.scenario.holdCompletionGallery) {
+          window.scenario.holdCompletionGallery=false;
+          await new Promise(resolve=>{window.finishGallery=resolve;});
+        }
         const moved=window.scenario.moved;
         let identity=args.base.endsWith('1.9:8000')?small:args.base===small.base?(moved?large:small):large;
         identity={...identity,base:args.base};
         if(window.scenario.restarted&&identity.id===small.id)identity.instance_id='d'.repeat(32);
-        let data=args.path==='/api/lock-image'?{locked:true}:args.path==='/api/device'?identity:args.path==='/api/display-config'?identity.config:args.path.startsWith('/api/flash/status/')?{filename:'photo.jpg',created_at:123,status:'Completed'}:[];
+        let data=args.path==='/api/lock-image'?{locked:true}:args.path==='/api/device'?identity:args.path==='/api/display-config'?identity.config:args.path.startsWith('/api/flash/status/')?{filename:'photo.jpg',created_at:123,status:window.scenario.jobStatus || 'Completed'}:[];
         const text=JSON.stringify(data),id=String(++counter);files.set(id,text);
         return {id,size:text.length,status:200,contentType:'application/json'};
       }
@@ -122,4 +127,54 @@ test('resume rebinds a saved draft and reacquires its edit lease at the verified
   const writes=await page.evaluate(()=>window.apiCalls.filter(call=>call.method==='POST'));
   expect(writes.length).toBeGreaterThan(0);
   expect(writes.every(call=>call.base==='http://192.168.1.9:8000'&&call.path==='/api/lock-image')).toBe(true);
+});
+
+test('switching frames after an unavailable startup preserves the other frame job',async({page})=>{
+  await bridge(page,{missing:true,job:true});await page.goto('/');
+  await expect(page.locator('#connection-status')).toContainText('saved frame is unavailable');
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('sparkle-job')).id)).toBe(7);
+  await page.evaluate(()=>{window.scenario.missing=false;localStorage.setItem('test-network',JSON.stringify({missing:false}));});
+  await page.locator('#frame-picker').selectOption('b'.repeat(32));
+  await expect(page.locator('#frame-detail')).toHaveText('Connected · 1600 × 1200');
+  expect(await page.evaluate(()=>window.apiCalls.filter(call=>call.path.includes('/api/flash/status/')))).toHaveLength(0);
+  await page.reload();
+  await expect(page.locator('#frame-detail')).toHaveText('Connected · 1600 × 1200');
+  await page.locator('#connection > summary').click();
+  await page.locator('#frame-picker').selectOption('a'.repeat(32));
+  await expect(page.locator('#frame-detail')).toHaveText('Connected · 600 × 448');
+  await expect(page.locator('#activity-title')).toHaveText('Your new view is ready.');
+  expect(await page.evaluate(()=>window.apiCalls.filter(call=>call.path.includes('/api/flash/status/')).map(call=>call.base))).toEqual(['http://192.168.1.2:8000']);
+  expect(await page.evaluate(()=>window.apiCalls.every(call=>call.method==='GET'))).toBe(true);
+});
+
+for (const jobStatus of ['Completed', 'Failed']) test(`remembered ${jobStatus} job restores the original draft edit lease`,async({page})=>{
+  await bridge(page,{jobStatus});await page.goto('/');await expect(page.locator('#frame-detail')).toHaveText('Connected · 600 × 448');
+  await page.evaluate(async()=>{
+    const canvas=document.createElement('canvas');canvas.width=10;canvas.height=10;
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve));
+    const db=await new Promise((resolve,reject)=>{const open=indexedDB.open('sparkle-frame',1);open.onsuccess=()=>resolve(open.result);open.onerror=()=>reject(open.error);});
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction('drafts','readwrite');tx.objectStore('drafts').put({blob,name:'photo.jpg',sourceFilename:'photo.jpg',sourceDeviceId:'a'.repeat(32),sourceFrame:'http://192.168.1.2:8000'},'current');
+      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);
+    });db.close();
+    localStorage.setItem('sparkle-job',JSON.stringify({id:7,deviceId:'a'.repeat(32),instanceId:'c'.repeat(32),base:'http://192.168.1.2:8000',filename:'photo.jpg',createdAt:123}));
+  });
+  await page.reload();
+  await expect(page.locator('#activity-title')).toHaveText(jobStatus === 'Completed' ? 'Your new view is ready.' : 'The display could not refresh.');
+  await expect(page.locator('#preview-status')).toContainText('Ready.');
+  await expect(page.locator('#fit')).toBeEnabled();
+  await expect(page.locator('#lock-status')).toContainText('Editing this photo.');
+  expect(await page.evaluate(()=>window.apiCalls.filter(call=>call.path==='/api/lock-image'))).toHaveLength(1);
+});
+
+
+test('frame selection stays blocked until completed job cleanup finishes',async({page})=>{
+  await bridge(page,{job:true,holdCompletionGallery:true});await page.goto('/');
+  await expect(page.locator('#activity-title')).toHaveText('Your new view is ready.');
+  await expect.poll(()=>page.evaluate(()=>typeof window.finishGallery)).toBe('function');
+  await expect(page.locator('#frame-picker')).toBeDisabled();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('sparkle-job')).id)).toBe(7);
+  await page.evaluate(()=>window.finishGallery());
+  await expect(page.locator('#frame-picker')).toBeEnabled();
+  expect(await page.evaluate(()=>localStorage.getItem('sparkle-job'))).toBeNull();
 });

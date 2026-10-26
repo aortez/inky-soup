@@ -1,5 +1,6 @@
 import {androidApp} from './platform.js';
 import {frameRegistry} from './frame-registry.js';
+import {savedJobs} from './saved-jobs.js';
 import {editSession} from './edit-session.js';
 
 export const state = {
@@ -16,6 +17,7 @@ export const state = {
 export const sessionReady = editSession().then(session => {state.session = session;});
 
 export const registry = frameRegistry(localStorage);
+const jobs = savedJobs(localStorage);
 
 export function rememberFrame(frame) {
   if (androidApp && frame.id) registry.remember(frame);
@@ -31,13 +33,26 @@ export function savedFrame() {
 }
 
 export function rememberJob(job) {
+  const previous = state.job;
   state.job = job;
   try {
+    if (androidApp) {
+      if (job) jobs.put(job);
+      else jobs.remove(previous?.deviceId || state.frame?.id);
+      return;
+    }
     if (job) localStorage.setItem('sparkle-job', JSON.stringify(job));
     else localStorage.removeItem('sparkle-job');
   } catch { /* A live job can still be tracked without persistent storage. */ }
 }
 
 export function savedJob() {
+  if (androidApp) {
+    try {return jobs.get(state.frame?.id);} catch {return null;}
+  }
   try { return JSON.parse(localStorage.getItem('sparkle-job')); } catch { return null; }
+}
+
+export function forgetSavedJob(deviceId) {
+  try {jobs.remove(deviceId);} catch { /* Storage can be disabled. */ }
 }
