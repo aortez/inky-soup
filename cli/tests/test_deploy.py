@@ -46,9 +46,264 @@ class DeploymentTests(unittest.TestCase):
 
     def command(self, *args):
         self.commands.append(args)
+        if args[-1] == "--status":
+            return json.dumps({"ok": True, "state": "idle", "wifi_connected": True})
+        if args[:3] == ("systemctl", "show", deploy.PROVISIONER_SERVICE):
+            if "InvocationID" in args:
+                return "a" * 32
+            return "path=/usr/bin/wifi-provisioner ;"
         if args[0] == "python3":
             return "--rotation"
         return "path=/usr/bin/inky-soup-server ;"
+
+    def add_provisioner(self):
+        (self.bundle / "provisioner").write_bytes(b"\x7fELFprovisioner")
+        (self.bundle / "provisioner-revision.txt").write_text("shared-revision")
+        (self.root / deploy.PROVISIONER_PATH).write_bytes(b"old provisioner")
+
+    def test_optional_provisioner_installs_and_checks_health_before_starting_server(self):
+        self.add_provisioner()
+        result = self.apply()
+        self.assertEqual(result["provisioner"]["revision"], "shared-revision")
+        installed = self.root / deploy.PROVISIONER_PATH
+        self.assertEqual(installed.read_bytes(), b"\x7fELFprovisioner")
+        self.assertEqual(installed.stat().st_mode & 0o777, 0o755)
+        backup = Path(result["software_backup"])
+        self.assertEqual((backup / "provisioner").read_bytes(), b"old provisioner")
+        self.assertEqual((backup / "deployed-provisioner-revision.txt").read_text(), "shared-revision\n")
+        self.assertLess(self.commands.index((str(installed), "--status")),
+                        self.commands.index(("systemctl", "start", deploy.SERVICE)))
+        self.assert_preserved()
+
+    def test_server_only_bundle_never_touches_provisioner(self):
+        result = self.apply()
+        self.assertNotIn("provisioner", result)
+        self.assertFalse(any("provisioner" in " ".join(args) for args in self.commands))
+
+    def test_provisioner_restart_failure_does_not_skip_server_recovery(self):
+        self.add_provisioner()
+        recovering = False
+        active = {deploy.SERVICE: True, deploy.PROVISIONER_SERVICE: True}
+        def command(*args):
+            result = self.command(*args)
+            if args[:2] == ("systemctl", "stop"):
+                active[args[2]] = False
+            if args[:2] == ("systemctl", "start"):
+                if recovering and args[2] == deploy.PROVISIONER_SERVICE:
+                    raise RuntimeError("injected provisioner restart failure")
+                active[args[2]] = True
+            return result
+        def health():
+            nonlocal recovering
+            recovering = True
+            raise RuntimeError("injected server health failure")
+        with self.assertRaises(RuntimeError) as caught:
+            self.apply(command=command, health=health)
+        self.assertTrue(active[deploy.SERVICE])
+        self.assertFalse(active[deploy.PROVISIONER_SERVICE])
+        self.assertIn("injected server health failure", str(caught.exception))
+        self.assertIn("injected provisioner restart failure", str(caught.exception))
+        self.assertIn("recovery incomplete", str(caught.exception))
+        self.assertEqual((self.root / "usr/bin/inky-soup-server").read_bytes(), b"old")
+        self.assertEqual((self.root / deploy.PROVISIONER_PATH).read_bytes(), b"old provisioner")
+        self.assert_preserved()
+
+    def test_provisioner_failure_or_restart_during_server_health_rolls_back(self):
+        self.add_provisioner()
+        for failure in ("inactive", "status", "restarted"):
+            with self.subTest(failure=failure):
+                server_checked = False
+                def health():
+                    nonlocal server_checked
+                    server_checked = True
+                    return {"rotation_degrees": 180}
+                def command(*args):
+                    result = self.command(*args)
+                    if server_checked:
+                        if failure == "inactive" and args == ("systemctl", "is-active", deploy.PROVISIONER_SERVICE):
+                            raise RuntimeError("provisioner inactive")
+                        if failure == "status" and args == (str(self.root / deploy.PROVISIONER_PATH), "--status"):
+                            raise RuntimeError("provisioner control failed")
+                        if failure == "restarted" and "InvocationID" in args:
+                            return "b" * 32
+                    return result
+                with self.assertRaisesRegex(RuntimeError, "previous software restored"):
+                    self.apply(command=command, health=health)
+                self.assertEqual((self.root / "usr/bin/inky-soup-server").read_bytes(), b"old")
+                self.assertEqual((self.root / deploy.PROVISIONER_PATH).read_bytes(), b"old provisioner")
+                self.assert_preserved()
+
+    def test_provisioner_stop_failure_still_recovers_server_and_preserves_old_daemon(self):
+        self.add_provisioner()
+        recovering = False
+        def command(*args):
+            result = self.command(*args)
+            if recovering and args == ("systemctl", "stop", deploy.PROVISIONER_SERVICE):
+                raise RuntimeError("injected provisioner stop failure")
+            return result
+        def health():
+            nonlocal recovering
+            recovering = True
+            raise RuntimeError("injected server health failure")
+        with self.assertRaisesRegex(RuntimeError, "recovery incomplete.*provisioner stop failure"):
+            self.apply(command=command, health=health)
+        self.assertEqual((self.root / "usr/bin/inky-soup-server").read_bytes(), b"old")
+        self.assertEqual(self.commands[-1], ("systemctl", "start", deploy.SERVICE))
+        # Do not replace an executable whose service could not be stopped.
+        self.assertEqual((self.root / deploy.PROVISIONER_PATH).read_bytes(), b"\x7fELFprovisioner")
+        old = list((self.root / "usr/bin").glob("wifi-provisioner.old-*"))
+        self.assertEqual(len(old), 1)
+        self.assertEqual(old[0].read_bytes(), b"old provisioner")
+        self.assert_preserved()
+
+    def test_provisioner_file_restore_failure_does_not_skip_server_recovery(self):
+        self.add_provisioner()
+        rename = Path.rename
+        def fail_restore(source, target):
+            if source.name.startswith("wifi-provisioner.old-"):
+                raise OSError("injected provisioner restore failure")
+            return rename(source, target)
+        def health():
+            raise RuntimeError("injected server health failure")
+        with patch.object(Path, "rename", new=fail_restore):
+            with self.assertRaisesRegex(RuntimeError, "recovery incomplete.*provisioner restore failure"):
+                self.apply(health=health)
+        self.assertEqual((self.root / "usr/bin/inky-soup-server").read_bytes(), b"old")
+        self.assertEqual(self.commands[-1], ("systemctl", "start", deploy.SERVICE))
+        # No attempt to start the daemon with an incompletely restored binary.
+        self.assertEqual(self.commands.count(("systemctl", "start", deploy.PROVISIONER_SERVICE)), 1)
+        self.assertEqual(len(list((self.root / "usr/bin").glob("wifi-provisioner.old-*"))), 1)
+        self.assert_preserved()
+
+    def test_late_provisioner_failure_does_not_interrupt_new_display_jobs(self):
+        self.add_provisioner()
+        for job_state in ("Queued", "Flashing", "unavailable"):
+            with self.subTest(job_state=job_state):
+                self.commands.clear()
+                server_checked = False
+                def health():
+                    nonlocal server_checked
+                    server_checked = True
+                    return {}
+                def status(_):
+                    if not server_checked:
+                        return {"queue_length": 0, "queue": [], "current_job": None}
+                    if job_state == "unavailable":
+                        raise RuntimeError("display status unavailable")
+                    return {"queue_length": 1 if job_state == "Queued" else 0,
+                            "queue": [{"status": job_state}] if job_state == "Queued" else [],
+                            "current_job": {"status": job_state}}
+                def command(*args):
+                    result = self.command(*args)
+                    if server_checked and args == ("systemctl", "is-active", deploy.PROVISIONER_SERVICE):
+                        raise RuntimeError("provisioner stopped unexpectedly")
+                    return result
+                with self.assertRaisesRegex(RuntimeError, "recovery incomplete.*Server left running"):
+                    self.apply(command=command, health=health, status=status)
+                self.assertEqual(self.commands.count(("systemctl", "stop", deploy.SERVICE)), 1)
+                self.assertEqual((self.root / "usr/bin/inky-soup-server").read_bytes(), b"\x7fELFnew")
+                self.assertEqual((self.root / deploy.PROVISIONER_PATH).read_bytes(), b"old provisioner")
+                self.assertTrue(list((self.root / "usr/bin").glob("inky-soup-server.old-*")))
+                self.assert_preserved()
+
+    def test_final_health_result_is_fresh_and_restarts_during_status_are_rejected(self):
+        self.add_provisioner()
+        server_checked = False
+        def health():
+            nonlocal server_checked
+            server_checked = True
+            return {}
+        def command(*args):
+            if server_checked and args == (str(self.root / deploy.PROVISIONER_PATH), "--status"):
+                return json.dumps({"ok": True, "state": "advertising", "wifi_connected": False})
+            return self.command(*args)
+        result = self.apply(command=command, health=health)
+        self.assertEqual(result["provisioner"]["status"]["state"], "advertising")
+        invocations = iter(["before", "after"])
+        def restart(*args):
+            if "InvocationID" in args:
+                return next(invocations)
+            return self.command(*args)
+        with self.assertRaisesRegex(RuntimeError, "Provisioner restarted"):
+            deploy.check_provisioner(restart, self.root / deploy.PROVISIONER_PATH, "before")
+
+    def test_provisioner_or_server_health_failure_restores_both_binaries(self):
+        self.add_provisioner()
+        for failing in ("provisioner", "server"):
+            with self.subTest(failing=failing):
+                self.commands.clear()
+                def unhealthy():
+                    if failing == "server":
+                        raise RuntimeError("server unavailable")
+                    return {}
+                def command(*args):
+                    if args == (str(self.root / deploy.PROVISIONER_PATH), "--status") and failing == "provisioner":
+                        raise RuntimeError("provisioner unavailable")
+                    return self.command(*args)
+                with patch.object(deploy.time, "monotonic", side_effect=[0, 31]):
+                    with self.assertRaisesRegex(RuntimeError, "previous software restored"):
+                        self.apply(command=command, health=unhealthy)
+                self.assertEqual((self.root / deploy.PROVISIONER_PATH).read_bytes(), b"old provisioner")
+                self.assertEqual((self.root / "usr/bin/inky-soup-server").read_bytes(), b"old")
+                self.assertEqual(self.commands[-2:], [("systemctl", "start", deploy.PROVISIONER_SERVICE),
+                                                     ("systemctl", "start", deploy.SERVICE)])
+                self.assert_preserved()
+
+    def test_active_setup_at_preflight_or_after_staging_prevents_installation(self):
+        self.add_provisioner()
+        for busy_check in (1, 2):
+            for state in ("advertising", "connected", "provisioning"):
+                with self.subTest(busy_check=busy_check, state=state):
+                    self.commands.clear()
+                    checks = 0
+                    def command(*args):
+                        nonlocal checks
+                        if args[-1] == "--status":
+                            checks += 1
+                            if checks == busy_check:
+                                return json.dumps({"ok": True, "state": state, "wifi_connected": True})
+                        return self.command(*args)
+                    with self.assertRaisesRegex(RuntimeError, "Wait for Bluetooth setup"):
+                        self.apply(command=command)
+                    self.assertFalse(any(args[:2] == ("systemctl", "stop") for args in self.commands))
+                    self.assertEqual((self.root / deploy.PROVISIONER_PATH).read_bytes(), b"old provisioner")
+
+    def test_invalid_optional_provisioner_never_stops_services(self):
+        self.add_provisioner()
+        (self.bundle / "provisioner").write_bytes(b"not executable")
+        with self.assertRaisesRegex(RuntimeError, "target-native ELF"):
+            self.apply()
+        self.assertEqual(self.commands, [])
+        (self.bundle / "provisioner").unlink()
+        (self.bundle / "provisioner").symlink_to(self.root / deploy.PROVISIONER_PATH)
+        with self.assertRaisesRegex(RuntimeError, "Missing or linked"):
+            self.apply()
+        self.assertEqual(self.commands, [])
+
+    def test_provisioner_health_retries_startup_and_rejects_invalid_status(self):
+        responses = iter(["not json", '{"ok":false}',
+                          '{"ok":true,"state":"idle"}',
+                          '{"ok":true,"state":"unknown","wifi_connected":true}',
+                          '{"ok":true,"state":"idle","wifi_connected":true}'])
+        def command(*args):
+            return next(responses) if args[-1] == "--status" else "active"
+        with patch.object(deploy.time, "sleep"):
+            self.assertTrue(deploy.provisioner_health(command, Path("/usr/bin/wifi-provisioner"))["ok"])
+
+    def test_failed_provisioner_replacement_restores_server_and_provisioner(self):
+        self.add_provisioner()
+        rename = Path.rename
+        def fail_install(source, target):
+            if source.name.startswith("wifi-provisioner.next-"):
+                raise OSError("injected rename failure")
+            return rename(source, target)
+        with patch.object(Path, "rename", new=fail_install):
+            with self.assertRaisesRegex(RuntimeError, "previous software restored"):
+                self.apply()
+        self.assertEqual((self.root / deploy.PROVISIONER_PATH).read_bytes(), b"old provisioner")
+        self.assertEqual((self.root / "usr/bin/inky-soup-server").read_bytes(), b"old")
+        self.assertEqual(list(self.root.rglob("*.next-*")), [])
+        self.assert_preserved()
 
     def apply(self, **kwargs):
         return deploy.deploy(self.bundle, self.root, command=kwargs.get("command", self.command),
