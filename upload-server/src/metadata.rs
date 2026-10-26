@@ -31,6 +31,11 @@ pub struct PhotoRotationOperation {
 /// Metadata stored for each image.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageMetadata {
+    #[serde(default)]
+    pub favorite: bool,
+    /// An original/cache upload has not yet committed its final display pixels.
+    #[serde(default)]
+    pub processing_pending: bool,
     #[serde(default = "default_filter")]
     pub filter: String,
     #[serde(default = "default_saturation")]
@@ -96,6 +101,8 @@ fn default_cache_version() -> u32 {
 impl Default for ImageMetadata {
     fn default() -> Self {
         Self {
+            favorite: false,
+            processing_pending: false,
             filter: DEFAULT_FILTER.to_string(),
             saturation: DEFAULT_SATURATION,
             brightness: DEFAULT_BRIGHTNESS,
@@ -294,27 +301,6 @@ pub fn get_all_metadata(filename: &str) -> ImageMetadata {
     }
 
     metadata
-}
-
-/// Saves all dither-related settings for an image.
-/// Called when flashing an image (preserves cache_version).
-pub fn save_dither_settings(
-    filename: &str,
-    filter: &str,
-    fit_mode: &str,
-    saturation: f32,
-    brightness: i32,
-    contrast: i32,
-    dither_algorithm: &str,
-) {
-    let mut metadata = get_all_metadata(filename);
-    metadata.filter = filter.to_string();
-    metadata.fit_mode = fit_mode.to_string();
-    metadata.saturation = saturation;
-    metadata.brightness = brightness;
-    metadata.contrast = contrast;
-    metadata.dither_algorithm = dither_algorithm.to_string();
-    save_metadata(filename, &metadata);
 }
 
 /// Returns a list of all filenames that have metadata files.

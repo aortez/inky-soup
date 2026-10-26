@@ -13,7 +13,10 @@ use tokio::process::Command;
 use tokio::sync::Mutex;
 use tokio::time;
 
-use crate::display_settings;
+use crate::{
+    display_settings,
+    slideshow::{FlashSource, SlideshowState},
+};
 
 /// Shared flash queue state type.
 pub type FlashQueueState = Arc<Mutex<FlashQueue>>;
@@ -38,6 +41,7 @@ const FINISHED_JOB_RETENTION_MS: u64 = 30_000;
 #[derive(Debug, Clone, Serialize)]
 #[serde(crate = "rocket::serde")]
 pub struct FlashJob {
+    pub source: FlashSource,
     /// Unique job identifier.
     pub job_id: u64,
     /// Original filename (for display).
@@ -92,10 +96,38 @@ impl FlashQueue {
         flash_twice: bool,
         rotation_degrees: u16,
     ) -> u64 {
+        self.enqueue_with_source(
+            filename,
+            dithered_path,
+            flash_twice,
+            rotation_degrees,
+            FlashSource::Manual,
+        )
+    }
+
+    pub fn is_idle(&self) -> bool {
+        self.queue.is_empty()
+            && !self.current_job.as_ref().is_some_and(|job| {
+                matches!(
+                    job.status,
+                    FlashJobStatus::Queued | FlashJobStatus::Flashing
+                )
+            })
+    }
+
+    pub fn enqueue_with_source(
+        &mut self,
+        filename: String,
+        dithered_path: String,
+        flash_twice: bool,
+        rotation_degrees: u16,
+        source: FlashSource,
+    ) -> u64 {
         let job_id = self.next_job_id;
         self.next_job_id += 1;
 
         let job = FlashJob {
+            source,
             job_id,
             filename,
             dithered_path,
@@ -236,7 +268,7 @@ impl Default for FlashQueue {
 }
 
 /// Gets current time as Unix timestamp in milliseconds.
-fn current_time_millis() -> u64 {
+pub(crate) fn current_time_millis() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -244,62 +276,65 @@ fn current_time_millis() -> u64 {
 }
 
 /// Spawns the background flash worker task.
-pub fn spawn_flash_worker(queue_state: FlashQueueState) {
+pub fn spawn_flash_worker(queue_state: FlashQueueState, slideshow: SlideshowState) {
     tokio::spawn(async move {
         info!("Flash queue worker started");
-
         loop {
-            // Check for next job.
-            let job = {
-                let mut queue = queue_state.lock().await;
-                queue.clear_current_if_finished();
-                queue.dequeue()
-            };
-
-            if let Some(job) = job {
-                let flash_rotation_degrees =
-                    display_settings::compute_flash_rotation_degrees(job.rotation_degrees);
-                info!(
-                    "Processing flash job {}: {} (flash_twice: {}, mount_rotation: {}, flash_rotation: {})",
-                    job.job_id,
-                    job.filename,
-                    job.flash_twice,
-                    job.rotation_degrees,
-                    flash_rotation_degrees
-                );
-
-                // Execute flash operation.
-                let result = execute_flash(
-                    &job.dithered_path,
-                    job.flash_twice,
-                    flash_rotation_degrees,
-                )
-                .await;
-                if let Err(e) = cleanup_flash_snapshot(&job.dithered_path).await {
-                    warn!(
-                        "Failed to clean flash snapshot for job {} ({}): {}",
-                        job.job_id, job.dithered_path, e
-                    );
-                }
-
-                // Update queue state.
-                let mut queue = queue_state.lock().await;
-                match result {
-                    Ok(()) => {
-                        info!("Flash job {} completed successfully", job.job_id);
-                        queue.mark_completed();
-                    }
-                    Err(e) => {
-                        error!("Flash job {} failed: {}", job.job_id, e);
-                        queue.mark_failed(e);
-                    }
-                }
-            } else {
-                // No jobs, sleep briefly before checking again.
+            if !process_next(&queue_state, &slideshow).await {
                 time::sleep(Duration::from_millis(500)).await;
             }
         }
     });
+}
+
+pub(crate) async fn process_next(
+    queue_state: &FlashQueueState,
+    slideshow: &SlideshowState,
+) -> bool {
+    // Check for next job.
+    let job = {
+        let mut queue = queue_state.lock().await;
+        queue.clear_current_if_finished();
+        queue.dequeue()
+    };
+
+    let Some(job) = job else {
+        return false;
+    };
+    let flash_rotation_degrees =
+        display_settings::compute_flash_rotation_degrees(job.rotation_degrees);
+    info!(
+        "Processing flash job {}: {} (flash_twice: {}, mount_rotation: {}, flash_rotation: {})",
+        job.job_id, job.filename, job.flash_twice, job.rotation_degrees, flash_rotation_degrees
+    );
+
+    // Execute flash operation.
+    let result = execute_flash(&job.dithered_path, job.flash_twice, flash_rotation_degrees).await;
+    if let Err(e) = cleanup_flash_snapshot(&job.dithered_path).await {
+        warn!(
+            "Failed to clean flash snapshot for job {} ({}): {}",
+            job.job_id, job.dithered_path, e
+        );
+    }
+
+    // Update queue state.
+    let mut queue = queue_state.lock().await;
+    // Record completion before exposing an idle queue to the scheduler.
+    slideshow
+        .lock()
+        .await
+        .flash_finished(&job, result.is_ok(), current_time_millis());
+    match result {
+        Ok(()) => {
+            info!("Flash job {} completed successfully", job.job_id);
+            queue.mark_completed();
+        }
+        Err(e) => {
+            error!("Flash job {} failed: {}", job.job_id, e);
+            queue.mark_failed(e);
+        }
+    }
+    true
 }
 
 /// Executes the actual flash operation by running the Python script.
