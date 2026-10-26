@@ -110,6 +110,16 @@
             <button id="test-retry-status" class="text-button" hidden>Check refresh status</button>
           </section>
         </div>
+        <div id="app-card" class="orientation-card" hidden>
+          <h2>This app</h2>
+          <p id="app-version" class="status">The app version is unavailable.</p>
+          <p id="update-status" class="status" role="status">Updates are checked automatically a few times a day.</p>
+          <progress id="update-progress" max="1" value="0" aria-label="Update download" hidden></progress>
+          <button id="check-updates" class="secondary" type="button">Check for updates</button>
+          <button id="download-update" class="primary" type="button" hidden>Download update</button>
+          <button id="install-update" class="primary" type="button" hidden>Install update</button>
+          <p class="status">Updates come from this project’s GitHub releases over HTTPS and install through Android’s installer after you confirm. Your draft and remembered frames are kept.</p>
+        </div>
       </section>
     </main>
     <nav class="bottom-nav" aria-label="App views"><button id="choose-tab" aria-current="page"><span aria-hidden="true">▧</span> Create</button><button id="gallery-tab"><span aria-hidden="true">▦</span> On frame</button><button id="settings-tab"><span aria-hidden="true">⚙</span> Settings</button></nav>

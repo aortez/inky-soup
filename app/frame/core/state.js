@@ -13,6 +13,7 @@ export const state = {
   view: 'editor', previewMode: 'display', lock: null, imports: [], importing: false,
   session: null, installPrompt: null,
   updateWorker: null, updating: false, updateError: '',
+  updates: null, installed: null, update: null,
 };
 
 export const sessionReady = editSession().then(session => {state.session = session;});

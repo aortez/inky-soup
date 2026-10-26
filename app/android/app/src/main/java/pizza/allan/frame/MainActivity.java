@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(FrameTransportPlugin.class);
         registerPlugin(FrameBlePlugin.class);
         registerPlugin(FrameDiscoveryPlugin.class);
+        registerPlugin(FrameUpdatePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

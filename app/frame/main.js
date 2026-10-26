@@ -13,6 +13,8 @@ import {orientationTestCard} from './services/test-card.js';
 import {processPhoto} from './services/processor.js';
 import {saveDraft, readDraft} from './services/drafts.js';
 import {watchAppUpdates, reloadApp} from './services/app-updates.js';
+import {updateBlockReason, updateCheckDue, rememberUpdateCheck, rememberedRelease, resolveUpdate} from './core/app-update.js';
+import {installedApp, checkForUpdate, downloadUpdate, installUpdate, cancelDownload} from './services/native-updates.js';
 import {activity, controls, showView, renderGallery, renderPreview, renderImports} from './ui/render.js';
 
 async function refreshGallery() {
@@ -485,7 +487,69 @@ el['discover-frames'].addEventListener('click', async () => {
   } catch (error) {el['connection-status'].textContent = error.message;}
   finally {state.connecting = false; controls();}
 });
-el['reload-app'].addEventListener('click', () => reloadApp(controls));
+async function checkForUpdates({automatic = false} = {}) {
+  if (!state.updates || !state.installed || ['checking', 'downloading', 'installing'].includes(state.update?.status)) return;
+  if (automatic && !updateCheckDue(localStorage)) {
+    // Inside the check interval, the last answer still tells the user about a pending release.
+    const remembered = rememberedRelease(localStorage);
+    const result = remembered && resolveUpdate(state.installed, remembered);
+    if (result && ['available', 'downloaded'].includes(result.status) && !state.update) {state.update = result; controls();}
+    return;
+  }
+  if (automatic && !navigator.onLine) return;
+  const previous = state.update;
+  state.update = {status: 'checking'}; controls();
+  try {
+    const result = await checkForUpdate(state.updates);
+    rememberUpdateCheck(localStorage, result.release);
+    state.installed = result.installed;
+    state.update = automatic && result.status === 'current' ? null : result;
+  } catch (error) {
+    // A quiet background check keeps the last known release; a manual check reports the problem.
+    state.update = automatic ? previous : {status: 'error', error: error.message};
+  } finally {controls();}
+}
+
+async function startDownload() {
+  const update = state.update;
+  if (update?.status === 'downloading') {await cancelDownload(state.updates); return;}
+  if (update?.status !== 'available') return;
+  Object.assign(update, {status: 'downloading', received: 0, total: update.release.apk_size, error: ''}); controls();
+  try {
+    await downloadUpdate(state.updates, update.release, (received, total) => {
+      if (state.update !== update) return;
+      update.received = received; update.total = total; controls();
+    });
+    if (state.update !== update) return;
+    update.status = 'downloaded';
+  } catch (error) {
+    if (state.update !== update) return;
+    update.status = 'available'; update.error = error.message;
+  } finally {controls();}
+}
+
+async function startInstall() {
+  const update = state.update;
+  if (update?.status !== 'downloaded' || updateBlockReason(state, 'Install', 'installing')) return;
+  Object.assign(update, {status: 'installing', error: '', notice: ''}); controls();
+  try {
+    // Android replaces the process, so unsaved work is written before the installer opens.
+    if (state.draft) await saveDraft(state.draft);
+    const outcome = await installUpdate(state.updates, update.release);
+    update.notice = outcome === 'permission'
+      ? 'Allow Sparkle Duck to install updates in Android Settings, then tap Install update again.'
+      : 'Confirm the update in the Android installer. The app reopens as the new version.';
+  } catch (error) {update.error = error.message;}
+  finally {if (state.update === update) update.status = 'downloaded'; controls();}
+}
+
+el['reload-app'].addEventListener('click', () => {
+  if (!androidApp) return reloadApp(controls);
+  return state.update?.status === 'downloaded' ? startInstall() : startDownload();
+});
+el['check-updates'].addEventListener('click', () => checkForUpdates());
+el['download-update'].addEventListener('click', startDownload);
+el['install-update'].addEventListener('click', startInstall);
 el['pick-photo'].addEventListener('click', () => el.photo.click());
 el.photo.addEventListener('change', async () => {
   const files = [...el.photo.files]; el.photo.value = ''; await chooseFiles(files);
@@ -617,6 +681,10 @@ async function start() {
       import('./services/native-app.js'), import('./ui/setup.js'), import('@capacitor/core'),
     ]);
     state.discovery = registerPlugin('FrameDiscovery');
+    state.updates = registerPlugin('FrameUpdate');
+    el['app-card'].hidden = false;
+    try {state.installed = await installedApp(state.updates);}
+    catch { /* A shell without the native plugin shows no version and offers no updates. */ }
     renderFrames();
     const setup = await setupDialog({bridge: registerPlugin('FrameBle'), connected: async () => {
       await acquireEditLock();
@@ -628,7 +696,7 @@ async function start() {
       showView('editor');
     }});
     await watchNativeApp({
-      resume: async () => {state.foreground = true; await reconnect();},
+      resume: async () => {state.foreground = true; await reconnect(); void checkForUpdates({automatic: true});},
       pause: () => {state.foreground = false;},
       back: () => {
         if (el['setup-dialog'].open) {void setup.close(); return true;}
@@ -664,6 +732,7 @@ async function start() {
   if (androidApp) state.reconnectTimer = setTimeout(checkConnection, 15000);
   if (import.meta.env.PROD && !androidApp) watchAppUpdates(controls).catch(() => {});
   if (!handoff && remembered?.base && (androidApp || navigator.onLine)) connectFrame();
+  if (androidApp) void checkForUpdates({automatic: true});
 }
 window.addEventListener('offline', () => {
   state.connected = false;

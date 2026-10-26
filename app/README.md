@@ -31,9 +31,9 @@ Use **Add frame over Bluetooth** to discover a frame in setup mode, give it WiFi
 settings, and connect inside Android. An existing frame can also be reached by
 entering its WiFi IPv4 address or `.local` hostname. The app reads the gallery, edits/saves photos, and submits display jobs
 using native HTTP. The frame’s display profile replaces the offline preview profile
-while connected. Remembered-frame discovery/reconnection and signed public updates
-follow in #23 and #24. The web build keeps its browser transport.
-The Pi-hosted legacy UI remains until #26.
+while connected. Remembered-frame discovery and reconnection shipped in #23, and
+[signed releases with in-app updates](#signed-releases-and-in-app-updates) cover #24.
+The web build keeps its browser transport. The Pi-hosted legacy UI remains until #26.
 
 ## Build and install
 
@@ -69,7 +69,8 @@ records identify the actual phone/WebView tested.
 This is a debug-signed development APK. The signing key comes from the builder's
 Android debug keystore, so APKs from another machine/CI may not update this local
 installation. Do not uninstall an app with a draft merely to bypass a signature
-mismatch. Stable distribution signing and in-app updates belong to #24.
+mismatch. Public builds are signed by the release workflow; see
+[Android releases and in-app updates](../docs/android-release.md).
 
 ## Web and Android boundaries
 
@@ -314,3 +315,25 @@ Device IDs protect against accidental address reuse, not malicious impersonation
 
 See [identity/discovery CLI commands](../cli/README.md#identity-and-local-discovery)
 and [hardware validation](../docs/validation/android-reconnect.md).
+
+## Signed releases and in-app updates
+
+Public APKs are built and signed by the `Frame app release` workflow from an
+`app-v<version>` tag, where the version comes from `package.json` and Gradle derives
+the Android version code from it. Each release publishes `frame.apk`, its SHA-256,
+and `frame-release.json`; the rolling `frame-app` GitHub release keeps stable
+first-install and metadata links. Signing keys, secrets, versioning, first
+installation, and the release checklist are documented in
+[docs/android-release.md](../docs/android-release.md).
+
+Settings shows the installed version under **This app**. The native `FrameUpdate`
+plugin reads the release metadata over HTTPS, offers a release only when it is
+newer, is signed with the installed app's certificate, and supports the phone's
+Android version, then streams the APK into private storage with size and SHA-256
+verification. Installation goes through Android's package installer after the
+user grants the app's **Install unknown apps** permission and confirms. It is
+deferred while photos are processing or importing and while a display refresh is
+tracked; the draft is saved first. Automatic checks run at launch and resume at
+most every six hours and never block local frame use. `tests/android-update.spec.js`
+covers the flow with a simulated plugin; the Java tests cover metadata validation,
+download verification, and cancellation.
