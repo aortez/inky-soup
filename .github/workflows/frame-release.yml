@@ -1,0 +1,116 @@
+name: Frame app release
+
+on:
+  push:
+    tags: ['app-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frame-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
+      - run: npm ci
+      - name: Resolve the release tag
+        id: tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT_NAME" = push ]; then
+            node tools/release-manifest.mjs --check-tag "$REF_NAME"
+            # Releases are cut from main so every published build has reviewed history.
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+              echo "::error::Tag $REF_NAME does not point at a commit on main."
+              exit 1
+            fi
+            echo "name=$REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=app-v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          fi
+      - run: npm run test:unit
+      - run: npm run build:android:assets
+      - run: npx cap sync android
+      - name: Restore the release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.FRAME_RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::The FRAME_RELEASE_KEYSTORE_BASE64 secret is not configured; see docs/android-release.md."
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/frame-release.jks"
+      - name: Build, sign, test, and lint the release
+        env:
+          FRAME_RELEASE_KEYSTORE: ${{ runner.temp }}/frame-release.jks
+          FRAME_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.FRAME_RELEASE_KEYSTORE_PASSWORD }}
+          FRAME_RELEASE_KEY_ALIAS: ${{ secrets.FRAME_RELEASE_KEY_ALIAS }}
+          FRAME_RELEASE_KEY_PASSWORD: ${{ secrets.FRAME_RELEASE_KEY_PASSWORD }}
+        run: cd android && ./gradlew --no-daemon :app:assembleRelease :app:testReleaseUnitTest :app:lintRelease
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/frame-release.jks"
+      - name: Verify the signature and write the release metadata
+        env:
+          TAG: ${{ steps.tag.outputs.name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs android/app/build/outputs/apk/release/app-release.apk | tee "$RUNNER_TEMP/certs.txt"
+          node tools/release-manifest.mjs --apk android/app/build/outputs/apk/release/app-release.apk --certs "$RUNNER_TEMP/certs.txt" \
+            --tag "$TAG" --repository "$REPOSITORY" --output "$RUNNER_TEMP/release"
+          cat "$RUNNER_TEMP/release/frame-release.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: frame-android-release
+          path: ${{ runner.temp }}/release/
+          if-no-files-found: error
+      - name: Publish the versioned release and refresh the stable download links
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          cd "$RUNNER_TEMP/release"
+          # A re-run after a partial failure replaces the assets instead of failing on the existing release.
+          if gh release view "$TAG" --repo "$REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" --repo "$REPOSITORY" --clobber frame.apk frame.apk.sha256 frame-release.json
+          else
+            gh release create "$TAG" --repo "$REPOSITORY" --verify-tag --title "Frame app $TAG" --generate-notes \
+              frame.apk frame.apk.sha256 frame-release.json
+          fi
+          NOTES="Stable download links for the newest Frame app release, currently $TAG. frame.apk is the first-install link and the app reads frame-release.json to find updates. The versioned releases hold the notes and history."
+          if ! gh release view frame-app --repo "$REPOSITORY" > /dev/null 2>&1; then
+            gh release create frame-app --repo "$REPOSITORY" --target "$GITHUB_SHA" --latest=false --title "Frame app (current release)" --notes "$NOTES"
+          fi
+          gh release upload frame-app --repo "$REPOSITORY" --clobber frame.apk frame.apk.sha256 frame-release.json
+          gh release edit frame-app --repo "$REPOSITORY" --latest=false --notes "$NOTES"

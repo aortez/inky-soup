@@ -11,8 +11,10 @@ The modern shared UI and Android prototype live in `app/`. See `app/README.md`
 for builds, platform adapters, source provenance, and website artifact consumption.
 The Android app supports offline editing and direct native Pi networking (#21);
 native Improv BLE setup is implemented in #22. Android remembers frames by a
-persisted device identity and discovers changed addresses using NSD (#23). The Pi frontend below remains
-until the Android experience passes hardware acceptance (#25 / #26).
+persisted device identity and discovers changed addresses using NSD (#23). Signed
+APK releases and the in-app updater are described in `docs/android-release.md`
+(#24). The Pi frontend below remains until the Android experience passes hardware
+acceptance (#25 / #26).
 
 1. `upload-server/`: Rust/Rocket server, Tera templates, and browser JavaScript.
 2. `update-image.py`: Python display driver entry point. The Yocto recipe packages

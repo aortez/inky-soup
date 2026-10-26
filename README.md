@@ -21,6 +21,8 @@ With a configured device:
 - WiFi: open `http://inky-soup.local:8000` or run `ssh inky@inky-soup.local`.
 - USB: follow the [USB Ethernet setup](yocto/README.md#usb-ethernet-pi-zero-w--zero-2-w),
   then open `http://10.55.0.1:8000` or run `ssh inky@10.55.0.1`.
+- Android: install the Frame app from the signed release link described in
+  [docs/android-release.md](docs/android-release.md); it updates itself afterwards.
 
 The display code supports the 5.7-inch (600 × 448) and 13.3-inch 2025
 (1600 × 1200) Inky Impression models. The display configuration API provides the
@@ -92,9 +94,10 @@ and physical display checks are separate validation steps.
 
 ## Planned work
 
-- [Settings and display mounting orientation (#3)](https://github.com/aortez/inky-soup/issues/3),
-  with implementation parked in [PR #5](https://github.com/aortez/inky-soup/pull/5).
-- [Favorites and scheduled image cycling (#4)](https://github.com/aortez/inky-soup/issues/4).
+- [Android Frame app prototype (#18)](https://github.com/aortez/inky-soup/issues/18):
+  hardware acceptance of the assembled app (#25) and retirement of the legacy Pi UI (#26).
+- [Favorites and slideshow controls in the shared Frame app (#33)](https://github.com/aortez/inky-soup/issues/33);
+  the backend and CLI shipped with #4.
 
 These features are separate from the current manual photo-display workflow.
 

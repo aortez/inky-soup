@@ -3,7 +3,7 @@ import {elements as el} from '../core/dom.js';
 import {state} from '../core/state.js';
 import {settingIds} from '../core/settings.js';
 import {getPhoto} from '../services/frame-client.js';
-import {updateBlockReason} from '../core/app-update.js';
+import {describeUpdate, updateBlockReason} from '../core/app-update.js';
 
 export function activity(title, detail = '', error = false, progress = 'none', target = 'editor') {
   const prefix = target === 'test-card' ? 'test-' : '';
@@ -17,13 +17,40 @@ export function activity(title, detail = '', error = false, progress = 'none', t
   else el[`${prefix}send-progress`].removeAttribute('aria-valuenow');
 }
 
+function updateControls() {
+  const update = state.update;
+  const status = update?.status;
+  const installBlocked = updateBlockReason(state, 'Install', 'installing');
+  const detail = describeUpdate(update, installBlocked);
+  el['app-version'].textContent = state.installed ? `Sparkle Duck ${state.installed.versionName} (build ${state.installed.versionCode})` : 'The app version is unavailable.';
+  el['check-updates'].disabled = !state.installed || ['checking', 'downloading', 'installing'].includes(status);
+  el['check-updates'].textContent = status === 'checking' ? 'Checking…' : 'Check for updates';
+  el['download-update'].hidden = !['available', 'downloading'].includes(status);
+  el['download-update'].textContent = status === 'downloading' ? 'Cancel download' : 'Download update';
+  el['download-update'].disabled = status === 'downloading' && !update.cancelReady;
+  el['install-update'].hidden = !['downloaded', 'installing'].includes(status);
+  el['install-update'].disabled = status === 'installing' || Boolean(installBlocked);
+  el['update-progress'].hidden = status !== 'downloading';
+  el['update-progress'].max = update?.total || update?.release?.apk_size || 1;
+  el['update-progress'].value = update?.received || 0;
+  el['update-status'].textContent = detail;
+  // The banner mirrors Settings so a pending update and its progress are visible from every view.
+  el['app-update'].hidden = !['available', 'downloading', 'downloaded', 'installing'].includes(status);
+  el['reload-app'].textContent = {downloading: 'Downloading…', downloaded: 'Install', installing: 'Installing…'}[status] || 'Download';
+  el['reload-app'].disabled = ['downloading', 'installing'].includes(status) || (status === 'downloaded' && Boolean(installBlocked));
+  el['app-update-detail'].textContent = detail;
+}
+
 export function controls() {
-  el['app-update'].hidden = !state.updateWorker;
-  const updateBlocked = updateBlockReason(state);
-  el['reload-app'].disabled = state.updating || Boolean(updateBlocked);
-  el['reload-app'].textContent = state.updating ? 'Reloading…' : 'Reload';
-  el['app-update-detail'].textContent = state.updating ? 'Saving your draft and opening the new version…'
-    : state.updateError || updateBlocked || 'A new version is ready. Reload when you’re ready; your draft will be kept.';
+  if (androidApp) updateControls();
+  else {
+    el['app-update'].hidden = !state.updateWorker;
+    const updateBlocked = updateBlockReason(state);
+    el['reload-app'].disabled = state.updating || Boolean(updateBlocked);
+    el['reload-app'].textContent = state.updating ? 'Reloading…' : 'Reload';
+    el['app-update-detail'].textContent = state.updating ? 'Saving your draft and opening the new version…'
+      : state.updateError || updateBlocked || 'A new version is ready. Reload when you’re ready; your draft will be kept.';
+  }
   const working = state.busy || Boolean(state.job);
   el['frame-picker'].disabled = working || state.connecting;
   el['discover-frames'].disabled = working || state.connecting;
