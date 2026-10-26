@@ -245,7 +245,7 @@ successful BLE operation with an unreachable API offers **Retry frame connection
 without resending credentials.
 
 The repeatable hardware check selects a specific small frame, cancels/reconnects,
-sends maximum-length Unicode credentials for a nonexistent network, verifies the
+checks the firmware closing its setup window, then sends maximum-length Unicode credentials for a nonexistent network, verifies the
 failure, and retries with the supplied real credentials. It opens the setup window
 through `inky-cli` and changes that frame’s WiFi configuration. Supply JSON
 `{"ssid":"...","password":"..."}` on stdin using an existing private file or a
@@ -259,7 +259,8 @@ node app/tools/android-ble-check.mjs --serial PHONE_SERIAL \
 ```
 
 The script records outcomes/screenshots without credentials and restores the
-phone’s keep-awake setting. After it passes, use `android-pi-check.mjs --flash` to
-send a disposable photo to the physical display. See the recorded
+phone’s keep-awake setting. After it passes, use `android-pi-check.mjs --connected --flash` to send a disposable
+photo through that existing connection. `--device` still identifies the Pi for the
+independent CLI check; `--connected` preserves the app’s BLE-returned address. See the recorded
 [Pixel / small-Pi validation](../docs/validation/android-ble.md). Tests on one recent
 phone do not establish hardware compatibility for every supported Android version.

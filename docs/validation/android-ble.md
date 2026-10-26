@@ -11,20 +11,22 @@ Local date: 2026-10-25. Issue #22, using the #21 direct-Pi adapter.
   storage is covered by the Android-bundle browser test, rather than uninstalling
   the user's app.
 
-The recorded BLE pass used APK SHA-256
-`d77da87256edf3adcc6c84a768570a70ce0370319a2ead36d501e34cc4e464c0`.
-The final rescan-cancellation guard was added afterward. Retesting the final APK
-and sending a physical photo are pending phone availability.
+The final installed APK matches the built artifact, SHA-256
+`246d6880c12505db4c07bc1b95fea6c25b3c3d04a03c038f2e426843fa30780a`.
 
 ## Completed device checks
 
 The first manual pass denied the Android Nearby devices prompt, verified an
-explanation/retry path, then allowed the permission at the next scan. The scan
+explanation/retry path, then allowed the permission at the next scan. A later
+Bluetooth-off state produced the expected recovery message; the app’s settings
+link opened Android Settings and Bluetooth was enabled for testing. The scan
 listed several Improv peripherals with distinct names/address suffixes; only
 `88:A2:9E:B1:73:79` (the small Pi) was selected.
 
 `app/tools/android-ble-check.mjs` then verified native GATT connection,
 cancellation/reconnection, a failed credential attempt, and successful retry.
+Closing the setup window with the existing CLI while GATT was connected produced
+recoverable feedback, and reopening it allowed a fresh connection.
 A 32-byte Unicode SSID and 64-byte Unicode password were sent as one 101-byte
 Improv packet to a nonexistent network. Firmware returned WiFi connection failure,
 confirming the native write was accepted and decoded. Credentials were cleared.
@@ -41,8 +43,36 @@ See [machine-readable results](android-ble-pixel9.json).
 
 Credentials were read into memory from the selected Pi for same-network testing;
 no real SSID/password is retained in these artifacts. The phone's keep-awake
-setting was restored, and the Pi's setup window closed following successful setup.
+setting was restored to 0, Bluetooth was restored to off (its state when the phone
+was returned for the final pass), and the Pi's setup window closed following setup.
 Other discovered peripherals were not connected to or configured.
+
+## Photo through the provisioned connection
+
+With the editor still connected to the BLE-returned `.local` address, ran:
+
+```sh
+node app/tools/android-pi-check.mjs --serial PHONE_SERIAL \
+  --device http://192.168.1.149:8000 --connected \
+  --photo /tmp/inky-android-wifi-large.jpg --flash --output /tmp/inky-22-photo.json
+```
+
+The app sent the 18,992,047-byte synthetic JPEG and its derived PNGs without
+re-entering or replacing the connection address. The upload/refresh completed in
+45,216 ms; CLI independently confirmed **job 7, Completed** (about 36 seconds of
+physical refresh). It then downloaded/reopened the original and acquired its edit
+lock. Native transfer files were empty and there were no external WebView HTTP
+requests or page errors.
+
+The seven-bar/TOP/detail pattern is the same fixture used in #21. This run records
+successful driver completion and the inspected app preview, without a new human
+visual confirmation of the physical panel. The latest disposable photo is
+`8a7c252b-95f3-422d-89f3-0560b3872180.jpg`; the previous known disposable fixture
+from job 6 was deleted after success. Other photos were preserved.
+
+See [photo/CLI results](android-ble-photo.json).
+
+![Editor after the physical refresh](android-ble-photo.png)
 
 ## Automated validation
 
@@ -55,5 +85,6 @@ Other discovered peripherals were not connected to or configured.
 Mocks cover Bluetooth-off, denied permission, setup expiry, disconnect, timeout,
 late GATT results, cancelled API verification, and success-with-unreachable-API
 retry. The controller's polling path covers older firmware without notifications.
-These are not claims of physical testing on older Android versions or every
-failure mode. No OS bonding or persistent device ownership is introduced.
+Bluetooth-off, permission denial, cancellation, explicit firmware-window closure,
+failed credentials, and successful retry also ran on the real phone. Tests are not
+claims of physical coverage on older Android versions or every failure mode. No OS bonding or persistent device ownership is introduced.

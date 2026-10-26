@@ -25,14 +25,17 @@ const awake = shell('settings','get','global','stay_on_while_plugged_in');
 const output = resolve(values.output); mkdirSync(dirname(output), {recursive:true});
 const record = {model:phone.model(), android:shell('getprop','ro.build.version.release'), bleId:deviceId, checks:[]};
 const errors = [];
-let failed = false;
+let failed = false, page;
 try {
   shell('settings','put','global','stay_on_while_plugged_in','3');
   shell('input','keyevent','KEYCODE_WAKEUP'); shell('wm','dismiss-keyguard');
   shell('am','start','-W','-n','pizza.allan.frame/.MainActivity');
   const pid = shell('pidof','pizza.allan.frame');
-  const page = await (await phone.webView({socketName:`webview_devtools_remote_${pid}`})).page();
+  page = await (await phone.webView({socketName:`webview_devtools_remote_${pid}`})).page();
   page.on('pageerror', error => errors.push(error.message));
+  if (await page.locator('#setup-dialog').evaluate(el => el.open)) {
+    await page.locator(await page.locator('#setup-done').isVisible() ? '#setup-done' : '#setup-cancel').click();
+  }
   await page.waitForFunction(() => !document.querySelector('#connect').disabled);
   await page.locator('#connection').evaluate(el => {el.open = true;});
   await page.locator('#add-frame').click();
@@ -94,6 +97,7 @@ try {
   let message = error.message;
   for (const value of [credentials.ssid,credentials.password]) if (value) message = message.split(value).join('[redacted]');
   record.error = message;
+  if (page) record.setupStatus = await page.locator('#setup-status').textContent().catch(() => 'WebView unavailable');
 } finally {
   credentials = null;
   if (awake === 'null') shell('settings','delete','global','stay_on_while_plugged_in');
