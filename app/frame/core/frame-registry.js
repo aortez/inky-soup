@@ -11,17 +11,25 @@ export function validateIdentity(value) {
 }
 
 export function frameRegistry(storage) {
+  let notice = '';
   function read() {
-    const raw = storage.getItem(storageKey);
-    if (!raw) return {version: 1, selected: null, frames: []};
-    const value = JSON.parse(raw);
-    if (value.version !== 1 || !Array.isArray(value.frames)
-        || value.frames.some(frame => !validId(frame.id) || typeof frame.base !== 'string' || typeof frame.name !== 'string')
-        || new Set(value.frames.map(frame => frame.id)).size !== value.frames.length) throw new Error('Saved frame settings could not be read.');
-    return value;
+    const empty = {version: 1, selected: null, frames: []};
+    try {
+      const raw = storage.getItem(storageKey);
+      if (!raw) return empty;
+      const value = JSON.parse(raw);
+      if (value.version !== 1 || !Array.isArray(value.frames)
+          || value.frames.some(frame => !validId(frame.id) || typeof frame.base !== 'string' || typeof frame.name !== 'string')
+          || new Set(value.frames.map(frame => frame.id)).size !== value.frames.length) throw new Error('Invalid registry');
+      return value;
+    } catch {
+      notice = 'Saved frame settings could not be read. Enter a frame address or find it on WiFi to remember it again. Your photos and draft are still available.';
+      return empty;
+    }
   }
-  function write(value) {storage.setItem(storageKey, JSON.stringify(value));}
+  function write(value) {storage.setItem(storageKey, JSON.stringify(value)); notice = '';}
   return {
+    get notice() {return notice;},
     list: () => read().frames,
     selected: () => {const value = read(); return value.frames.find(frame => frame.id === value.selected) || null;},
     remember(frame) {

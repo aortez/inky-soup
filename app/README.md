@@ -272,7 +272,11 @@ registry (`sparkle-frames-v1`) stores the device ID, display name/configuration,
 last verified address, and explicit selection. It survives app restarts and APK
 updates; uninstalling or clearing app data removes it. Forget removes only that
 phone's association, never the Pi's photos. Names can repeat: the picker includes
-the panel size and an ID suffix.
+the panel size and an ID suffix, sorted by name then ID. Typing a different
+address identifies and adds the frame at that address without needing discovery
+or forgetting the current frame. Unreadable registry data shows recovery guidance
+and is replaced only after a verified connection; photos, drafts, and job receipts
+are preserved.
 
 On launch/resume, the app verifies the last address. If it is unavailable or
 belongs to a different device, Android NSD browses `_inky-soup._tcp` and probes
@@ -291,7 +295,9 @@ Saved display jobs carry both device ID and server instance. Receipts are kept
 independently for each frame, so using another frame cannot discard an unavailable
 frame’s pending refresh. Finishing a refresh restores the draft’s edit lease
 before enabling controls. Reconnect only reads
-status, never resubmits a refresh. A restarted server invalidates the old job and
+status, never resubmits a refresh. If reconnect fails during a job, its receipt
+stays saved and Check again becomes available while automatic retries continue.
+A restarted server invalidates the old job and
 the app asks the user to check the screen before sending again.
 
 Find frames on WiFi adds an existing frame without provisioning. Add frame over

@@ -31,11 +31,12 @@ function renderFrames() {
   el['saved-frames'].hidden = false;
   el['frame-picker'].replaceChildren(new Option('Choose a frame', ''));
   try {
-    for (const frame of registry.list()) {
+    for (const frame of registry.list().sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))) {
       const model = frame.config?.model === 'impression-5.7' ? '5.7″' : frame.config?.model === 'impression-13.3-2025' ? '13.3″' : 'Frame';
       el['frame-picker'].add(new Option(`${frame.name} · ${model} · ${frame.id.slice(-6)}`, frame.id));
     }
     el['frame-picker'].value = state.frame?.id || '';
+    if (registry.notice) el['connection-status'].textContent = registry.notice;
   } catch (error) {el['connection-status'].textContent = error.message;}
 }
 
@@ -44,17 +45,18 @@ async function connectFrame({base: setupBase, signal, expected, automatic = fals
   // Invalidate in-flight poll results before moving the selected native transport.
   clearTimeout(state.pollTimer);
   if (state.job) rememberJob({...state.job});
+  const releaseRemote = !androidApp && state.connected;
   state.connecting = true; controls();
-  await releaseEditLock(false);
   state.connected = false; controls();
   el['frame-detail'].textContent = 'Connecting…';
   el['connection-status'].textContent = 'Finding your frame… Allow local-network access if prompted.';
   try {
+    await releaseEditLock(releaseRemote);
     let base = normalizeAddress(setupBase || el.address.value);
     let identity;
     signal?.throwIfAborted();
     if (androidApp) {
-      const saved = expected || (!setupBase && state.frame?.id ? state.frame : null);
+      const saved = expected || (!setupBase && state.frame?.id && base === state.frame.base ? state.frame : null);
       identity = saved ? await locateFrame({...saved, base}, state.discovery, signal) : await identifyFrame(base, signal);
       base = identity.base;
     }
@@ -103,6 +105,7 @@ async function connectFrame({base: setupBase, signal, expected, automatic = fals
     el['connection-status'].textContent = (androidApp || navigator.onLine) ? error.message : 'You’re offline. Keep editing your draft; reconnect to send it.';
     el['frame-detail'].textContent = navigator.onLine ? 'Not connected' : 'Offline · Draft saved on this phone';
     el.connection.classList.remove('connected'); el.connection.open = true;
+    if (state.job) showJobUnavailable(error, state.job);
     if (setupBase && !automatic) throw error;
     return false;
   } finally { state.connecting = false; controls(); }
@@ -395,6 +398,12 @@ async function finishJob(job) {
   } catch (error) {el['gallery-status'].textContent = error.message;}
 }
 
+function showJobUnavailable(error, job) {
+  activity('Refresh status unavailable', `${error.message} The job may still be running.`, true, 'none', job.kind);
+  el['retry-status'].hidden = false;
+  el['test-retry-status'].hidden = false;
+}
+
 async function pollJob() {
   clearTimeout(state.pollTimer);
   const job = state.job;
@@ -431,9 +440,7 @@ async function pollJob() {
   } catch (error) {
     if (state.job !== job) return;
     if (androidApp) state.connected = false;
-    jobActivity('Refresh status unavailable', `${error.message} The job may still be running.`, true);
-    el['retry-status'].hidden = false;
-    el['test-retry-status'].hidden = false;
+    showJobUnavailable(error, job);
     // A lost response must never cause an automatic second flash.
     if (error.status === 404 || error.message.includes('restarted')) await finishJob(job);
     controls();
@@ -443,16 +450,23 @@ async function pollJob() {
 el['connect-form'].addEventListener('submit', event => {event.preventDefault(); connectFrame({automatic:Boolean(state.job)});});
 el['frame-picker'].addEventListener('change', async () => {
   if (state.busy || state.job || state.connecting) return;
-  const frame = registry.list().find(item => item.id === el['frame-picker'].value);
-  if (!frame) return;
   state.connecting = true; controls();
-  await releaseEditLock();
-  registry.select(frame.id);
-  state.frame = frame; state.connected = false; state.images = [];
-  state.config = frame.config || savedPreviewConfig(); el.address.value = frame.base;
-  el['frame-name'].textContent = frame.name; el.forget.hidden = false;
-  renderGallery(selectPhoto); syncOrientation();
-  state.connecting = false;
+  try {
+    const frame = registry.list().find(item => item.id === el['frame-picker'].value);
+    if (!frame) return;
+    // Persist selection before releasing the current edit lease. A storage error
+    // leaves the connected frame and its draft usable.
+    registry.select(frame.id);
+    await releaseEditLock();
+    state.frame = frame; state.connected = false; state.images = [];
+    state.config = frame.config || savedPreviewConfig(); el.address.value = frame.base;
+    el['frame-name'].textContent = frame.name; el.forget.hidden = false;
+    renderGallery(selectPhoto); syncOrientation();
+  } catch (error) {
+    el['connection-status'].textContent = error.message;
+    el['frame-picker'].value = state.frame?.id || '';
+    return;
+  } finally {state.connecting = false; controls();}
   await reconnect();
 });
 el['discover-frames'].addEventListener('click', async () => {

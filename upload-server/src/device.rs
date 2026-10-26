@@ -24,6 +24,7 @@ fn random_id() -> io::Result<String> {
 
 fn read_id(path: &Path) -> io::Result<String> {
     let id = fs::read_to_string(path)?;
+    let id = id.trim_end_matches(['\r', '\n']);
     if id.len() != 32
         || !id
             .bytes()
@@ -34,7 +35,7 @@ fn read_id(path: &Path) -> io::Result<String> {
             "Invalid persisted frame identity",
         ));
     }
-    Ok(id)
+    Ok(id.to_owned())
 }
 
 fn persisted_id(directory: &Path) -> io::Result<String> {
@@ -69,6 +70,11 @@ fn persisted_id(directory: &Path) -> io::Result<String> {
 
 impl Device {
     pub fn load(directory: &Path) -> io::Result<Self> {
+        let mut capabilities = vec!["device-identity-v1", "display-config"];
+        // Advertise installed firmware support, even when its setup window is closed.
+        if Path::new("/usr/bin/wifi-provisioner").is_file() {
+            capabilities.push("improv-ble");
+        }
         Ok(Self {
             id: persisted_id(directory)?,
             // Queue IDs are process-local. A reboot or service restart invalidates them.
@@ -78,7 +84,7 @@ impl Device {
                 .trim()
                 .to_string(),
             api_version: 1,
-            capabilities: vec!["device-identity-v1", "display-config", "improv-ble"],
+            capabilities,
         })
     }
 }
@@ -103,6 +109,32 @@ mod tests {
         fs::write(dir.join("device-id"), "broken").unwrap();
         assert!(Device::load(&dir).is_err());
         assert_eq!(fs::read_to_string(dir.join("device-id")).unwrap(), "broken");
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn restored_identity_accepts_line_endings_without_changing_the_file() {
+        let dir = std::env::temp_dir().join(format!("frame-identity-{}", random_id().unwrap()));
+        let id = persisted_id(&dir).unwrap();
+        let path = dir.join("device-id");
+        for suffix in ["", "\n", "\r\n"] {
+            let restored = format!("{id}{suffix}");
+            fs::write(&path, &restored).unwrap();
+            assert_eq!(persisted_id(&dir).unwrap(), id);
+            assert_eq!(fs::read_to_string(&path).unwrap(), restored);
+        }
+        for invalid in [
+            format!(" {id}"),
+            format!("{id} "),
+            format!("{id}\nextra"),
+            "\n".into(),
+        ] {
+            fs::write(&path, &invalid).unwrap();
+            assert_eq!(
+                persisted_id(&dir).unwrap_err().kind(),
+                io::ErrorKind::InvalidData
+            );
+            assert_eq!(fs::read_to_string(&path).unwrap(), invalid);
+        }
         fs::remove_dir_all(dir).unwrap();
     }
     #[test]

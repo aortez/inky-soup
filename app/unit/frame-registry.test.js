@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {frameRegistry, validateIdentity, draftForFrame, jobForFrame} from '../frame/core/frame-registry.js';
-import {locateFrame, discoverFrames} from '../frame/services/frame-discovery.js';
+import {identifyFrame, locateFrame, discoverFrames} from '../frame/services/frame-discovery.js';
 
 const a = {id:'a'.repeat(32),instance_id:'c'.repeat(32),name:'Small',base:'http://192.168.1.2:8000',api_version:1,capabilities:['device-identity-v1']};
 const b = {...a,id:'b'.repeat(32),name:'Large'};
@@ -20,8 +20,7 @@ test('registry persists multiple identities, selection and forget independently 
 test('identity and registry reject malformed values instead of trusting an IP', () => {
   assert.deepEqual(validateIdentity(a),a);
   for (const identity of [{...a,id:''},{...a,instance_id:undefined},{...a,capabilities:[]},null]) assert.throws(()=>validateIdentity(identity));
-  const disk = storage(); disk.setItem('sparkle-frames-v1','broken');
-  assert.throws(()=>frameRegistry(disk).remember(a));
+  assert.throws(()=>frameRegistry(storage()).remember({...a,id:''}));
 });
 test('IP reuse triggers discovery and only the remembered identity is accepted', async () => {
   const moved = {...a,base:'http://192.168.1.3:8000'};
@@ -53,4 +52,53 @@ test('job reconciliation changes address only for the same device and server lif
   assert.throws(()=>jobForFrame(job,b),/another frame/);
   assert.throws(()=>jobForFrame(job,{...a,instance_id:'d'.repeat(32)}),/restarted/);
   assert.throws(()=>jobForFrame({id:1,base:a.base},a),/predates/);
+});
+
+
+test('unreadable registries recover through a verified connection without touching other saved state', () => {
+  for (const raw of ['{', 'null', '{"version":2,"frames":[]}', JSON.stringify({version:1,frames:[null]}), JSON.stringify({version:1,frames:[a,a]})]) {
+    const disk = storage(); disk.setItem('sparkle-frames-v1', raw); disk.setItem('sparkle-job', 'keep job');
+    const registry = frameRegistry(disk);
+    assert.deepEqual(registry.list(), []); assert.equal(registry.selected(), null);
+    assert.match(registry.notice, /Saved frame settings could not be read/);
+    assert.equal(disk.getItem('sparkle-frames-v1'), raw);
+    registry.remember(a);
+    assert.deepEqual(registry.selected(), a); assert.equal(registry.notice, '');
+    assert.equal(disk.getItem('sparkle-job'), 'keep job');
+  }
+});
+
+test('identity probes support cancellation without AbortSignal.any', async t => {
+  const any = AbortSignal.any; AbortSignal.any = undefined;
+  try {
+    const controller = new AbortController(); let requestSignal;
+    t.mock.method(globalThis, 'fetch', async (url, {signal}) => {
+      requestSignal = signal;
+      return new Response(JSON.stringify(a));
+    });
+    assert.deepEqual(await identifyFrame(a.base, controller.signal), a);
+    controller.abort();
+    assert.equal(requestSignal.aborted, false, 'completed probes remove their abort listener');
+    await assert.rejects(identifyFrame(a.base, controller.signal), {name:'AbortError'});
+    const pending = new AbortController();
+    t.mock.method(globalThis, 'fetch', async (url, {signal}) => {
+      pending.abort();
+      assert.equal(signal.aborted, true, 'caller cancellation reaches the request');
+      return new Response(JSON.stringify(a));
+    });
+    await assert.rejects(identifyFrame(a.base, pending.signal), {name:'AbortError'});
+  } finally {AbortSignal.any = any;}
+});
+
+test('identity probes abort a stalled request after four seconds', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  let requestSignal;
+  t.mock.method(globalThis, 'fetch', (url, {signal}) => {
+    requestSignal = signal;
+    return new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), {once:true}));
+  });
+  const result = identifyFrame(a.base);
+  const rejected = assert.rejects(result, /Cannot reach the frame/);
+  t.mock.timers.tick(4000);
+  await rejected; assert.equal(requestSignal.aborted, true);
 });

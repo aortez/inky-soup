@@ -88,3 +88,35 @@ Updated validation: 50 app unit tests, 25 Android bundle tests, 51 web tests, an
 not been installed or physically retested on the phone; the hardware record and
 APK checksum above describe the preceding build. The remaining acceptance list
 is unchanged.
+
+
+## Connect-flow review follow-up
+
+Four additional Android bundle regressions failed before the fixes: manually
+adding another frame while one is selected, connecting with a corrupt registry,
+recovering from a picker persistence error, and exposing refresh-status retry
+after a failed automatic reconnect. All four now pass. The manual-address case
+starts with only one saved frame and denies discovery; the second frame is added
+and remains selected after restart. The picker also keeps a stable name/ID order.
+
+Identity probes now combine caller cancellation and a four-second deadline with
+an AbortController, without depending on AbortSignal.any. Unit tests exercise
+success, pre-cancellation, cancellation in flight, listener cleanup and deadline
+expiry. Restored device-ID files accept LF/CRLF endings while rejecting malformed
+IDs without changing the file. BLE capability metadata is advertised only when
+`/usr/bin/wifi-provisioner` is installed. Web reconnect again releases its old
+edit lease before the handshake, with a request-order regression test.
+
+Latest checks: 53 app unit, 29 Android bundle, 52 web, 8 PWA, and 28 server Rust
+tests passed. Debug APK build, 8 Java tests and Android lint passed (0 errors,
+12 existing warnings). Per-poll identity verification is retained so a reused
+address or restarted server cannot lend an old receipt a different job's status.
+
+These changes have not been installed on the phone or either Pi. The physical
+record above predates both review-fix rounds; two-Pi and #17 acceptance remain
+required before leaving draft. No full Yocto build was run for this follow-up.
+
+Recovery notice captured from the Android bundle with the mocked native bridge
+(390-pixel viewport; this is not a physical-phone screenshot):
+
+![Unreadable saved-frame settings recovery](android-registry-recovery.png)

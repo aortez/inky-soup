@@ -3,11 +3,19 @@ import {normalizeAddress, request} from './frame-client.js';
 
 export async function identifyFrame(base, signal) {
   base = normalizeAddress(base);
-  const timeout = AbortSignal.timeout(4000);
-  const identity = validateIdentity(await request(base, '/api/device', {timeout:4000,
-    signal:signal ? AbortSignal.any([signal, timeout]) : timeout}));
+  const controller = new AbortController();
+  const abort = () => controller.abort(signal.reason);
   signal?.throwIfAborted();
-  return {...identity, base};
+  signal?.addEventListener('abort', abort, {once:true});
+  const timeout = setTimeout(() => controller.abort(), 4000);
+  try {
+    const identity = validateIdentity(await request(base, '/api/device', {timeout:4000, signal:controller.signal}));
+    signal?.throwIfAborted();
+    return {...identity, base};
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', abort);
+  }
 }
 
 export async function discoverFrames(bridge, signal, identify = identifyFrame) {

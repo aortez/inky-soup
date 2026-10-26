@@ -449,3 +449,18 @@ test('switching frames blocks old gallery selection and saves only the newly sel
   expect(writes).toContain('/api/upload-dithered');
   expect(frame.requests.some(request => request.path.startsWith('/api/upload-'))).toBe(false);
 });
+
+
+test('web reconnect releases the current photo lease before loading the frame again', async ({page}) => {
+  const {requests} = await libraryFrame(page); await openSaved(page);
+  await expect(page.locator('#lock-status')).toContainText('Editing this photo');
+  requests.length = 0;
+  await page.locator('#connection > summary').click(); await page.locator('#connect').click();
+  await expect(page.locator('#connection')).toHaveClass(/connected/);
+  await expect(page.locator('#lock-status')).toContainText('Editing this photo');
+  await expect(page.locator('#save')).toBeEnabled();
+  const paths = requests.map(request => request.path);
+  expect(paths.indexOf('/api/unlock-image')).toBeGreaterThanOrEqual(0);
+  expect(paths.indexOf('/api/unlock-image')).toBeLessThan(paths.indexOf('/api/display-config'));
+  expect(paths.indexOf('/api/display-config')).toBeLessThan(paths.indexOf('/api/lock-image'));
+});

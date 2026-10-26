@@ -62,11 +62,13 @@ test('reused IP discovers saved identity, persists new address, and reconnects a
 test('two same-name frames remain distinct, selected model persists, forget never deletes photos',async({page})=>{
   await bridge(page);await page.goto('/');await expect(page.locator('#frame-detail')).toHaveText('Connected · 600 × 448');
   await page.locator('#connection > summary').click();
-  await expect(page.locator('#frame-picker option')).toHaveText(['Choose a frame','Kitchen · 13.3″ · bbbbbb','Kitchen · 5.7″ · aaaaaa']);
+  await expect(page.locator('#frame-picker option')).toHaveText(['Choose a frame','Kitchen · 5.7″ · aaaaaa','Kitchen · 13.3″ · bbbbbb']);
   await page.locator('#frame-picker').selectOption('b'.repeat(32));
   await expect(page.locator('#frame-detail')).toHaveText('Connected · 1600 × 1200');
   await page.reload();await expect(page.locator('#frame-detail')).toHaveText('Connected · 1600 × 1200');
-  await page.locator('#connection > summary').click();await page.locator('#forget').click();
+  await page.locator('#connection > summary').click();
+  await expect(page.locator('#frame-picker option')).toHaveText(['Choose a frame','Kitchen · 5.7″ · aaaaaa','Kitchen · 13.3″ · bbbbbb']);
+  await page.locator('#forget').click();
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('sparkle-frames-v1')).frames.map(frame=>frame.id))).toEqual(['a'.repeat(32)]);
   expect(await page.evaluate(()=>window.apiCalls.every(call=>call.method==='GET'))).toBe(true);
   await page.reload();await expect(page.locator('#frame-name')).toHaveText('Your frame');
@@ -177,4 +179,74 @@ test('frame selection stays blocked until completed job cleanup finishes',async(
   await page.evaluate(()=>window.finishGallery());
   await expect(page.locator('#frame-picker')).toBeEnabled();
   expect(await page.evaluate(()=>localStorage.getItem('sparkle-job'))).toBeNull();
+});
+
+
+test('a typed address adds another frame without discovery or forgetting the selected frame',async({page})=>{
+  await bridge(page);
+  await page.addInitScript(()=>{
+    if(localStorage.getItem('single-frame-seeded'))return;
+    localStorage.setItem('single-frame-seeded','1');
+    const saved=JSON.parse(localStorage.getItem('sparkle-frames-v1'));
+    saved.frames=saved.frames.filter(frame=>frame.id==='a'.repeat(32));
+    localStorage.setItem('sparkle-frames-v1',JSON.stringify(saved));
+  });
+  await page.goto('/');
+  await expect(page.locator('#frame-detail')).toHaveText('Connected · 600 × 448');
+  await page.evaluate(()=>{window.scenario.denied=true;window.apiCalls=[];});
+  await page.locator('#connection > summary').click();
+  await page.locator('#address').fill('192.168.1.3');
+  await page.locator('#connect').click();
+  await expect(page.locator('#frame-detail')).toHaveText('Connected · 1600 × 1200');
+  expect(await page.evaluate(()=>window.discoveries)).toBe(0);
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('sparkle-frames-v1')).frames.map(frame=>frame.id).sort())).toEqual(['a'.repeat(32),'b'.repeat(32)]);
+  expect(await page.evaluate(()=>window.apiCalls.every(call=>call.base==='http://192.168.1.3:8000'&&call.method==='GET'))).toBe(true);
+  await page.reload();await expect(page.locator('#frame-detail')).toHaveText('Connected · 1600 × 1200');
+});
+
+test('corrupt saved settings offer recovery and allow a verified manual connection',async({page},testInfo)=>{
+  await bridge(page);
+  await page.addInitScript(()=>localStorage.setItem('sparkle-frames-v1','{'));
+  await page.goto('/');
+  await expect(page.locator('#connection-status')).toContainText('Saved frame settings could not be read');
+  await page.screenshot({path:testInfo.outputPath('registry-recovery.png'),fullPage:true});
+  await page.locator('#address').fill('192.168.1.2');
+  await page.locator('#connect').click();
+  await expect(page.locator('#frame-detail')).toHaveText('Connected · 600 × 448');
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('sparkle-frames-v1')).selected)).toBe('a'.repeat(32));
+});
+
+test('picker persistence failure releases controls and can be retried',async({page})=>{
+  await bridge(page);await page.goto('/');
+  await expect(page.locator('#frame-detail')).toHaveText('Connected · 600 × 448');
+  await page.evaluate(()=>{
+    const original=Storage.prototype.setItem;
+    Storage.prototype.setItem=function(key,value){
+      if(key==='sparkle-frames-v1'&&window.failSelection)throw Error('Storage is full.');
+      return original.call(this,key,value);
+    };window.failSelection=true;
+  });
+  await page.locator('#connection > summary').click();
+  await page.locator('#frame-picker').selectOption('b'.repeat(32));
+  await expect(page.locator('#connection-status')).toContainText('Storage is full');
+  await expect(page.locator('#frame-picker')).toBeEnabled();
+  await expect(page.locator('#connect')).toBeEnabled();
+  await expect(page.locator('#frame-picker')).toHaveValue('a'.repeat(32));
+  await page.evaluate(()=>{window.failSelection=false;});
+  await page.locator('#frame-picker').selectOption('b'.repeat(32));
+  await expect(page.locator('#frame-detail')).toHaveText('Connected · 1600 × 1200');
+});
+
+test('failed automatic reconnect exposes status retry and preserves the active job',async({page})=>{
+  await bridge(page,{job:true,jobStatus:'Processing'});await page.goto('/');
+  await expect(page.locator('#activity-title')).toHaveText('Refreshing your frame…');
+  await page.evaluate(()=>{window.scenario.missing=true;window.resumeFrame();});
+  await expect(page.locator('#connection-status')).toContainText('saved frame is unavailable');
+  await expect(page.locator('#activity-title')).toHaveText('Refresh status unavailable');
+  await expect(page.locator('#retry-status')).toBeVisible();
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('sparkle-job')).id)).toBe(7);
+  await page.evaluate(()=>{window.scenario.missing=false;window.scenario.jobStatus='Completed';});
+  await page.locator('#retry-status').click();
+  await expect(page.locator('#activity-title')).toHaveText('Your new view is ready.');
+  expect(await page.evaluate(()=>window.apiCalls.every(call=>call.method==='GET'))).toBe(true);
 });
