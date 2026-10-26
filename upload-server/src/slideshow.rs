@@ -31,6 +31,8 @@ const RETRY_MS: u64 = 60_000;
 pub enum FlashSource {
     Manual,
     Automatic,
+    Rescue,
+    Restore,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -141,6 +143,9 @@ impl Slideshow {
     }
 
     pub fn flash_finished(&mut self, job: &FlashJob, success: bool, now: u64) {
+        if matches!(job.source, FlashSource::Rescue | FlashSource::Restore) {
+            return;
+        }
         if !success {
             if job.source == FlashSource::Automatic {
                 self.retry_not_before = now.saturating_add(RETRY_MS);
@@ -334,7 +339,11 @@ pub(crate) async fn inspect_or_tick(
         .collect();
     ready.sort();
     let editing = locks.values().any(|lock| lock.expires_at > Instant::now());
-    let paused = state.paused_reason(now, editing, queue.is_idle(), favorites.len(), ready.len());
+    let paused = if queue.rescue.as_ref().is_some_and(|r| r.blocks_slideshow()) {
+        Some("rescue")
+    } else {
+        state.paused_reason(now, editing, queue.is_idle(), favorites.len(), ready.len())
+    };
     let next = next_filename(&ready, state.settings.last_rotated_filename.as_deref());
     let mut job_id = None;
     if enqueue && paused.is_none() && now >= state.next_due_at() {
@@ -357,7 +366,9 @@ pub(crate) async fn inspect_or_tick(
         }
     }
     json!({"settings": state.settings, "next_due_at": state.next_due_at(),
-        "paused_reason": state.paused_reason(now, editing, queue.is_idle(), favorites.len(), ready.len()),
+        "paused_reason": if queue.rescue.as_ref().is_some_and(|r| r.blocks_slideshow()) {
+            Some("rescue")
+        } else { state.paused_reason(now, editing, queue.is_idle(), favorites.len(), ready.len()) },
         "last_flash_source": state.settings.last_flash_source, "next_filename": next,
         "favorite_count": favorites.len(), "ready_count": ready.len(), "queued_job_id": job_id,
         "retry_not_before": state.retry_not_before, "storage_error": state.storage_error})

@@ -14,6 +14,9 @@ mod orientation;
 mod photo_management;
 mod photo_rotation;
 mod slideshow;
+mod rescue;
+#[cfg(test)]
+mod rescue_tests;
 #[cfg(test)]
 mod slideshow_tests;
 mod test_card;
@@ -1164,6 +1167,9 @@ impl Fairing for FlashQueueFairing {
             .clone();
         let slideshow = rocket.state::<slideshow::SlideshowState>().expect("Slideshow state").clone();
         flash_queue::spawn_flash_worker(queue_state.clone(), slideshow.clone());
+        rescue::spawn(queue_state.clone(),
+            rocket.state::<orientation::OrientationState>().expect("Orientation state").clone(),
+            rocket.state::<ImageLocksState>().expect("Image locks").clone(), rocket.shutdown());
         slideshow::spawn(slideshow,
             rocket.state::<orientation::OrientationState>().expect("Orientation state").clone(),
             queue_state, rocket.state::<ImageLocksState>().expect("Image locks").clone(), rocket.shutdown());
@@ -1191,7 +1197,9 @@ fn rocket() -> _ {
     metadata::migrate_legacy_metadata();
 
     // Initialize flash queue state.
-    let flash_queue_state: FlashQueueState = Arc::new(Mutex::new(FlashQueue::new()));
+    let mut queue = FlashQueue::new();
+    queue.rescue = Some(rescue::Rescue::from_env());
+    let flash_queue_state: FlashQueueState = Arc::new(Mutex::new(queue));
 
     // Initialize image locks state.
     let image_locks_state: ImageLocksState = Arc::new(Mutex::new(HashMap::new()));
@@ -1215,6 +1223,8 @@ fn rocket() -> _ {
             slideshow::set_favorite,
             slideshow::configure,
             slideshow::status,
+            rescue::status,
+            rescue::control,
             photo_management::delete_image,
             flash_job_status,
             flash_status,

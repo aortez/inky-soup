@@ -330,3 +330,15 @@ directory automatically. Full Yocto images package the same service definition.
 It advertises IPv4 port 8000; change the service file if changing the server port.
 Advertisements are hints, and device IDs prevent accidental address reuse; they
 are not cryptographic device authentication.
+
+## Offline recovery
+
+`./inky-cli rescue` reports local connectivity, the five-minute outage timer,
+recovery-card state, restoration availability, and probe/storage errors.
+`./inky-cli rescue show --wait` displays the packaged recovery card without
+adding a gallery photo; `./inky-cli rescue restore --wait` restores the last
+successful ordinary display. These explicit operations wait for no other work:
+they reject a busy queue or active photo editor. Add `--json` for scripting.
+An explicitly shown card stays until you restore it or display another image.
+See [offline rescue mode](../docs/offline-rescue.md) for automatic behavior,
+network detection, configuration, and hardware validation.

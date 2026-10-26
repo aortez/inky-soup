@@ -62,7 +62,7 @@ value of 0.
 - Both physical Pis selected from the same registry, once the large Pi is free.
   The two-panel/same-name case is covered by Android bundle tests meanwhile.
 - End-to-end offline rescue card, five-minute BLE setup and photo restoration
-  with #17 after that work lands. App recovery instructions use the existing
+  with the merged #17 firmware. App recovery instructions use the existing
   reboot-while-offline setup window and defer rescue ownership to #17.
 - A real Android local-network permission-denial scenario on an OS/target that
   enforces it; denied discovery and recovery UI are covered with the native
@@ -107,8 +107,10 @@ IDs without changing the file. BLE capability metadata is advertised only when
 `/usr/bin/wifi-provisioner` is installed. Web reconnect again releases its old
 edit lease before the handshake, with a request-order regression test.
 
-Latest checks: 53 app unit, 29 Android bundle, 52 web, 8 PWA, and 28 server Rust
-tests passed. Debug APK build, 8 Java tests and Android lint passed (0 errors,
+Latest checks: 53 app unit, 29 Android bundle, 52 web and 8 PWA tests passed.
+After merging the offline-rescue work from main (#34), all 34 server and 27 CLI
+Rust tests passed, including 11 deployment Python regressions. The 19 Python
+display/recovery-card tests and provisioner source-pin check also passed. Debug APK build, 8 Java tests and Android lint passed (0 errors,
 12 existing warnings). Per-poll identity verification is retained so a reused
 address or restarted server cannot lend an old receipt a different job's status.
 
@@ -120,3 +122,11 @@ Recovery notice captured from the Android bundle with the mocked native bridge
 (390-pixel viewport; this is not a physical-phone screenshot):
 
 ![Unreadable saved-frame settings recovery](android-registry-recovery.png)
+
+
+The main-branch integration preserves both identity/discovery and offline rescue:
+CLI documentation and tests include both commands, and the Yocto recipe includes
+both Avahi and NetworkManager CLI runtime dependencies. The shared provisioner
+checkout matches main's updated submodule revision. This resolves the merge
+conflicts that prevented PR CI from starting; it does not replace the remaining
+physical acceptance.

@@ -122,6 +122,15 @@ enum Command {
         #[command(subcommand)]
         action: Option<SlideshowCommand>,
     },
+    /// Inspect offline recovery or explicitly show/restore its instruction card.
+    Rescue {
+        #[arg(value_enum, default_value = "status")]
+        action: RescueAction,
+        #[arg(long)]
+        wait: bool,
+        #[arg(long, default_value_t = 180, value_parser = clap::value_parser!(u64).range(1..))]
+        timeout: u64,
+    },
     /// List images and their saved settings.
     Images,
     /// Delete an original and its saved versions; refuses locked or pending photos.
@@ -162,6 +171,13 @@ enum Command {
         #[arg(long, default_value_t = 180, value_parser = clap::value_parser!(u64).range(1..))]
         timeout: u64,
     },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum RescueAction {
+    Status,
+    Show,
+    Restore,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -704,6 +720,27 @@ fn run(args: &Args) -> Result<Value> {
                 &json!({"rotation_interval_hours":hours}),
             ),
         },
+        Command::Rescue {
+            action,
+            wait,
+            timeout,
+        } => {
+            let endpoint = match action {
+                RescueAction::Status => return frame.get("api/rescue"),
+                RescueAction::Show => "api/rescue/show",
+                RescueAction::Restore => "api/rescue/restore",
+            };
+            let queued = frame.json_post(endpoint, &json!({}))?;
+            if *wait {
+                frame.wait(
+                    queued["job_id"].as_u64().context("Missing job ID")?,
+                    *timeout,
+                    None,
+                )
+            } else {
+                Ok(queued)
+            }
+        }
         Command::Images => frame.get("api/images"),
         Command::Delete { filename } => {
             valid_filename(filename)?;

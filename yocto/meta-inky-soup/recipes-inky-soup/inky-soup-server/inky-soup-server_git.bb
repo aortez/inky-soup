@@ -10,7 +10,7 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 # Use cargo_bin from meta-rust-bin for prebuilt Rust toolchain.
 inherit externalsrc cargo_bin systemd
 
-RDEPENDS:${PN} += "inky-soup-display avahi-daemon"
+RDEPENDS:${PN} += "inky-soup-display avahi-daemon networkmanager-nmcli"
 
 EXTERNALSRC = "${THISDIR}/../../../../upload-server"
 
