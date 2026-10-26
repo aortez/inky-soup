@@ -6,7 +6,7 @@ including its merged photo-rotation and interrupted-save recovery changes. The
 Android platform adaptations remain in this shared source. Source and worker license
 notices are retained in `LICENSE` and `public/frame/vendor/`.
 
-## Android prototype (#20 / #21)
+## Android prototype (#20 / #21 / #22)
 
 The Android APK bundles the editor, photo picker, image-processing workers, and
 IndexedDB draft storage. It can preview both panels in landscape or portrait
@@ -27,11 +27,12 @@ Copying a draft to another frame or resaving after deletion resets its revision;
 subsequent rotations by another editor still produce a conflict. The imported
 regression suite covers these cases alongside exact rotated pixels and palettes.
 
-Enter the frame’s WiFi IPv4 address or `.local` hostname to connect directly from
-Android. The app reads the gallery, edits/saves photos, and submits display jobs
+Use **Add frame over Bluetooth** to discover a frame in setup mode, give it WiFi
+settings, and connect inside Android. An existing frame can also be reached by
+entering its WiFi IPv4 address or `.local` hostname. The app reads the gallery, edits/saves photos, and submits display jobs
 using native HTTP. The frame’s display profile replaces the offline preview profile
-while connected. Native Bluetooth setup is #22; discovery/reconnection and signed
-public updates follow in #23 and #24. The web build keeps its browser transport.
+while connected. Remembered-frame discovery/reconnection and signed public updates
+follow in #23 and #24. The web build keeps its browser transport.
 The Pi-hosted legacy UI remains until #26.
 
 ## Build and install
@@ -81,7 +82,8 @@ mismatch. Stable distribution signing and in-app updates belong to #24.
   code advance together through APK installation.
 - `services/transport.js` selects browser fetch or the native `FrameTransport` plugin.
 - Native API requests never pass through browser fetch, a proxy, or a cloud relay.
-  The Pi’s browser CORS settings remain unchanged. Native Bluetooth follows in #22.
+  The Pi’s browser CORS settings remain unchanged. `FrameBle` supplies Android GATT
+  discovery and operations; the shared Improv encoder/decoder keeps the wire protocol unchanged.
 
 ## Verification
 
@@ -92,7 +94,7 @@ npm test                    # Modern web editor and existing browser BLE setup.
 npm run test:pwa            # Built web app, cached launch, and update lifecycle.
 npm run test:android:web    # Bundled Android assets, both palettes and orientations.
 npm run build:android
-(cd android && ./gradlew --no-daemon :app:testDebugUnitTest)
+(cd android && ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug)
 ```
 
 Browser suites use separate output directories and ports 8080, 4173, and 4174.
@@ -194,3 +196,70 @@ This adds one gallery photo; `--flash` also refreshes the small physical panel.
 Without `--flash`, it saves without changing the display. It exercises the installed
 APK’s editor/file input, native uploads/downloads, gallery, edit lock, and status.
 It checks temporary-file cleanup and captures a JSON record and screenshot.
+
+## Android Bluetooth setup
+
+Open a frame’s bounded setup window, then choose **Add frame over Bluetooth** in
+its connection card. A fresh, unconfigured Pi advertises setup automatically;
+for an already configured test Pi, use the existing CLI:
+
+```sh
+./inky-cli --device http://WIFI_IP:8000 wifi-setup start
+./inky-cli --device http://WIFI_IP:8000 wifi-setup status
+```
+
+Tap **Scan for frames**, grant Bluetooth permissions when prompted, and explicitly
+select a device by its advertised name and address suffix. Improv devices from
+other projects can also appear; choose the intended Inky. Enter the phone’s WiFi
+network name and password (2.4 GHz for Pi Zero), and keep the app open. The app
+validates the provisioner’s returned local address and reads its display config
+and gallery through native HTTP before reporting success. **Open editor** completes
+the flow without opening a browser or entering an address manually.
+
+Bluetooth setup uses the existing Improv service, not Android OS bonding or
+persistent ownership. Native BLE permissions are requested only when scanning:
+Nearby devices on Android 12+, Location on Android 11 and earlier. Older Android
+versions also require Location services for scanning. The recovery UI links to
+Bluetooth, app-permission, and Location settings; return to the app and scan again.
+The manifest follows [Android’s BLE permission guidance](https://developer.android.com/develop/connectivity/bluetooth/bt-permissions)
+and asserts that scans are not used to derive location.
+
+Scans last 15 seconds and show multiple devices without automatically choosing
+one. Each attempt owns a distinct native session and GATT object. GATT operations
+are serialized and bounded (25 seconds to connect/subscribe, 10 seconds per read
+or write); WiFi completion is bounded to 65 seconds. Notifications are supplemented
+by serialized reads for older firmware. Cancellation, backgrounding, disconnect,
+permission revocation, timeout, and the five-minute local session limit close GATT
+and discard pending operations. Late callbacks from an old session cannot resolve
+new calls. The firmware’s own setup deadline remains authoritative; the app never
+extends it automatically. Cancelling the app stops its Bluetooth operation but
+cannot undo credentials already accepted by the provisioner.
+
+WiFi input is limited to 1–32 UTF-8 bytes for SSID and 0–64 for password. Native GATT
+negotiates MTU >= 104 and sends one acknowledged packet (at most 101 bytes), using
+[Android’s MTU and write APIs](https://developer.android.com/reference/android/bluetooth/BluetoothGatt).
+It rejects inadequate packet sizes instead of inventing chunk framing. Credentials
+are transient, never persisted or logged, and the form is cleared on completion,
+error, or cancellation. A failed WiFi attempt requires a fresh BLE selection; a
+successful BLE operation with an unreachable API offers **Retry frame connection**
+without resending credentials.
+
+The repeatable hardware check selects a specific small frame, cancels/reconnects,
+sends maximum-length Unicode credentials for a nonexistent network, verifies the
+failure, and retries with the supplied real credentials. It opens the setup window
+through `inky-cli` and changes that frame’s WiFi configuration. Supply JSON
+`{"ssid":"...","password":"..."}` on stdin using an existing private file or a
+secret provider; do not place passwords in command arguments. Approve a visible
+Android permission prompt on the phone if needed.
+
+```sh
+node app/tools/android-ble-check.mjs --serial PHONE_SERIAL \
+  --device http://WIFI_IP:8000 --ble-id XX:XX:XX:XX:XX:XX \
+  --output /tmp/android-ble.json < /private/path/wifi-test.json
+```
+
+The script records outcomes/screenshots without credentials and restores the
+phone’s keep-awake setting. After it passes, use `android-pi-check.mjs --flash` to
+send a disposable photo to the physical display. See the recorded
+[Pixel / small-Pi validation](../docs/validation/android-ble.md). Tests on one recent
+phone do not establish hardware compatibility for every supported Android version.

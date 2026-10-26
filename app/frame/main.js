@@ -24,23 +24,29 @@ async function refreshGallery() {
   renderGallery(selectPhoto);
 }
 
-async function connectFrame() {
+async function connectFrame({base: setupBase, signal} = {}) {
   if (!state.session || state.busy || state.job || state.connecting) return;
   state.connecting = true; state.connected = false; controls();
   el['frame-detail'].textContent = 'Connecting…';
   el['connection-status'].textContent = 'Finding your frame… Allow local-network access if prompted.';
   try {
-    const base = normalizeAddress(el.address.value);
+    const base = normalizeAddress(setupBase || el.address.value);
+    signal?.throwIfAborted();
     await releaseEditLock();
     await selectDevice(base);
-    const rawConfig = await request(base, '/api/display-config');
+    signal?.throwIfAborted();
+    const rawConfig = await request(base, '/api/display-config', signal ? {signal} : {});
+    signal?.throwIfAborted();
     if (androidApp && (!Number.isSafeInteger(rawConfig.rotation_revision) || !rawConfig.physical_width)) {
       throw new Error('Update the frame firmware to the revision-aware app API, then reconnect.');
     }
     const config = validateConfig(rawConfig);
-    const images = await request(base, '/api/images');
+    const images = await request(base, '/api/images', signal ? {signal} : {});
+    signal?.throwIfAborted();
     if (!Array.isArray(images)) throw new Error('The frame returned an invalid gallery.');
     await releaseEditLock();
+    signal?.throwIfAborted();
+    el.address.value = base;
     if (state.frame?.base !== base) {state.imports = []; renderImports();}
     rememberFrame({base, name: new URL(base).hostname.replace(/\.local$/, ''), config});
     state.config = config; state.images = images; state.connected = true;
@@ -51,15 +57,18 @@ async function connectFrame() {
     el.connection.classList.add('connected'); el.connection.open = false; el.forget.hidden = false;
     el.dimensions.textContent = `${config.width} × ${config.height}`;
     renderGallery(selectPhoto);
-    if (state.draft) {await acquireEditLock(); prepare();}
+    if (state.draft) {if (!setupBase) await acquireEditLock(); prepare();}
     const previous = savedJob();
     if (previous?.base === base) { rememberJob(previous); if (previous.kind === 'test-card') showView('settings'); pollJob(); }
-    if (!state.job) await regenerateGallery();
+    if (!state.job && !setupBase) await regenerateGallery();
+    return true;
   } catch (error) {
     state.connected = false;
     el['connection-status'].textContent = (androidApp || navigator.onLine) ? error.message : 'You’re offline. Keep editing your draft; reconnect to send it.';
     el['frame-detail'].textContent = navigator.onLine ? 'Not connected' : 'Offline · Draft saved on this phone';
     el.connection.classList.remove('connected'); el.connection.open = true;
+    if (setupBase) throw error;
+    return false;
   } finally { state.connecting = false; controls(); }
 }
 
@@ -478,9 +487,21 @@ async function start() {
     el['preview-model'].value = state.config.model;
     el['preview-layout'].value = state.config.rotation_degrees === 90 ? 'portrait' : 'landscape';
     el.dimensions.textContent = `${state.config.width} × ${state.config.height}`;
-    const {watchNativeApp} = await import('./services/native-app.js');
+    const [{watchNativeApp}, {setupDialog}, {registerPlugin}] = await Promise.all([
+      import('./services/native-app.js'), import('./ui/setup.js'), import('@capacitor/core'),
+    ]);
+    const setup = await setupDialog({bridge: registerPlugin('FrameBle'), connected: async () => {
+      await acquireEditLock();
+      if (state.draft) prepare();
+      await regenerateGallery();
+    }, connect: async (base, signal) => {
+      const connected = await connectFrame({base, signal});
+      if (!connected) throw new Error('Wait for the current frame operation, then retry.');
+      showView('editor');
+    }});
     await watchNativeApp({
       back: () => {
+        if (el['setup-dialog'].open) {void setup.close(); return true;}
         if (el['delete-dialog'].open) {el['delete-dialog'].close(); return true;}
         if (state.view !== 'editor') {showView('editor'); return true;}
         return false;
@@ -523,6 +544,6 @@ window.addEventListener('offline', () => {
   controls();
 });
 window.addEventListener('online', () => {
-  if (!state.connected && !state.busy && !state.job && state.frame?.base === el.address.value) connectFrame();
+  if (!el['setup-dialog'].open && !state.connected && !state.busy && !state.job && state.frame?.base === el.address.value) connectFrame();
 });
 start();
