@@ -25,7 +25,11 @@ export function controls() {
   el['app-update-detail'].textContent = state.updating ? 'Saving your draft and opening the new version…'
     : state.updateError || updateBlocked || 'A new version is ready. Reload when you’re ready; your draft will be kept.';
   const working = state.busy || Boolean(state.job);
-  el.connect.disabled = !state.session || working || state.connecting;
+  el['frame-picker'].disabled = working || state.connecting;
+  el['discover-frames'].disabled = working || state.connecting;
+  for (const button of el['nearby-frames'].querySelectorAll('button')) button.disabled = working || state.connecting;
+  el['frame-recovery'].hidden = !androidApp || state.connected;
+  el.connect.disabled = !state.session || state.busy || (Boolean(state.job) && (!androidApp || state.connected)) || state.connecting;
   el.address.disabled = working || state.connecting;
   el.forget.disabled = working || state.connecting;
   el['pick-photo'].disabled = working || !state.config;
@@ -51,7 +55,7 @@ export function controls() {
   el['send-panel'].setAttribute('aria-busy', String(working && state.view === 'editor'));
   el['setup-link'].hidden = androidApp || working;
   el['add-frame'].hidden = !androidApp;
-  el['add-frame'].disabled = working || state.connecting || !state.session;
+  el['add-frame'].disabled = state.busy || (Boolean(state.job) && state.connected) || state.connecting || !state.session;
   el['preview-profile'].hidden = !androidApp || state.connected;
   for (const id of ['preview-model', 'preview-layout']) el[id].disabled = working || state.connected || state.connecting;
 }

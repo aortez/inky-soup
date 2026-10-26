@@ -180,6 +180,30 @@ h1,h2,p {
   font-size: 24px;
 }
 
+#saved-frames {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+#frame-picker {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #c9d2c2;
+  border-radius: 10px;
+  background: var(--paper);
+}
+
+#nearby-frames {
+  display: grid;
+  gap: 8px;
+}
+
+#frame-recovery {
+  font-size: 13px;
+  color: var(--muted);
+}
+
 .connection form {
   margin-top: 23px;
 }

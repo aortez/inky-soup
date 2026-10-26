@@ -12,6 +12,7 @@ use std::{
 };
 
 mod deploy;
+mod discovery;
 mod display_setup;
 mod preview;
 mod ssh;
@@ -42,6 +43,10 @@ struct Args {
 enum Command {
     /// Display configuration and current queue.
     Status,
+    /// Stable device identity, server instance, and supported capabilities.
+    Identity,
+    /// Find local frames via Avahi and verify their identity API.
+    Discover,
     /// Open, close, or inspect the Bluetooth WiFi setup window over SSH.
     WifiSetup {
         #[arg(value_enum)]
@@ -435,6 +440,8 @@ fn validate_prepared(bytes: &[u8], config: &Value) -> Result<DynamicImage> {
 fn run(args: &Args) -> Result<Value> {
     let frame = Frame::new(&args.device)?;
     match &args.command {
+        Command::Identity => frame.get("api/device"),
+        Command::Discover => discovery::run(),
         Command::Status => Ok(
             json!({"device":frame.base.as_str(),"display":frame.get("api/display-config")?,"flash":frame.get("api/flash/status")?}),
         ),

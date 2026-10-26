@@ -21,6 +21,8 @@ public class FramePolicyTest {
     }
 
     @Test public void allowOnlyDeviceOperationsWithoutTraversalOrRedirectDestinations() {
+        FramePolicy.route("GET", "/api/device");
+        assertThrows(IllegalArgumentException.class, () -> FramePolicy.route("POST", "/api/device"));
         FramePolicy.route("POST", "/api/settings/photo-rotation");
         FramePolicy.route("GET", "/images/Fr%C3%B8lich.jpg");
         FramePolicy.route("GET", "/api/flash/status/123");

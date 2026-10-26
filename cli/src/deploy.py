@@ -9,10 +9,12 @@ import subprocess
 import time
 import urllib.request
 import uuid
+import xml.etree.ElementTree as ET
 
 
 FILES = {
     "server": "usr/bin/inky-soup-server",
+    "discovery.service": "etc/avahi/services/inky-soup.service",
     "display": "usr/bin/inky-soup-update-display",
     "static/js": "usr/share/inky-soup/static/js",
     "static/chota.min.css": "usr/share/inky-soup/static/chota.min.css",
@@ -46,6 +48,9 @@ def health_check():
     deadline = time.monotonic() + 45
     while True:
         try:
+            identity = get_json("/api/device")
+            if identity.get("api_version") != 1 or not identity.get("id") or not identity.get("instance_id"):
+                raise RuntimeError("Server did not expose device identity")
             display = get_json("/api/display-config")
             if "rotation_revision" not in display or "physical_width" not in display:
                 raise RuntimeError("Server did not expose the orientation API")
@@ -133,7 +138,8 @@ def rollback(stopped, replaced, command, root, keep_server=False):
                 shutil.rmtree(target)
             elif target.exists():
                 target.unlink()
-            old_path.rename(target)
+            if old_path is not None:
+                old_path.rename(target)
         except Exception as error:
             failed_assets.add(service)
             errors.append(f"Restore {target}: {error}")
@@ -190,6 +196,9 @@ def _deploy_locked(bundle, root, command, health, status):
             raise RuntimeError("Linked release asset: " + name)
     if not (bundle / "server").read_bytes().startswith(b"\x7fELF"):
         raise RuntimeError("Server must be a target-native ELF executable")
+    service = ET.parse(bundle / "discovery.service").getroot()
+    if service.findtext("service/type") != "_inky-soup._tcp" or service.findtext("service/port") != "8000":
+        raise RuntimeError("Discovery service must advertise _inky-soup._tcp on port 8000")
     if has_provisioner:
         if not (bundle / "provisioner").read_bytes().startswith(b"\x7fELF"):
             raise RuntimeError("Provisioner must be a target-native ELF executable")
@@ -220,14 +229,15 @@ def _deploy_locked(bundle, root, command, health, status):
     try:
         for name, destination in files.items():
             target = root / destination
-            if not target.exists() or target.is_symlink():
+            if (not target.exists() and name != "discovery.service") or target.is_symlink():
                 raise RuntimeError("Missing or linked installed asset: " + destination)
             previous = backup / name
             previous.parent.mkdir(parents=True, exist_ok=True)
             if target.is_dir():
                 shutil.copytree(target, previous)
-            else:
+            elif target.exists():
                 shutil.copy2(target, previous)
+            target.parent.mkdir(parents=True, exist_ok=True)
             next_path = target.with_name(target.name + ".next-" + release)
             staged.append(next_path)
             copy(bundle / name, next_path)
@@ -244,7 +254,10 @@ def _deploy_locked(bundle, root, command, health, status):
             target = root / destination
             next_path = target.with_name(target.name + ".next-" + release)
             old_path = target.with_name(target.name + ".old-" + release)
-            target.rename(old_path)
+            if target.exists():
+                target.rename(old_path)
+            else:
+                old_path = None
             replaced.append((target, old_path))
             next_path.rename(target)
         os.sync()
@@ -282,6 +295,8 @@ def _deploy_locked(bundle, root, command, health, status):
             elif path.exists():
                 path.unlink()
     for _, old_path in replaced:
+        if old_path is None:
+            continue
         if old_path.is_dir():
             shutil.rmtree(old_path)
         else:

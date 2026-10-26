@@ -9,7 +9,7 @@ import java.util.Arrays;
 
 /** Restrictions also apply to direct bridge calls, independently of UI validation. */
 final class FramePolicy {
-    private static final Set<String> GET = new HashSet<>(Arrays.asList("/api/display-config", "/api/images", "/api/flash/status"));
+    private static final Set<String> GET = new HashSet<>(Arrays.asList("/api/device", "/api/display-config", "/api/images", "/api/flash/status"));
     private static final Set<String> POST = new HashSet<>(Arrays.asList("/upload", "/flash", "/api/upload-cache", "/api/upload-thumb",
         "/api/upload-dithered", "/api/lock-image", "/api/unlock-image", "/api/delete-image",
         "/api/settings/display-rotation", "/api/settings/photo-rotation", "/api/flash-test-card"));

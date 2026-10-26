@@ -264,3 +264,53 @@ photo through that existing connection. `--device` still identifies the Pi for t
 independent CLI check; `--connected` preserves the app’s BLE-returned address. See the recorded
 [Pixel / small-Pi validation](../docs/validation/android-ble.md). Tests on one recent
 phone do not establish hardware compatibility for every supported Android version.
+
+## Remembered Android frames
+
+Android remembers multiple frames by the Pi's `/api/device` identity. The local
+registry stores the device ID, display name/configuration, last verified address,
+and explicit selection. Android commits changes to the `sparkle-frame-registry`
+IndexedDB database with strict durability before completing connect, select or
+forget. On launch it restores the `sparkle-frames-v1` localStorage working copy
+from that committed record, so an immediate force-stop cannot revert a completed
+selection. Existing localStorage records migrate on the next verified connection. It survives app restarts and APK
+updates; uninstalling or clearing app data removes it. Forget removes only that
+phone's association, never the Pi's photos. Names can repeat: the picker includes
+the panel size and an ID suffix, sorted by name then ID. Typing a different
+address identifies and adds the frame at that address without needing discovery
+or forgetting the current frame. Unreadable registry data shows recovery guidance
+and is replaced only after a verified connection; photos, drafts, and job receipts
+are preserved.
+
+On launch/resume, the app verifies the last address. If it is unavailable or
+belongs to a different device, Android NSD browses `_inky-soup._tcp` and probes
+candidate identity APIs before selecting a transport. A foreground health check
+retries every 15 seconds while idle. Discovery is bounded to 6.5-second scans,
+16 candidate addresses and four concurrent probes; it stops when backgrounded.
+Only private IPv4 addresses are supported, as in the existing native transport.
+This uses Android's [NSD APIs](https://developer.android.com/develop/connectivity/wifi/use-nsd);
+the current target SDK remains 36. A future SDK 37 migration must add its local
+network permission or system service picker flow.
+
+A connected draft follows its source device ID, including pending rotation
+receipts. Legacy drafts with only an address become independent copies on first
+identity-aware connection; an address cannot prove ownership of an old original.
+Saved display jobs carry both device ID and server instance. Receipts are kept
+independently for each frame, so using another frame cannot discard an unavailable
+frame’s pending refresh. Finishing a refresh restores the draft’s edit lease
+before enabling controls. Reconnect only reads
+status, never resubmits a refresh. If reconnect fails during a job, its receipt
+stays saved and Check again becomes available while automatic retries continue.
+A restarted server invalidates the old job and
+the app asks the user to check the screen before sending again.
+
+Find frames on WiFi adds an existing frame without provisioning. Add frame over
+Bluetooth remains the setup/recovery path. If WiFi has changed, reboot the offline
+Pi to open its five-minute setup window and follow its screen instructions when
+available. Issue #17 owns those offline instructions and photo restoration;
+#23 does not add a second rescue controller. Same-network/local-network permission
+failures and networks that block mDNS retain manual address entry as a fallback.
+Device IDs protect against accidental address reuse, not malicious impersonation.
+
+See [identity/discovery CLI commands](../cli/README.md#identity-and-local-discovery)
+and [hardware validation](../docs/validation/android-reconnect.md).

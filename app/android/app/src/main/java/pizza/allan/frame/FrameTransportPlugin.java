@@ -109,9 +109,11 @@ public class FrameTransportPlugin extends Plugin {
         String id = call.getString("id");
         try {
             String base = FramePolicy.base(call.getString("base"));
-            if (!base.equals(selected)) throw new IOException("Select this frame before connecting.");
             String method = call.getString("method", "GET"), path = call.getString("path", "");
             FramePolicy.route(method, path);
+            if (!base.equals(selected) && !(method.equals("GET") && path.equals("/api/device"))) {
+                throw new IOException("Select this frame before connecting.");
+            }
             String type = call.getString("contentType", "application/octet-stream");
             RequestBody body = null;
             if (method.equals("POST")) {

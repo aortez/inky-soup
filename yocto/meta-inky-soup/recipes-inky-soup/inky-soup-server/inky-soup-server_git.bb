@@ -10,7 +10,7 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 # Use cargo_bin from meta-rust-bin for prebuilt Rust toolchain.
 inherit externalsrc cargo_bin systemd
 
-RDEPENDS:${PN} += "inky-soup-display networkmanager-nmcli"
+RDEPENDS:${PN} += "inky-soup-display avahi-daemon networkmanager-nmcli"
 
 EXTERNALSRC = "${THISDIR}/../../../../upload-server"
 
@@ -35,6 +35,9 @@ do_install() {
     # Install Rocket configuration.
     install -m 0644 ${S}/Rocket.toml ${D}${datadir}/inky-soup/
 
+    install -d ${D}${sysconfdir}/avahi/services
+    install -m 0644 ${THISDIR}/files/inky-soup.service ${D}${sysconfdir}/avahi/services/
+
     # Install systemd services.
     # Note: /data/inky-soup directories are created at runtime by the init service
     # and subdirectories (images/, cache/, etc.) are created by the server itself.
@@ -49,6 +52,7 @@ SYSTEMD_AUTO_ENABLE = "enable"
 
 # Package files.
 FILES:${PN} = " \
+    ${sysconfdir}/avahi/services/inky-soup.service \
     ${bindir}/inky-soup-server \
     ${datadir}/inky-soup \
     ${systemd_system_unitdir}/inky-soup-data-init.service \

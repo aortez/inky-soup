@@ -1,4 +1,5 @@
 export const elements = Object.fromEntries([
+  'saved-frames', 'frame-picker', 'discover-frames', 'nearby-frames', 'frame-recovery',
   'add-frame', 'setup-dialog', 'setup-name', 'setup-status', 'setup-devices', 'setup-scan',
   'setup-wifi', 'setup-ssid', 'setup-password', 'setup-show-password', 'setup-submit',
   'setup-retry', 'setup-done', 'setup-cancel', 'setup-help', 'setup-radio', 'setup-permissions', 'setup-location',

@@ -593,6 +593,21 @@ fn favorites_filter_gallery_and_reject_unsupported_servers() {
 }
 
 #[test]
+fn identity_reads_the_device_without_changing_settings() {
+    let (url, server) = serve(vec![
+        r#"{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","instance_id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","name":"Kitchen","api_version":1}"#,
+    ]);
+    let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+        .args(["--device", &url, "--json", "identity"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["name"], "Kitchen");
+    assert!(server.join().unwrap()[0].starts_with("GET /api/device "));
+}
+
+#[test]
 fn rescue_status_and_show_restore_wait_use_the_server_queue() {
     let (url, server) = serve(vec![r#"{"enabled":true,"card_active":false}"#]);
     let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
