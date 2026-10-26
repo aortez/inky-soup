@@ -338,4 +338,6 @@ deferred while photos are processing or importing and while a display refresh is
 tracked; the draft is saved first. Automatic checks run at launch and resume at
 most every six hours and never block local frame use. `tests/android-update.spec.js`
 covers the flow with a simulated plugin; the Java tests cover metadata validation,
-download verification, and cancellation.
+download verification, and cancellation. The first hardware pass, updating 0.2.0 to
+0.2.1 on a Pixel, is recorded in
+[docs/validation/android-update.md](../docs/validation/android-update.md).

@@ -89,8 +89,10 @@ Stable links:
 
 Open the install link in the phone's browser, download `frame.apk`, and open it.
 Android asks once to allow that browser to install unknown apps; this permission
-belongs to the browser, not to the Frame app. Confirm the installation. No developer
-computer or ADB is needed. Compare `frame.apk.sha256` when installing from a copied
+belongs to the browser, not to the Frame app. Google Play Protect scans every
+package installed outside Google Play before the installer confirms it, which takes
+a few seconds for each version. Confirm the installation. No developer computer or
+ADB is needed. Compare `frame.apk.sha256` when installing from a copied
 file.
 
 Development builds from `npm run build:android` are signed with the builder's
@@ -120,13 +122,13 @@ internet access to GitHub; using a frame on the local network never does.
   before installation.
 - **Install**: the app's own **Install unknown apps** permission is required. The
   first attempt opens that Android Settings page; return to the app and tap
-  **Install update** again. The app saves the draft, hashes the package again, and
+  **Install** again. The app saves the draft, hashes the package again, and
   parses it: its package name and signing certificate must match the installed app
   and its version code must be higher, so a manipulated manifest cannot turn the
   updater into a prompt to install some other app. Only then does Android's
-  installer open through a `FileProvider` URI. Confirming replaces the app and the
-  user reopens it as the new version; cancelling returns to the app with the
-  download still ready. A package that is missing, altered, or rejected is
+  installer open through a `FileProvider` URI, where Play Protect scans the package
+  first. Confirming replaces the app and the user reopens it as the new version;
+  cancelling returns to the app with the download still ready. A package that is missing, altered, or rejected is
   discarded and the release goes back to **Download update**.
 - **Deferral**: installation waits while photos are processing, uploading, or
   importing, while a connection is in progress, and while a display refresh is
@@ -168,10 +170,13 @@ this prototype.
 
 ## Validation
 
-Hardware acceptance for #24 has not been recorded yet. The checklist:
+The first hardware pass on 2026-10-26 is recorded in
+[android-update.md](validation/android-update.md); it covered the update itself and
+the permission decline, and lists what remains. The checklist:
 
-1. Publish two signed versions and install the older one from the stable link on
-   the test phone, allowing the browser to install unknown apps.
+1. Publish two signed versions and install the older one from its versioned link
+   on the test phone, allowing the browser to install unknown apps. The stable link
+   always serves the newest release.
 2. Create a draft, change preview settings, and remember both frames.
 3. Check for updates, download the newer version, and install it. Confirm the
    draft, settings, remembered frames, and job receipts survive.
