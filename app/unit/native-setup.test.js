@@ -118,6 +118,8 @@ test('failed API handoff retries the address without writing credentials again',
   const f = fixture({connect: async () => {if (++attempts === 1) throw new Error('No local WiFi');}}); await f.ready();
   f.bridge.write = async () => {f.value('result', encodeRequest(1, ['http://192.168.1.149:8000']));};
   await f.client.provision('Wifi', 'secret'); assert.equal(f.events.at(-1).phase, 'unreachable');
+  f.emit('error', {message: 'Late Bluetooth disconnect'});
+  assert.equal(f.events.at(-1).phase, 'unreachable');
   await f.client.confirm(); assert.equal(f.events.at(-1).phase, 'success'); assert.equal(attempts, 2); await f.client.destroy();
 });
 
@@ -154,4 +156,17 @@ test('closing setup while a rescan is waiting for native cleanup cannot restart 
   assert.equal(f.client.attempt,null);
   assert.equal(f.calls.filter(([method]) => method === 'scan').length,1);
   assert.equal(f.events.at(-1).phase,'idle'); await f.client.destroy();
+});
+
+test('late BLE events cannot abort API verification after an accepted handoff', async () => {
+  const api = later(); let signal;
+  const f = fixture({connect: (_, abort) => {signal = abort; return api.promise;}}); await f.ready();
+  f.bridge.write = async () => {f.value('result', encodeRequest(1, ['http://192.168.1.149:8000']));};
+  const provisioning = f.client.provision('Wifi', 'secret'); await pause();
+  assert.equal(f.events.at(-1).phase, 'checking');
+  f.emit('error', {message: 'Bluetooth disconnected'});
+  f.value('state', [1]);
+  api.resolve(); await provisioning;
+  assert.equal(signal.aborted, false);
+  assert.equal(f.events.at(-1).phase, 'success'); await f.client.destroy();
 });

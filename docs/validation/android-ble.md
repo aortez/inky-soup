@@ -11,7 +11,7 @@ Local date: 2026-10-25. Issue #22, using the #21 direct-Pi adapter.
   storage is covered by the Android-bundle browser test, rather than uninstalling
   the user's app.
 
-The final installed APK matches the built artifact, SHA-256
+The hardware-tested APK matched its built artifact, SHA-256
 `246d6880c12505db4c07bc1b95fea6c25b3c3d04a03c038f2e426843fa30780a`.
 
 ## Completed device checks
@@ -76,10 +76,10 @@ See [photo/CLI results](android-ble-photo.json).
 
 ## Automated validation
 
-- 38 Node unit tests, including cancellation races and protocol boundaries.
+- 39 Node unit tests, including cancellation races and protocol boundaries.
 - 8 Java tests, including native packet length/checksum/UTF-8 validation.
 - Android lint: zero errors (12 informational/style/dependency warnings).
-- 51 web tests; 8 PWA tests; 11 Android-bundle tests.
+- 51 web tests; 8 PWA tests; 12 Android-bundle tests.
 - Debug APK build and `git diff --check`.
 
 Mocks cover Bluetooth-off, denied permission, setup expiry, disconnect, timeout,
@@ -88,3 +88,18 @@ retry. The controller's polling path covers older firmware without notifications
 Bluetooth-off, permission denial, cancellation, explicit firmware-window closure,
 failed credentials, and successful retry also ran on the real phone. Tests are not
 claims of physical coverage on older Android versions or every failure mode. No OS bonding or persistent device ownership is introduced.
+
+
+## PR review follow-up
+
+Review reproduced a queued BLE disconnect aborting HTTP verification after the
+acknowledged write and validated local-address handoff. The controller now ignores
+BLE events once that handoff is accepted; explicit user cancellation still aborts
+the HTTP operation. Regression tests cover both in-flight API verification and
+its retry after an unreachable API. The new unit test failed before the fix;
+all 39 Node tests and 12 Android-bundle tests pass afterward, including the
+existing explicit-cancellation tests. The debug APK also builds successfully.
+
+The recorded physical run above predates this three-line event guard; it was not
+repeated for this review fix. Native GATT, firmware, HTTP transport, and the photo
+pipeline are unchanged.

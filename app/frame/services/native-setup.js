@@ -77,6 +77,9 @@ export class NativeSetup {
   receive(event) {
     const a = this.attempt;
     if (!a || event.session !== a.id || !this.active(a)) return;
+    // After the acknowledged write and validated handoff, BLE is finished. Queued
+    // disconnect/status events must not cancel HTTP verification or its retry.
+    if (a.url) return;
     if (event.type === 'error') { void this.fail(a, new Error(event.message)); return; }
     if (event.type === 'device' && ['scanning', 'select'].includes(a.phase)) {
       a.devices.set(event.id, {id: event.id, name: event.name, rssi: event.rssi});

@@ -126,3 +126,16 @@ test('cancelling API verification cannot remember or connect the abandoned frame
   await page.locator('#add-frame').click(); await select(page); await credentials(page);
   await expect(page.locator('#setup-done')).toBeVisible();
 });
+
+
+test('late Bluetooth disconnect cannot cancel the verified WiFi handoff', async ({page}) => {
+  await nativeBridge(page, 'slow-api'); await page.goto('/'); await page.locator('#add-frame').click();
+  await select(page); await credentials(page);
+  await page.waitForFunction(() => Boolean(window.completeApi));
+  await page.evaluate(() => {
+    window.bleEmit('error', {message: 'Bluetooth disconnected'});
+    window.completeApi();
+  });
+  await expect(page.locator('#setup-done')).toBeVisible();
+  await expect(page.locator('#frame-detail')).toHaveText('Connected · 600 × 448');
+});
