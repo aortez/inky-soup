@@ -545,7 +545,7 @@ async function startInstall() {
     if (state.draft) await saveDraft(state.draft);
     const outcome = await installUpdate(state.updates, update.release);
     update.notice = outcome === 'permission'
-      ? 'Allow Sparkle Duck to install updates in Android Settings, then tap Install update again.'
+      ? 'Allow Sparkle Duck to install updates in Android Settings, then tap Install again.'
       : 'Confirm the update in the Android installer. The app reopens as the new version.';
   } catch (error) {
     update.error = error.message;

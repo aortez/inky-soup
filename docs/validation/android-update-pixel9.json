@@ -1,0 +1,46 @@
+{
+  "model": "Pixel 9 Pro XL",
+  "android": "17",
+  "build": "CP2A.260605.016",
+  "securityPatch": "2026-10-01",
+  "webView": "155.0.8059.39",
+  "frame": "inky-soup · Connected · 1600 × 1200",
+  "signingSha256": "323dc7c2a994fa3217530c2fa8e7beffc1fc9ed4b4c6c43e92e29baebc7ea605",
+  "from": {
+    "tag": "app-v0.2.0",
+    "versionName": "0.2.0",
+    "versionCode": 2000,
+    "apkSha256": "cf0721efa8214b561532c2b3e21670a408e9c8cbbe33dba1e4dc3e260f0eacca",
+    "workflowRun": 40280374748,
+    "installedBy": "adb install of the versioned asset after checking frame.apk.sha256"
+  },
+  "to": {
+    "tag": "app-v0.2.1",
+    "versionName": "0.2.1",
+    "versionCode": 2001,
+    "apkSha256": "0bcdba1a5aa464f97fb726dc7bc57cff9c0e5ad65d5c9b0fa59d43d63eb13ea9",
+    "workflowRun": 40282279860,
+    "installedBy": "the in-app updater and the Android package installer"
+  },
+  "checks": [
+    "First launch of 0.2.0 offered 0.2.1 (3.5 MB) from the live frame-app manifest.",
+    "Download completed and verified in under two seconds; the banner offered Install and promised the draft and remembered frames are kept.",
+    "Install opened Android's Install unknown apps page; leaving without allowing returned to a usable app that kept the verified download and explained the permission.",
+    "After allowing the source, Install handed off to the Android installer, which scanned the package with Google Play Protect and replaced the app.",
+    "0.2.1 (build 2001) reopened with the same signer, the frame reconnected, and the draft kept 2048.png with Brightness 75.",
+    "The banner disappeared, Settings showed Sparkle Duck 0.2.1 (build 2001), and a manual check reported the latest version."
+  ],
+  "notExercised": [
+    "First install from the download link in the phone's browser.",
+    "Cancelling the Android installer dialog itself.",
+    "Interrupting a download; 3.5 MB finishes too quickly on WiFi.",
+    "Metadata with a wrong checksum or a different signing digest from a test build.",
+    "Deferral behind an active display refresh."
+  ],
+  "observations": [
+    "Google Play Protect scans every sideloaded install or update before the installer confirms it.",
+    "During the resume reconnect after Android Settings, the banner briefly disabled Install with the busy message, then offered it again once the frame connected.",
+    "The permission notice told the user to tap Install update although the button is labelled Install."
+  ],
+  "passed": true
+}
