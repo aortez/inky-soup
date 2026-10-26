@@ -48,28 +48,37 @@ variables with a path to the keystore and run `./gradlew :app:assembleRelease` i
 and computes `versionCode` as `major × 1,000,000 + minor × 1,000 + patch`, so each
 part must stay at or below 999 and every increase produces a larger code. Bump the
 version in an ordinary pull request. The release tag must be `app-v<version>`; the
-workflow refuses a tag that does not match the merged `package.json`.
+workflow refuses a tag that does not match the merged `package.json`. The web app
+archive attached to each release carries the same version, so a change that only
+affects the website is still released as a new app version.
 
 ## Publishing a release
 
 1. Merge the version bump to `main`.
 2. Tag that commit and push the tag deliberately, for example
    `git tag app-v0.2.0 && git push origin app-v0.2.0`.
-3. The workflow checks that the tag matches `package.json` and points at a commit
-   on `main`, runs the app unit tests, builds the bundled assets, builds and signs
-   the release APK, runs the Java unit tests and Android lint on the release
-   variant, verifies the signature with `apksigner`, and writes the release
-   metadata with `app/tools/release-manifest.mjs`.
-4. It publishes a versioned release named after the tag with generated notes and
-   three assets: `frame.apk`, `frame.apk.sha256`, and `frame-release.json`.
-5. It replaces the same three assets on the rolling `frame-app` release, which is
-   created on the first run and never marked as GitHub's latest release. That
-   release only ever carries app assets, so the links below stay valid when server
-   or image releases are added later. Re-running a failed job replaces the assets
-   on both releases instead of failing on the existing one.
+3. The `android` job checks that the tag matches `package.json` and points at a
+   commit on `main`, runs the app unit tests, builds the bundled assets, builds
+   and signs the release APK, runs the Java unit tests and Android lint on the
+   release variant, verifies the signature with `apksigner`, and writes the
+   release metadata with `app/tools/release-manifest.mjs`. In parallel, the `web`
+   job, which never receives the signing secrets, builds the web app, runs the
+   installed-app tests against that build, and packs it with
+   `app/tools/web-bundle.mjs`.
+4. When both jobs pass, the `publish` job, the only one allowed to write releases,
+   publishes a versioned release named after the tag with generated notes and five
+   assets: `frame.apk`, `frame.apk.sha256`, `frame-release.json`, and the
+   website's `frame-web.tar.gz` and `frame-web.tar.gz.sha256`, described in
+   [app/README.md](../app/README.md#publishing-the-same-frontend-on-allanpizza).
+5. It replaces `frame.apk`, `frame.apk.sha256`, and `frame-release.json` on the
+   rolling `frame-app` release, which is created on the first run and never marked
+   as GitHub's latest release. That release only ever carries Android app assets,
+   so the links below stay valid when server or image releases are added later;
+   the website pins versioned archives instead. Re-running a failed job replaces
+   the assets on both releases instead of failing on the existing one.
 
-`workflow_dispatch` builds and uploads the signed files as a workflow artifact
-without publishing. Every run needs the signing secrets.
+`workflow_dispatch` builds and uploads the signed files and the web archive as
+workflow artifacts without publishing. Every run needs the signing secrets.
 
 Stable links:
 

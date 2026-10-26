@@ -1,4 +1,5 @@
 import {test, expect} from '@playwright/test';
+import {readFileSync} from 'node:fs';
 
 const base = 'http://inky-soup.local:8000';
 const config = {width:1600,height:1200,thumb_width:150,thumb_height:112,model:'impression-13.3-2025',color:'multi'};
@@ -463,4 +464,12 @@ test('web reconnect releases the current photo lease before loading the frame ag
   expect(paths.indexOf('/api/unlock-image')).toBeGreaterThanOrEqual(0);
   expect(paths.indexOf('/api/unlock-image')).toBeLessThan(paths.indexOf('/api/display-config'));
   expect(paths.indexOf('/api/display-config')).toBeLessThan(paths.indexOf('/api/lock-image'));
+});
+
+test('web Settings names the release version and leaves updates to the service worker', async ({page}) => {
+  const {version} = JSON.parse(readFileSync('package.json', 'utf8'));
+  await page.goto('/frame/');
+  await page.locator('#settings-tab').click();
+  await expect(page.locator('#app-version')).toHaveText(`Sparkle Duck ${version} (web)`);
+  await expect(page.locator('#check-updates')).toBeHidden();
 });

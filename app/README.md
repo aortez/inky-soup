@@ -118,32 +118,43 @@ writes a JSON record and screenshot and does not contact or refresh a Pi.
 
 ## Publishing the same frontend on allan.pizza
 
-This repository owns the frontend source. The website should consume a built
-artifact or a pinned revision of this directory, rather than copy and edit
-`frame/` and its workers. The Frame app CI workflow publishes `frame-web` and
-`frame-android-debug` artifacts for review.
+This repository owns the frontend source, and allan.pizza should deploy a tested
+build of it rather than copies of `frame/` and its workers (#41). Every
+`app-v<version>` release attaches that build as `frame-web.tar.gz`, with
+`frame-web.tar.gz.sha256`, beside the APK. The web and Android apps therefore
+share one version, which Settings shows under **This app** on both, and a web-only
+fix is also offered to Android users as an update.
 
-For a website release, build the website's unrelated pages first, then overlay
-the complete output of `npm ci && npm run build` from this directory into the
-website's Pages artifact:
+The release workflow runs `npm run test:pwa`, which builds `dist/` and tests the
+installed app from it, then packs those same files with `tools/web-bundle.mjs`
+(GNU tar). The archive supplies `/frame/`, `/setup/`, `/wifi/`, and their hashed
+`/assets/` files. File order, owners, modes, and times are fixed, so rebuilding a
+commit reproduces the archive and a re-run release keeps its checksum. The Frame
+app CI workflow packs every build the same way, so a missing page fails before a
+release. Its `frame-web` and `frame-android-debug` artifacts are for review only:
+they expire, and downloading them needs a token.
+
+The website pins a release tag and its archive's SHA-256, copied from the
+release's `frame-web.tar.gz.sha256`. Its CI builds the site's own pages, then
+overlays the archive onto the Pages artifact:
 
 ```sh
-# From the inky-soup checkout, after both builds have completed.
-cp -a app/dist/. /path/to/aortez.github.io/dist/
+curl -fsSL -o frame-web.tar.gz "https://github.com/aortez/inky-soup/releases/download/$TAG/frame-web.tar.gz"
+echo "$SHA256  frame-web.tar.gz" | sha256sum --check
+tar --extract --gzip --keep-old-files --file frame-web.tar.gz --directory dist
 ```
 
-This supplies `/frame/`, `/setup/`, `/wifi/`, and their hashed `/assets/` files.
-Preserve unrelated website files, including its CNAME and Go demo assets. Remove
-those three old entries from the website Vite build and retire their copied
-sources when its CI is switched to consuming this artifact. Pin the inky-soup
-revision used for each website deployment, and overlay the entire build so HTML,
-workers, and service-worker cache hashes always agree.
+`--keep-old-files` fails if the website's own build still produces any of these
+files, and overlaying the whole archive keeps HTML, workers, and service-worker
+cache hashes in agreement. Preserve unrelated website files, including its CNAME
+and Go demo assets. To publish a release on allan.pizza, update the pin in a
+website pull request; to roll back, revert it. Installed web apps then find a new
+service worker and offer **Reload**, as for any update.
 
-The website checkout and live Pages deployment are not modified by building the
-Android prototype. Photo rotation and its retry fixes are synchronized through
-website commit `a44aedb2317d26de24e71be8623ded4ea0ff0e1f`; `source.json` records
-that source revision and the original import. Switching website CI to consume
-this shared build remains a separate migration.
+Until the website consumes these archives, it serves its own copied sources. Photo
+rotation and its retry fixes are synchronized through website commit
+`a44aedb2317d26de24e71be8623ded4ea0ff0e1f`; `source.json` records that source
+revision and the original import.
 
 ## Direct Pi transport
 
@@ -319,12 +330,12 @@ and [hardware validation](../docs/validation/android-reconnect.md).
 ## Signed releases and in-app updates
 
 Public APKs are built and signed by the `Frame app release` workflow from an
-`app-v<version>` tag, where the version comes from `package.json` and Gradle derives
-the Android version code from it. Each release publishes `frame.apk`, its SHA-256,
-and `frame-release.json`; the rolling `frame-app` GitHub release keeps stable
-first-install and metadata links. Signing keys, secrets, versioning, first
-installation, and the release checklist are documented in
-[docs/android-release.md](../docs/android-release.md).
+`app-v<version>` tag, where the version comes from `package.json` and Gradle
+derives the Android version code from it. Each release publishes `frame.apk`, its
+SHA-256, and `frame-release.json`, plus the website's web archive; the rolling
+`frame-app` GitHub release keeps stable first-install and metadata links. Signing
+keys, secrets, versioning, first installation, and the release checklist are
+documented in [docs/android-release.md](../docs/android-release.md).
 
 Settings shows the installed version under **This app**. The native `FrameUpdate`
 plugin reads the release metadata over HTTPS, offers a release only when it is

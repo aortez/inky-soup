@@ -18,6 +18,6 @@ export const elements = Object.fromEntries([
   'orientation-size', 'orientation-diagram', 'import-heading',
   'photo_rotation_degrees', 'test-orientation', 'test-activity', 'test-activity-title', 'test-activity-detail', 'test-send-progress', 'test-retry-status',
   'app-update', 'app-update-detail', 'reload-app',
-  'app-card', 'app-version', 'update-status', 'update-progress', 'check-updates', 'download-update', 'install-update',
+  'app-card', 'app-version', 'app-updates', 'update-status', 'update-progress', 'check-updates', 'download-update', 'install-update',
   'preview-profile', 'preview-model', 'preview-layout', 'settings-heading',
 ].map(id => [id, document.getElementById(id)]));
