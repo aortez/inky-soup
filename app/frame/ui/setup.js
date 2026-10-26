@@ -59,7 +59,7 @@ export async function setupDialog({bridge, connect, connected = async () => {}})
     if (succeeded) await connected();
   }
   el['add-frame'].addEventListener('click', () => {
-    if (state.busy || state.job || state.connecting) return;
+    if (state.busy || (state.job && state.connected) || state.connecting) return;
     render({phase: 'idle'}); el['setup-dialog'].showModal();
   });
   el['setup-scan'].addEventListener('click', () => client.scan());

@@ -23,11 +23,17 @@
     <main>
       <details id="connection" class="connection" open>
         <summary><span class="connection-light" aria-hidden="true"></span><span><strong id="frame-name">Your frame</strong><small id="frame-detail">Connect once. Keep it close.</small></span><span class="chevron" aria-hidden="true">⌄</span></summary>
+        <div id="saved-frames" hidden>
+          <label for="frame-picker">Saved frames</label><select id="frame-picker"><option value="">Choose a frame</option></select>
+          <button id="discover-frames" type="button">Find frames on WiFi</button>
+          <div id="nearby-frames"></div>
+        </div>
         <form id="connect-form">
           <label for="address">Frame address</label>
           <div class="address-row"><input id="address" type="text" inputmode="url" value="inky-soup.local:8000" autocomplete="off" autocapitalize="none" spellcheck="false" required><button id="connect" type="submit">Connect</button></div>
           <p id="connection-status" role="status">Keep your phone and frame on the same WiFi.</p>
         </form>
+        <p id="frame-recovery" hidden>If WiFi changed, reboot the frame while it is offline, then choose Add frame over Bluetooth within five minutes. Keep this phone on the WiFi you want the frame to use.</p>
         <div class="connection-actions"><button id="add-frame" type="button" hidden>Add frame over Bluetooth</button><a id="setup-link" href="/setup/?return=frame">Set up WiFi over Bluetooth</a><button id="forget" class="text-button" type="button" hidden>Forget frame</button></div>
         <details class="help"><summary>Need a hand connecting?</summary><p>Allow the browser to access devices on your local network. On Android, Chrome also needs Nearby devices permission. Guest WiFi may prevent your phone and frame from finding each other.</p><p>Your frame may need a software update to connect here. You can still open its address directly to use the original interface.</p></details>
       </details>
@@ -112,7 +118,7 @@
   <dialog id="setup-dialog" aria-labelledby="setup-name">
     <h2 id="setup-name">Add a frame</h2>
     <p id="setup-status" role="status" aria-live="polite"></p>
-    <p>Keep your phone near the frame. Setup closes after five minutes. You can open a new window on the frame and retry.</p>
+    <p>Keep your phone near the frame. If the frame is offline, reboot it to open a five-minute Bluetooth setup window. Follow the recovery instructions on its screen when available.</p>
     <div id="setup-devices" class="setup-devices" aria-label="Nearby frames"></div>
     <button id="setup-scan" type="button">Scan for frames</button>
     <form id="setup-wifi" hidden autocomplete="off">

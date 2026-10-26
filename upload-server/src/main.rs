@@ -4,6 +4,7 @@ mod browser_access;
 mod cache_worker;
 mod cleanup;
 mod config;
+mod device;
 mod derived_assets;
 mod display_settings;
 mod flash_queue;
@@ -1196,6 +1197,7 @@ fn rocket() -> _ {
     let image_locks_state: ImageLocksState = Arc::new(Mutex::new(HashMap::new()));
 
     let mut rocket = rocket::build()
+        .manage(device::Device::load(&config::settings_dir()).expect("Could not load frame identity"))
         .manage(browser_access::BrowserAccess::from_env())
         .attach(browser_access::Cors)
         .manage(orientation::OrientationState::default())
@@ -1207,6 +1209,7 @@ fn rocket() -> _ {
         .mount("/", routes![
             browser_access::preflight,
             display_config,
+            device::identity,
             orientation::update_display_rotation,
             gallery_images,
             slideshow::set_favorite,

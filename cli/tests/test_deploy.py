@@ -30,6 +30,7 @@ class DeploymentTests(unittest.TestCase):
             target.parent.mkdir(parents=True, exist_ok=True)
             source.write_bytes(b"\x7fELFnew" if name == "server" else b"# new")
             target.write_bytes(b"old")
+        (self.bundle / "discovery.service").write_text('<service-group><service protocol="ipv4"><type>_inky-soup._tcp</type><port>8000</port></service></service-group>')
         (self.bundle / "revision.txt").write_text("test-revision")
         self.photo = self.root / "data/inky-soup/images/photo.png"
         self.photo.parent.mkdir(parents=True)
@@ -54,6 +55,29 @@ class DeploymentTests(unittest.TestCase):
         return deploy.deploy(self.bundle, self.root, command=kwargs.get("command", self.command),
                              status=kwargs.get("status", lambda _: {"queue_length": 0, "queue": [], "current_job": None}),
                              health=kwargs.get("health", lambda: {"rotation_degrees": 180}))
+
+    def test_discovery_is_added_to_an_older_installation(self):
+        target = self.root / deploy.FILES["discovery.service"]
+        target.unlink()
+        self.apply()
+        self.assertEqual(target.read_bytes(), (self.bundle / "discovery.service").read_bytes())
+        self.assertEqual(self.photo.read_bytes(), b"original photo")
+
+    def test_invalid_discovery_fails_before_stopping_service(self):
+        (self.bundle / "discovery.service").write_text('<service-group><service><type>_other._tcp</type><port>80</port></service></service-group>')
+        with self.assertRaisesRegex(RuntimeError, "Discovery service must advertise"):
+            self.apply()
+        self.assertNotIn(("systemctl", "stop", deploy.SERVICE), self.commands)
+
+    def test_new_discovery_file_is_removed_on_rollback(self):
+        target = self.root / deploy.FILES["discovery.service"]
+        target.unlink()
+        def fail():
+            raise RuntimeError("failed health")
+        with self.assertRaisesRegex(RuntimeError, "previous software restored"):
+            self.apply(health=fail)
+        self.assertFalse(target.exists())
+        self.assertEqual((self.root / deploy.FILES["server"]).read_bytes(), b"old")
 
     def competing_deployment(self):
         # Exercise a separate OS process, as with a second CLI or a retry after
@@ -128,6 +152,8 @@ print(json.dumps(result))
                 self.commands.clear()
                 display = {"rotation_revision": 0, "physical_width": 1600}
                 def api(path):
+                    if path == "/api/device":
+                        return {"api_version": 1, "id": "a" * 32, "instance_id": "b" * 32}
                     if path == "/api/display-config":
                         return display
                     if path == "/api/images":

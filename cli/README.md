@@ -87,6 +87,7 @@ Stage a directory on the Pi with this layout:
 release/
   server             # target-native upload-server executable
   display            # update-image.py from the same revision
+  discovery.service  # Yocto recipe files/inky-soup.service
   revision.txt       # source commit
   Rocket.toml        # upload-server/Rocket.toml
   templates/         # upload-server/templates
@@ -303,3 +304,29 @@ changing a photo's angle without saving its rebuilt pixels, partial uploads,
 favorite changes, and failed jobs do not reset it. The scheduler's anchor and
 last successfully rotated filename survive server restarts. Android/web controls
 for these settings are separate follow-up work under issue #4.
+
+## Identity and local discovery
+
+`./inky-cli --device http://FRAME_IP:8000 identity --json` reads `/api/device`:
+`id` is a random 128-bit device identifier persisted at
+`/data/inky-soup/settings/device-id`; `instance_id` changes whenever the server
+starts, because display-job numbers are process-local. Identity survives reboot
+and A/B application updates. Preserve this file when backing up a frame, but do
+not clone it onto another frame or bake it into a distributable image. Corrupt
+identity storage fails startup instead of silently creating a different device.
+
+`./inky-cli discover --json` uses the host's `avahi-browse` (install `avahi-utils`
+and run `avahi-daemon`) to browse `_inky-soup._tcp`, then reads each private IPv4
+address's identity API. It reports unreachable advertisements alongside verified
+responses. Multiple network interfaces can advertise the same device; compare
+`identity.id`, not hostnames. USB addresses can overlap when two Pis are attached;
+use their distinct WiFi addresses for subsequent commands.
+
+Current release bundles also require `discovery.service`, copied from
+`yocto/meta-inky-soup/recipes-inky-soup/inky-soup-server/files/inky-soup.service`.
+`deploy` installs it at `/etc/avahi/services/inky-soup.service`, including on older
+images, and restores/removes it if deployment rolls back. Avahi watches that
+directory automatically. Full Yocto images package the same service definition.
+It advertises IPv4 port 8000; change the service file if changing the server port.
+Advertisements are hints, and device IDs prevent accidental address reuse; they
+are not cryptographic device authentication.

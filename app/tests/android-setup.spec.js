@@ -48,7 +48,7 @@ async function nativeBridge(page, mode = 'success') {
             window.apiCalls.push(args.path);
             if (window.bleMode === 'slow-api' && args.path === '/api/display-config') await new Promise(resolve => {window.completeApi = resolve;});
             if (window.bleMode === 'unreachable') throw new Error('Cannot reach the frame.');
-            const id = String(++counter), text = JSON.stringify(args.path === '/api/display-config' ? config : []);
+            const id = String(++counter), text = JSON.stringify(args.path === '/api/device' ? {id:'a'.repeat(32),instance_id:'b'.repeat(32),name:'Inky',api_version:1,capabilities:['device-identity-v1']} : args.path === '/api/display-config' ? config : []);
             files.set(id, text); return {id,size:text.length,status:200,contentType:'application/json'};
           }
           if (method === 'read') return {data:btoa(files.get(args.id).slice(args.offset))};
@@ -77,7 +77,7 @@ test('fresh Android app selects a distinct frame and opens editor only after API
   await expect(page.locator('#setup-status')).toHaveText('Your frame is connected and ready for photos.');
   await expect(page.locator('#setup-password')).toHaveValue(''); await expect(page.locator('#setup-ssid')).toHaveValue('');
   expect(await page.evaluate(() => window.bleWrites[0].device)).toBe('AA:11:22:33:44:55');
-  expect(await page.evaluate(() => window.apiCalls)).toEqual(['/api/display-config','/api/images']);
+  expect(await page.evaluate(() => window.apiCalls)).toEqual(['/api/device','/api/display-config','/api/images','/api/device']);
   const bytes = await page.evaluate(() => Array.from(atob(window.bleWrites[0].data), c => c.charCodeAt(0)));
   expect(bytes.length).toBe(101);
   await page.locator('#setup-done').click(); await expect(page.locator('#setup-dialog')).not.toBeVisible();

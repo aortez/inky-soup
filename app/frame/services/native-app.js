@@ -1,6 +1,6 @@
 import {App} from '@capacitor/app';
 
-export async function watchNativeApp({back, save, failed}) {
+export async function watchNativeApp({back, save, failed, resume = () => {}, pause = () => {}}) {
   await App.addListener('backButton', async () => {
     try {
       if (back()) return;
@@ -9,7 +9,9 @@ export async function watchNativeApp({back, save, failed}) {
     } catch (error) { failed(error); }
   });
   await App.addListener('appStateChange', async ({isActive}) => {
-    if (isActive) return;
-    try { await save(); } catch (error) { failed(error); }
+    try {
+      if (isActive) await resume();
+      else {pause(); await save();}
+    } catch (error) { failed(error); }
   });
 }

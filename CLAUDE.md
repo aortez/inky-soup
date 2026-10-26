@@ -10,7 +10,8 @@ are the command references; this file explains the implementation.
 The modern shared UI and Android prototype live in `app/`. See `app/README.md`
 for builds, platform adapters, source provenance, and website artifact consumption.
 The Android app supports offline editing and direct native Pi networking (#21);
-native Improv BLE setup is implemented in #22. The Pi frontend below remains
+native Improv BLE setup is implemented in #22. Android remembers frames by a
+persisted device identity and discovers changed addresses using NSD (#23). The Pi frontend below remains
 until the Android experience passes hardware acceptance (#25 / #26).
 
 1. `upload-server/`: Rust/Rocket server, Tera templates, and browser JavaScript.
@@ -112,6 +113,7 @@ The legacy shared metadata file is migrated to per-image files on startup.
 | POST | `/api/settings/favorite` | Set a photo favorite with edit ownership |
 | GET | `/api/slideshow` | Settings, next due time, and pause reason |
 | POST | `/api/settings/slideshow` | Configure enabled state and interval in hours |
+| GET | `/api/device` | Persisted device ID, process instance, name and capabilities |
 | GET | `/api/display-config` | Display and thumbnail dimensions |
 | POST | `/api/settings/display-rotation` | Persist mount orientation with an expected revision |
 | POST | `/upload` | Store an original image |

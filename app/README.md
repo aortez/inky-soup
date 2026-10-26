@@ -264,3 +264,40 @@ photo through that existing connection. `--device` still identifies the Pi for t
 independent CLI check; `--connected` preserves the app’s BLE-returned address. See the recorded
 [Pixel / small-Pi validation](../docs/validation/android-ble.md). Tests on one recent
 phone do not establish hardware compatibility for every supported Android version.
+
+## Remembered Android frames
+
+Android remembers multiple frames by the Pi's `/api/device` identity. The local
+registry (`sparkle-frames-v1`) stores the device ID, display name/configuration,
+last verified address, and explicit selection. It survives app restarts and APK
+updates; uninstalling or clearing app data removes it. Forget removes only that
+phone's association, never the Pi's photos. Names can repeat: the picker includes
+the panel size and an ID suffix.
+
+On launch/resume, the app verifies the last address. If it is unavailable or
+belongs to a different device, Android NSD browses `_inky-soup._tcp` and probes
+candidate identity APIs before selecting a transport. A foreground health check
+retries every 15 seconds while idle. Discovery is bounded to 6.5-second scans,
+16 candidate addresses and four concurrent probes; it stops when backgrounded.
+Only private IPv4 addresses are supported, as in the existing native transport.
+This uses Android's [NSD APIs](https://developer.android.com/develop/connectivity/wifi/use-nsd);
+the current target SDK remains 36. A future SDK 37 migration must add its local
+network permission or system service picker flow.
+
+A connected draft follows its source device ID, including pending rotation
+receipts. Legacy drafts with only an address become independent copies on first
+identity-aware connection; an address cannot prove ownership of an old original.
+Saved display jobs carry both device ID and server instance. Reconnect only reads
+status, never resubmits a refresh. A restarted server invalidates the old job and
+the app asks the user to check the screen before sending again.
+
+Find frames on WiFi adds an existing frame without provisioning. Add frame over
+Bluetooth remains the setup/recovery path. If WiFi has changed, reboot the offline
+Pi to open its five-minute setup window and follow its screen instructions when
+available. Issue #17 owns those offline instructions and photo restoration;
+#23 does not add a second rescue controller. Same-network/local-network permission
+failures and networks that block mDNS retain manual address entry as a fallback.
+Device IDs protect against accidental address reuse, not malicious impersonation.
+
+See [identity/discovery CLI commands](../cli/README.md#identity-and-local-discovery)
+and [hardware validation](../docs/validation/android-reconnect.md).
