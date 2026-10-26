@@ -95,6 +95,9 @@ The Yocto recipe declares the NetworkManager CLI dependency and pins the updated
 shared Wi-Fi provisioner. **The Bluetooth fix requires that provisioner update as
 well as the server update**; deploying only a new server binary cannot change the
 existing daemon's startup behavior. Rebuilding the Pi image includes both fixes.
+For an application-only update on a compatible image, the CLI's optional
+`provisioner` bundle installs and checks both services together; see
+[deployment instructions](../cli/README.md#install-an-application-release).
 
 ## Validation
 
@@ -102,6 +105,8 @@ Initialize `yocto/pi-base` with `git submodule update --init --recursive` before
 running server tests: both components exercise the shared connectivity fixtures.
 CI also tests the provisioner and checks that its recipe's source pin matches
 the tested code.
+The first Pi Zero W deployment is recorded in
+[hardware validation](validation/offline-rescue-zero-w.md).
 
 Automated tests cover network/address/carrier classification, transient and
 unknown observations, grace/recovery timers, queue and editor conflicts,
