@@ -303,3 +303,15 @@ changing a photo's angle without saving its rebuilt pixels, partial uploads,
 favorite changes, and failed jobs do not reset it. The scheduler's anchor and
 last successfully rotated filename survive server restarts. Android/web controls
 for these settings are separate follow-up work under issue #4.
+
+### Offline recovery
+
+`./inky-cli rescue` reports local connectivity, the five-minute outage timer,
+recovery-card state, restoration availability, and probe/storage errors.
+`./inky-cli rescue show --wait` displays the packaged recovery card without
+adding a gallery photo; `./inky-cli rescue restore --wait` restores the last
+successful ordinary display. These explicit operations wait for no other work:
+they reject a busy queue or active photo editor. Add `--json` for scripting.
+An explicitly shown card stays until you restore it or display another image.
+See [offline rescue mode](../docs/offline-rescue.md) for automatic behavior,
+network detection, configuration, and hardware validation.

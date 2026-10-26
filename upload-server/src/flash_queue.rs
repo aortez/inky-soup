@@ -41,6 +41,10 @@ const FINISHED_JOB_RETENTION_MS: u64 = 30_000;
 #[derive(Debug, Clone, Serialize)]
 #[serde(crate = "rocket::serde")]
 pub struct FlashJob {
+    #[serde(skip)]
+    pub automatic_recovery: bool,
+    #[serde(skip)]
+    pub rescue_display: Option<crate::rescue::DisplayStamp>,
     pub source: FlashSource,
     /// Unique job identifier.
     pub job_id: u64,
@@ -67,6 +71,7 @@ pub struct FlashJob {
 /// The flash queue and current job state.
 #[derive(Debug)]
 pub struct FlashQueue {
+    pub(crate) rescue: Option<crate::rescue::Rescue>,
     /// Current job being processed (if any).
     current_job: Option<FlashJob>,
     /// Queued jobs waiting to be processed.
@@ -81,6 +86,7 @@ impl FlashQueue {
     /// Creates a new empty flash queue.
     pub fn new() -> Self {
         Self {
+            rescue: None,
             current_job: None,
             queue: VecDeque::new(),
             recent_jobs: VecDeque::new(),
@@ -123,10 +129,21 @@ impl FlashQueue {
         rotation_degrees: u16,
         source: FlashSource,
     ) -> u64 {
+        if source == FlashSource::Manual {
+            self.cancel_recovery_jobs(None, false);
+            if let Some(rescue) = self.rescue.as_mut() {
+                rescue.manual_requested();
+            }
+        }
         let job_id = self.next_job_id;
         self.next_job_id += 1;
 
         let job = FlashJob {
+            automatic_recovery: false,
+            rescue_display: self
+                .rescue
+                .as_ref()
+                .map(|_| crate::rescue::DisplayStamp::current()),
             source,
             job_id,
             filename,
@@ -142,6 +159,36 @@ impl FlashQueue {
 
         self.queue.push_back(job);
         job_id
+    }
+
+    pub(crate) fn mark_automatic_recovery(&mut self, id: u64) {
+        if let Some(job) = self.queue.back_mut().filter(|job| job.job_id == id) {
+            job.automatic_recovery = true;
+        }
+    }
+
+    pub(crate) fn cancel_recovery_jobs(
+        &mut self,
+        source: Option<FlashSource>,
+        automatic_only: bool,
+    ) {
+        let mut remaining = VecDeque::new();
+        while let Some(mut job) = self.queue.pop_front() {
+            if matches!(job.source, FlashSource::Rescue | FlashSource::Restore)
+                && source.is_none_or(|source| source == job.source)
+                && (!automatic_only || job.automatic_recovery)
+            {
+                let _ = std::fs::remove_file(&job.dithered_path);
+                job.status = FlashJobStatus::Failed;
+                job.finished_at = Some(current_time_millis());
+                job.error_message =
+                    Some("Recovery job superseded by connectivity or a manual image".into());
+                self.recent_jobs.push_back(job);
+            } else {
+                remaining.push_back(job);
+            }
+        }
+        self.queue = remaining;
     }
 
     /// Takes the next job from the queue (if any) and marks it as current.
@@ -308,8 +355,21 @@ pub(crate) async fn process_next(
         job.job_id, job.filename, job.flash_twice, job.rotation_degrees, flash_rotation_degrees
     );
 
-    // Execute flash operation.
-    let result = execute_flash(&job.dithered_path, job.flash_twice, flash_rotation_degrees).await;
+    let prepare = queue_state
+        .lock()
+        .await
+        .rescue
+        .as_mut()
+        .map(|rescue| rescue.before_flash(&job))
+        .unwrap_or(Ok(()));
+    let result = match prepare {
+        Ok(()) => execute_flash(&job.dithered_path, job.flash_twice, flash_rotation_degrees).await,
+        Err(error) => Err(error),
+    };
+    // Save the previous display before deleting its immutable queue snapshot.
+    if let Some(rescue) = queue_state.lock().await.rescue.as_mut() {
+        rescue.finished(&job, result.is_ok());
+    }
     if let Err(e) = cleanup_flash_snapshot(&job.dithered_path).await {
         warn!(
             "Failed to clean flash snapshot for job {} ({}): {}",
