@@ -1,4 +1,4 @@
-export const settingIds = ['fit', 'saturation', 'brightness', 'contrast', 'filter', 'dither'];
+export const settingIds = ['fit', 'photo_rotation_degrees', 'saturation', 'brightness', 'contrast', 'filter', 'dither'];
 
 export function imageSettings(source = {}) {
   const choice = (value, choices, fallback) => choices.includes(value) ? value : fallback;

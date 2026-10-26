@@ -30,4 +30,21 @@ public class FramePolicyTest {
         }
         assertThrows(IllegalArgumentException.class, () -> FramePolicy.route("DELETE", "/api/images"));
     }
+
+    @Test public void allowRepeatedDotsInsideOriginalAndThumbnailNames() {
+        for (String name : new String[]{"holiday..jpg", "holiday%2E%2Ejpg", "a...b.png", "Fr%C3%B8lich..jpg"}) {
+            FramePolicy.route("GET", "/images/" + name);
+            FramePolicy.route("GET", "/images/thumbs/" + name + ".png");
+        }
+    }
+
+    @Test public void rejectTraversalSegmentsAndEncodedSeparators() {
+        for (String name : new String[]{".", "..", "%2e", "%2E%2e", ".%2e", "%2e.",
+            "../secret", "%2e%2e%2fsecret", "a%2Fb.jpg", "a%5cb.jpg", "a\\b.jpg", "%00.jpg", "%broken"}) {
+            for (String prefix : new String[]{"/images/", "/images/thumbs/"}) {
+                assertThrows(prefix + name, IllegalArgumentException.class,
+                    () -> FramePolicy.route("GET", prefix + name));
+            }
+        }
+    }
 }

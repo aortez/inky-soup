@@ -2,6 +2,7 @@ package pizza.allan.frame;
 
 import java.net.InetAddress;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Set;
 import java.util.HashSet;
 import java.util.Arrays;
@@ -38,9 +39,22 @@ final class FramePolicy {
         boolean allowed = "POST".equals(method) && POST.contains(path)
             || "GET".equals(method) && (GET.contains(path) || path.matches("/api/flash/status/[0-9]+")
             || path.matches("/images/(thumbs/)?[^/?#]+"));
-        if (!allowed || path.contains("..") || path.toLowerCase().contains("%2f")
-            || path.toLowerCase().contains("%5c") || path.toLowerCase().contains("%2e")) {
+        String decoded;
+        try {
+            decoded = new URI(path).getPath();
+        } catch (URISyntaxException error) {
+            throw new IllegalArgumentException("Invalid frame API path.", error);
+        }
+        // Decode once, as the server does. Dots inside a filename are harmless;
+        // complete dot segments and encoded separators can change its location.
+        if (!allowed || decoded == null || decoded.indexOf('\\') >= 0 || decoded.indexOf('\0') >= 0
+            || path.toLowerCase(java.util.Locale.ROOT).contains("%2f")) {
             throw new IllegalArgumentException("This operation is not a frame API route.");
+        }
+        for (String segment : decoded.split("/")) {
+            if (segment.equals(".") || segment.equals("..")) {
+                throw new IllegalArgumentException("This operation is not a frame API route.");
+            }
         }
     }
 }

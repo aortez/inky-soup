@@ -9,10 +9,10 @@ Impression, 600 × 448, at `192.168.1.149:8000` over WiFi.
 - Configuration, gallery, native thumbnail download, original selection, preview,
   multipart original/cache/thumb/dithered upload, edit locks, and job polling pass.
 - A synthetic 4000 × 3000 JPEG (color bars plus high-entropy detail) transfers
-  **18,992,047 bytes**. The final upload + display completion takes 47.8 seconds,
+  **18,992,047 bytes**. The final upload + display completion takes 46.1 seconds,
   including about 36 seconds of physical refresh. It then downloads and reopens
   the original through the native binary transport.
-- Final job **5** is `Completed`, independently queried with `inky-cli` immediately
+- Final job **6** is `Completed`, independently queried with `inky-cli` immediately
   after the phone reports completion. The firmware keeps finished status for only
   30 seconds. The earlier job 3 was also independently confirmed, and the user
   visually confirmed TOP, all seven bars, and the detailed lower half.
@@ -44,13 +44,13 @@ propagation, cleanup, and no retry. See the SDK upgrade note in `app/README.md`.
 
 ## Automated checks
 
-- 15 Node unit tests: multipart bytes/Unicode names/metadata, multi-chunk binary
+- 20 Node unit tests: multipart bytes/Unicode names/metadata, multi-chunk binary
   downloads, cancellation, errors, no retries, and interrupted rotation recovery.
-- 4 Java tests: private-address/API policy, traversal rejection, no redirect or
+- 6 Java tests: private-address/API policy, traversal rejection, no redirect or
   HTTP 503 retry, total deadline, and native cancellation using MockWebServer.
-- 37 web editor/setup browser tests, 8 built-PWA tests, and 4 Android-bundle tests.
+- 51 web editor/setup browser tests, 8 built-PWA tests, and 5 Android-bundle tests.
 - Gradle debug APK and Java tests pass. APK SHA-256:
-  `bae17861696b010b06261f55bc6f6ca95088177faeb55ecfcfc4fd66d8a9155e`.
+  `b4324ee96960af244ffb43d0fc2bb08a50415f9fab147f2e0c5984ceeec99093`.
 
 The initial device helper waited for lazy thumbnails while their panel was hidden;
 opening the gallery fixes that test issue. Its screenshot capture also exceeded
@@ -73,5 +73,23 @@ node tools/android-pi-check.mjs --serial PHONE_SERIAL \
 
 The helper explicitly submits one new photo. Omit `--flash` to save only. Bluetooth
 setup, discovery, and public release signing remain #22–#24. This change preserves
-saved photo rotations and their revision operations; the website's additional
-rotation controls/test-card UI remain separate work recorded in `app/source.json`.
+saved photo rotations and their revision operations. The additional rotation
+controls/test-card UI from #29 are now included in the combined branch.
+
+## Review fixes and integration with #29
+
+The combined branch preserves the pending rotation receipt during reconnect and
+rebuilds unrelated photos normally. A new browser regression test verifies that
+retry uses the original operation ID, keeps draft adjustments, and succeeds after
+reopening. The upstream interrupted-save tests are included as well.
+
+Native filename tests failed before the fix and now pass: repeated dots within
+original/thumbnail names are accepted, while dot traversal segments, encoded
+separators, raw backslashes, malformed escapes, and NULs are rejected. The actual
+Pixel APK also loaded both the thumbnail and original for a disposable repeated-dot
+filename, acquired its edit lock, and processed the photo. The fixture was removed
+afterward; see [native filename validation](android-pi-filenames.json).
+
+The integrated APK passed the full 19 MB phone/Pi smoke test again with job 6 and
+an immediate independent CLI confirmation. The screenshot and phone record above
+are from that final run.

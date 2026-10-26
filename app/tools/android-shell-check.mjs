@@ -53,6 +53,7 @@ async function snapshot(page) {
     name: document.querySelector('#draft-name').textContent,
     dimensions: [document.querySelector('#preview').naturalWidth, document.querySelector('#preview').naturalHeight],
     fit: document.querySelector('#fit').value, brightness: document.querySelector('#brightness').value,
+    photoRotation: document.querySelector('#photo_rotation_degrees').value,
     model: document.querySelector('#preview-model').value, layout: document.querySelector('#preview-layout').value,
     viewport: innerWidth, contentWidth: document.documentElement.scrollWidth,
     workers: (await navigator.serviceWorker.getRegistrations()).map(item => item.scope),
@@ -94,6 +95,15 @@ try {
       assert.equal(state.workers.length, 0);
       assert.ok(state.contentWidth <= state.viewport);
       result.checks.push(`${model} ${state.layout}: ${state.dimensions.join(' × ')} native worker preview and Back navigation.`);
+      for (const angle of [0, 90, 180, 270]) {
+        assert.equal(await page.locator('#photo_rotation_degrees').isEnabled(), true);
+        await page.locator('#photo_rotation_degrees').selectOption(String(angle));
+        await ready(page);
+        const rotated = await snapshot(page);
+        assert.equal(rotated.photoRotation, String(angle));
+        assert.deepEqual(rotated.dimensions, state.dimensions);
+      }
+      result.checks.push(`${model} ${state.layout}: all four source rotations process without changing output dimensions.`);
     }
   }
   await page.locator('#fit').selectOption('cover');
@@ -120,7 +130,7 @@ try {
   page = await pageForApp();
   await ready(page);
   const restored = await snapshot(page);
-  for (const key of ['name', 'dimensions', 'fit', 'brightness', 'model', 'layout']) assert.deepEqual(restored[key], before[key]);
+  for (const key of ['name', 'dimensions', 'fit', 'brightness', 'photoRotation', 'model', 'layout']) assert.deepEqual(restored[key], before[key]);
   assert.equal(shell('settings', 'get', 'global', 'wifi_on'), '0');
   assert.equal(shell('settings', 'get', 'global', 'mobile_data'), '0');
   result.checks.push('Cold launch with Wi-Fi and mobile data disabled restores the draft, profile, and adjustments.');

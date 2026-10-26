@@ -6,7 +6,7 @@ self.onmessage = async ({data: {blob, config, fit, saturation, filter = 'bicubic
   try {
     bitmap = await createImageBitmap(blob);
     if (bitmap.width * bitmap.height > 64000000) throw new Error('Choose a photo smaller than 64 megapixels.');
-    if (![0, 90, 180, 270].includes(photo_rotation_degrees)) throw new Error('Invalid saved photo rotation.');
+    if (![0, 90, 180, 270].includes(photo_rotation_degrees)) throw new Error('Choose a quarter-turn photo rotation.');
     const swapped = [90, 270].includes(photo_rotation_degrees);
     const source = new OffscreenCanvas(swapped ? bitmap.height : bitmap.width, swapped ? bitmap.width : bitmap.height);
     const sourceContext = source.getContext('2d');

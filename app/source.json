@@ -1,12 +1,13 @@
 {
   "repository": "https://github.com/aortez/aortez.github.io",
-  "commit": "5bbd462ce4f6508eb3bd4179fceacc97035bb610",
+  "commit": "a44aedb2317d26de24e71be8623ded4ea0ff0e1f",
   "license": "GPL-3.0-only",
   "imported_paths": [
     "frame/README.md",
     "frame/core/app-update.js",
     "frame/core/dom.js",
     "frame/core/edit-session.js",
+    "frame/core/photo-rotation.js",
     "frame/core/settings.js",
     "frame/core/state.js",
     "frame/index.html",
@@ -15,6 +16,7 @@
     "frame/services/drafts.js",
     "frame/services/frame-client.js",
     "frame/services/processor.js",
+    "frame/services/test-card.js",
     "frame/style.css",
     "frame/ui/render.js",
     "public/frame/icon-192.png",
@@ -31,6 +33,7 @@
     "setup/improv-client.js",
     "setup/index.html",
     "setup/style.css",
+    "tests/frame-photo-rotation.spec.js",
     "tests/frame-pwa.spec.js",
     "tests/frame.spec.js",
     "tests/helpers/pwa-release-server.js",
@@ -42,16 +45,5 @@
     "unit/frame.test.js",
     "wifi/index.html"
   ],
-  "adapted_from": [
-    {
-      "commit": "73908c0f0a5f12bbfc2b0fabaeeb53affac56ca6",
-      "paths": [
-        "frame/core/photo-rotation.js",
-        "frame/core/settings.js",
-        "frame/services/frame-client.js (savePhoto)",
-        "public/frame/photo-worker.js"
-      ],
-      "purpose": "Preserve saved photo orientation and idempotent revision recovery during native transfers."
-    }
-  ]
+  "original_import_commit": "5bbd462ce4f6508eb3bd4179fceacc97035bb610"
 }

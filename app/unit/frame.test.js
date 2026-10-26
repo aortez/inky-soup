@@ -9,3 +9,14 @@ test('legacy metadata survives draft normalization and missing fields receive de
   assert.equal(imageSettings({filter:'unknown',brightness:NaN,contrast:101}).filter, 'bicubic');
   assert.equal(imageSettings({brightness:NaN,contrast:101}).brightness, 0);
 });
+
+test('photo rotation and revision survive draft round trips independently of mounting', async () => {
+  const {imageSettings} = await import('../frame/core/settings.js');
+  for (const degrees of [0,90,180,270]) {
+    const settings = imageSettings({photo_rotation_degrees:degrees, photo_rotation_revision:12, rotation_degrees:270});
+    assert.equal(settings.photo_rotation_degrees,degrees);
+    assert.equal(settings.photo_rotation_revision,12);
+    assert.deepEqual(imageSettings(settings),settings);
+  }
+  assert.equal(imageSettings({photo_rotation_degrees:45}).photo_rotation_degrees,0);
+});
