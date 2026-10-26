@@ -139,3 +139,29 @@ test('late Bluetooth disconnect cannot cancel the verified WiFi handoff', async 
   await expect(page.locator('#setup-done')).toBeVisible();
   await expect(page.locator('#frame-detail')).toHaveText('Connected · 600 × 448');
 });
+
+test('cancelling setup during the durable registry commit leaves no saved frame', async ({page}) => {
+  await nativeBridge(page);
+  await page.addInitScript(() => {
+    const original = IDBDatabase.prototype.transaction;
+    IDBDatabase.prototype.transaction = function(...args) {
+      const transaction = original.apply(this, args);
+      if (this.name === 'sparkle-frame-registry' && args[1] === 'readwrite') {
+        window.registryCommitPending = true;
+        const store = transaction.objectStore('settings');
+        const hold = () => {store.get('keep-alive').onsuccess = hold;};
+        hold();
+      }
+      return transaction;
+    };
+  });
+  await page.goto('/'); await page.locator('#add-frame').click();
+  await select(page); await credentials(page);
+  await page.waitForFunction(() => window.registryCommitPending);
+  await page.locator('#setup-cancel').click();
+  await expect(page.locator('#connect')).toBeEnabled();
+  expect(await page.evaluate(() => localStorage.getItem('sparkle-frames-v1'))).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem('sparkle-frame'))).toBeNull();
+  await page.reload(); await expect(page.locator('#frame-name')).toHaveText('Your frame');
+  expect(await page.evaluate(() => window.apiCalls)).toEqual([]);
+});

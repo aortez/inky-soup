@@ -1,5 +1,6 @@
 import {androidApp} from './platform.js';
 import {frameRegistry} from './frame-registry.js';
+import {registryStorage} from './registry-storage.js';
 import {savedJobs} from './saved-jobs.js';
 import {editSession} from './edit-session.js';
 
@@ -16,11 +17,13 @@ export const state = {
 
 export const sessionReady = editSession().then(session => {state.session = session;});
 
-export const registry = frameRegistry(localStorage);
+const durableRegistry = androidApp ? registryStorage(localStorage) : null;
+export const restoreRegistry = () => durableRegistry?.restore();
+export const registry = frameRegistry(localStorage, (value, signal) => durableRegistry?.save(value, signal));
 const jobs = savedJobs(localStorage);
 
-export function rememberFrame(frame) {
-  if (androidApp && frame.id) registry.remember(frame);
+export async function rememberFrame(frame, signal) {
+  if (androidApp && frame.id) await registry.remember(frame, signal);
   state.frame = frame;
   try { localStorage.setItem('sparkle-frame', JSON.stringify(frame)); } catch { /* Storage can be disabled. */ }
 }

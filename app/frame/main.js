@@ -5,7 +5,7 @@ import {identifyFrame, locateFrame, discoverFrames} from './services/frame-disco
 import {androidApp} from './core/platform.js';
 import {previewConfig, savedPreviewConfig, rememberPreviewConfig} from './core/preview-profile.js';
 import {elements as el} from './core/dom.js';
-import {state, sessionReady, rememberFrame, savedFrame, rememberJob, savedJob, forgetSavedJob, registry} from './core/state.js';
+import {state, sessionReady, rememberFrame, savedFrame, rememberJob, savedJob, forgetSavedJob, registry, restoreRegistry} from './core/state.js';
 import {normalizeAddress, request, validateConfig, savePhoto, deletePhoto, jsonPost, getPhoto, sendTestCard} from './services/frame-client.js';
 import {imageSettings, settingIds, validatePhoto} from './core/settings.js';
 import {pendingPhotoRotation} from './core/photo-rotation.js';
@@ -78,7 +78,7 @@ async function connectFrame({base: setupBase, signal, expected, automatic = fals
     signal?.throwIfAborted();
     el.address.value = base;
     if (state.frame?.base !== base || state.frame?.id !== identity?.id) {state.imports = []; renderImports();}
-    rememberFrame({...identity, base, name: identity?.name || new URL(base).hostname.replace(/\.local$/, ''), config});
+    await rememberFrame({...identity, base, name: identity?.name || new URL(base).hostname.replace(/\.local$/, ''), config}, signal);
     if (androidApp && state.draft) {
       state.draft = draftForFrame(state.draft, state.frame);
       await saveDraft(state.draft);
@@ -292,7 +292,7 @@ async function changeOrientation() {
     const result = await jsonPost(state.frame.base, '/api/settings/display-rotation', {
       rotation_degrees:Number(el.orientation.value), expected_revision:state.config.rotation_revision});
     state.config = validateConfig(result.display);
-    rememberFrame({...state.frame, config:state.config});
+    await rememberFrame({...state.frame, config:state.config});
     syncOrientation();
     el['frame-detail'].textContent = `Connected · ${state.config.width} × ${state.config.height}`;
     if (state.draft) await prepare();
@@ -456,7 +456,7 @@ el['frame-picker'].addEventListener('change', async () => {
     if (!frame) return;
     // Persist selection before releasing the current edit lease. A storage error
     // leaves the connected frame and its draft usable.
-    registry.select(frame.id);
+    await registry.select(frame.id);
     await releaseEditLock();
     state.frame = frame; state.connected = false; state.images = [];
     state.config = frame.config || savedPreviewConfig(); el.address.value = frame.base;
@@ -571,20 +571,23 @@ el['gallery-tab'].addEventListener('click', () => showView('gallery'));
 el.forget.addEventListener('click', async () => {
   if (state.busy || state.job || state.connecting) return;
   state.busy = true; controls();
-  await releaseEditLock();
-  if (androidApp && state.frame?.id) {
-    registry.forget(state.frame.id);
-    forgetSavedJob(state.frame.id);
-  }
-  try { localStorage.removeItem('sparkle-frame'); } catch { /* Storage can be disabled. */ }
-  state.frame = null; state.config = androidApp ? savedPreviewConfig() : null; state.connected = false;
-  state.images = []; state.processor?.abort(); ++state.generation; state.processing = false; state.prepared = null;
-  el.connection.open = true; el.connection.classList.remove('connected'); el.forget.hidden = true;
-  el['frame-name'].textContent = 'Your frame'; el['frame-detail'].textContent = 'Connect once. Keep it close.';
-  el['connection-status'].textContent = 'Frame forgotten. Your draft is still on this phone.';
-  state.imports = []; renderImports();
-  state.busy = false; renderFrames(); renderGallery(selectPhoto); controls();
-  if (androidApp) prepare();
+  try {
+    if (androidApp && state.frame?.id) {
+      await registry.forget(state.frame.id);
+      forgetSavedJob(state.frame.id);
+    }
+    await releaseEditLock();
+    try { localStorage.removeItem('sparkle-frame'); } catch { /* Storage can be disabled. */ }
+    state.frame = null; state.config = androidApp ? savedPreviewConfig() : null; state.connected = false;
+    state.images = []; state.processor?.abort(); ++state.generation; state.processing = false; state.prepared = null;
+    el.connection.open = true; el.connection.classList.remove('connected'); el.forget.hidden = true;
+    el['frame-name'].textContent = 'Your frame'; el['frame-detail'].textContent = 'Connect once. Keep it close.';
+    el['connection-status'].textContent = 'Frame forgotten. Your draft is still on this phone.';
+    state.imports = []; renderImports();
+    renderFrames(); renderGallery(selectPhoto);
+    if (androidApp) prepare();
+  } catch (error) {el['connection-status'].textContent = error.message;}
+  finally {state.busy = false; controls();}
 });
 window.addEventListener('beforeinstallprompt', event => {
   if (androidApp) return;
@@ -599,6 +602,8 @@ window.addEventListener('appinstalled', () => {el.install.hidden = true;});
 async function start() {
   await sessionReady;
   if (androidApp) {
+    try {await restoreRegistry();}
+    catch (error) {el['connection-status'].textContent = error.message;}
     document.body.classList.add('native-shell');
     el.photo.multiple = false;
     el.connection.hidden = false;

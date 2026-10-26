@@ -10,7 +10,7 @@ export function validateIdentity(value) {
   return value;
 }
 
-export function frameRegistry(storage) {
+export function frameRegistry(storage, persist = () => {}) {
   let notice = '';
   function read() {
     const empty = {version: 1, selected: null, frames: []};
@@ -27,27 +27,35 @@ export function frameRegistry(storage) {
       return empty;
     }
   }
-  function write(value) {storage.setItem(storageKey, JSON.stringify(value)); notice = '';}
+  function write(value, signal) {
+    const previous = storage.getItem(storageKey);
+    storage.setItem(storageKey, JSON.stringify(value)); notice = '';
+    return Promise.resolve(persist(value, signal)).catch(error => {
+      if (previous === null) storage.removeItem(storageKey);
+      else storage.setItem(storageKey, previous);
+      throw error;
+    });
+  }
   return {
     get notice() {return notice;},
     list: () => read().frames,
     selected: () => {const value = read(); return value.frames.find(frame => frame.id === value.selected) || null;},
-    remember(frame) {
+    remember(frame, signal) {
       if (!validId(frame.id)) throw new Error('A verified frame identity is required.');
       const value = read();
       value.frames = [...value.frames.filter(item => item.id !== frame.id), frame];
-      value.selected = frame.id; write(value);
+      value.selected = frame.id; return write(value, signal);
     },
     select(id) {
       const value = read();
       if (!value.frames.some(frame => frame.id === id)) throw new Error('Choose a saved frame.');
-      value.selected = id; write(value);
+      value.selected = id; return write(value);
     },
     forget(id) {
       const value = read();
       value.frames = value.frames.filter(frame => frame.id !== id);
       if (value.selected === id) value.selected = null;
-      write(value);
+      return write(value);
     },
   };
 }

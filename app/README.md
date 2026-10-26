@@ -268,8 +268,12 @@ phone do not establish hardware compatibility for every supported Android versio
 ## Remembered Android frames
 
 Android remembers multiple frames by the Pi's `/api/device` identity. The local
-registry (`sparkle-frames-v1`) stores the device ID, display name/configuration,
-last verified address, and explicit selection. It survives app restarts and APK
+registry stores the device ID, display name/configuration, last verified address,
+and explicit selection. Android commits changes to the `sparkle-frame-registry`
+IndexedDB database with strict durability before completing connect, select or
+forget. On launch it restores the `sparkle-frames-v1` localStorage working copy
+from that committed record, so an immediate force-stop cannot revert a completed
+selection. Existing localStorage records migrate on the next verified connection. It survives app restarts and APK
 updates; uninstalling or clearing app data removes it. Forget removes only that
 phone's association, never the Pi's photos. Names can repeat: the picker includes
 the panel size and an ID suffix, sorted by name then ID. Typing a different

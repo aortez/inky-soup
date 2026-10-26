@@ -69,6 +69,7 @@ test('two same-name frames remain distinct, selected model persists, forget neve
   await page.locator('#connection > summary').click();
   await expect(page.locator('#frame-picker option')).toHaveText(['Choose a frame','Kitchen · 5.7″ · aaaaaa','Kitchen · 13.3″ · bbbbbb']);
   await page.locator('#forget').click();
+  await expect(page.locator('#frame-name')).toHaveText('Your frame');
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('sparkle-frames-v1')).frames.map(frame=>frame.id))).toEqual(['a'.repeat(32)]);
   expect(await page.evaluate(()=>window.apiCalls.every(call=>call.method==='GET'))).toBe(true);
   await page.reload();await expect(page.locator('#frame-name')).toHaveText('Your frame');
@@ -249,4 +250,24 @@ test('failed automatic reconnect exposes status retry and preserves the active j
   await page.locator('#retry-status').click();
   await expect(page.locator('#activity-title')).toHaveText('Your new view is ready.');
   expect(await page.evaluate(()=>window.apiCalls.every(call=>call.method==='GET'))).toBe(true);
+});
+
+
+test('committed selection survives stale WebView storage after process termination',async({page})=>{
+  await bridge(page);await page.goto('/');
+  await expect(page.locator('#frame-detail')).toHaveText('Connected · 600 × 448');
+  const stale = await page.evaluate(()=>localStorage.getItem('sparkle-frames-v1'));
+  await page.locator('#connection > summary').click();
+  await page.locator('#frame-picker').selectOption('b'.repeat(32));
+  await expect(page.locator('#frame-detail')).toHaveText('Connected · 1600 × 1200');
+  await expect(page.locator('#frame-picker')).toBeEnabled();
+  // Android can restore an older localStorage snapshot after force-stop.
+  await page.evaluate(value=>localStorage.setItem('sparkle-frames-v1',value),stale);
+  await page.reload();
+  await expect(page.locator('#frame-detail')).toHaveText('Connected · 1600 × 1200');
+  await page.locator('#connection > summary').click();await page.locator('#forget').click();
+  await expect(page.locator('#frame-name')).toHaveText('Your frame');
+  await page.evaluate(value=>localStorage.setItem('sparkle-frames-v1',value),stale);
+  await page.reload();await expect(page.locator('#frame-name')).toHaveText('Your frame');
+  expect(await page.evaluate(()=>window.apiCalls)).toEqual([]);
 });

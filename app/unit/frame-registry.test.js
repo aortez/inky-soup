@@ -102,3 +102,16 @@ test('identity probes abort a stalled request after four seconds', async t => {
   t.mock.timers.tick(4000);
   await rejected; assert.equal(requestSignal.aborted, true);
 });
+
+
+test('registry writes await durable commit and restore the previous selection on failure',async()=>{
+  const disk=storage();const seeded=frameRegistry(disk);await seeded.remember(a);await seeded.remember(b);
+  let commit,finished=false;
+  const registry=frameRegistry(disk,()=>new Promise(resolve=>{commit=resolve;}));
+  const pending=registry.select(a.id).then(()=>{finished=true;});
+  await Promise.resolve();assert.equal(finished,false);
+  commit();await pending;assert.equal(registry.selected().id,a.id);
+  const failing=frameRegistry(disk,async()=>{throw Error('Disk full');});
+  await assert.rejects(failing.select(b.id),/Disk full/);
+  assert.equal(registry.selected().id,a.id);
+});
