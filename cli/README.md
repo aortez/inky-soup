@@ -259,3 +259,47 @@ cargo test --locked --manifest-path cli/Cargo.toml
 Tests cover URL validation, native-palette validation, multipart filenames,
 structured output, failed jobs, and polling without resubmission. The client has
 also been exercised against the original Pi Zero W over USB and WiFi.
+
+## Favorites and automatic rotation
+
+```bash
+./inky-cli favorite holiday.jpg on
+./inky-cli favorite holiday.jpg off
+./inky-cli favorites --json
+./inky-cli slideshow start --hours 6
+./inky-cli slideshow status --json   # bare `slideshow` also shows status
+./inky-cli slideshow interval 24
+./inky-cli slideshow stop
+```
+
+Requires a server with the favorites/slideshow API. Favorites are persisted per
+photo and survive saved edits. Favorite changes acquire/release the normal edit
+lock. The slideshow starts disabled with a 24-hour interval; valid intervals are
+whole hours from 1 through 168. `start` without `--hours` preserves the interval;
+`interval` preserves whether rotation is enabled. Settings changes preserve the
+timer anchor, so enabling an overdue slideshow can display a photo immediately.
+
+The frame cycles through ready favorites in filename order, wrapping at the end.
+Photos that need processing are skipped: use the app to save them, or upload a
+prepared image with `upload --prepared`. Processing remains on the client. An
+active edit lock on **any** photo pauses automatic submission, as does a busy
+flash queue. Stop prevents future automatic jobs; a job already queued finishes.
+Manual `flash` works for nonfavorites and postpones the next automatic refresh.
+
+Status includes persisted `settings`, `next_due_at`, `next_filename`, favorite
+and ready counts, `last_flash_source` (`manual`/`automatic`/null), and a
+`paused_reason`: `disabled`, `editing`, `display_busy`, `no_favorites`,
+`needs_processing`, `retry_backoff`, `storage_error`, or null. Times are UTC Unix
+milliseconds, matching display job timestamps. Failed automatic jobs retry after
+at least 60 seconds and do not advance the cursor or timer. A storage error pauses
+automatic work; repair storage and retry the failed save/settings request. A
+successful refresh's timestamp and cursor are retained in memory during recovery,
+then included in the next successful save/settings write. They cannot survive a
+restart until that write succeeds.
+
+The interval starts again after a successful display job or a complete saved
+photo (cache, thumbnail, then dithered upload). Uploading just an original,
+changing a photo's angle without saving its rebuilt pixels, partial uploads,
+favorite changes, and failed jobs do not reset it. The scheduler's anchor and
+last successfully rotated filename survive server restarts. Android/web controls
+for these settings are separate follow-up work under issue #4.

@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
-pub type OrientationState = Mutex<()>;
+pub type OrientationState = std::sync::Arc<Mutex<()>>;
 
 #[derive(Deserialize)]
 pub struct RotationRequest {

@@ -486,3 +486,108 @@ fn upload_with_rotation_renews_an_expired_lease_and_respects_takeover() {
             .starts_with("POST /api/unlock-image "));
     }
 }
+
+#[test]
+fn favorites_use_edit_ownership_and_unlock_after_failure() {
+    let (url, server) = serve(vec![
+        r#"{"locked":true}"#,
+        r#"{"success":false,"message":"Cannot persist metadata"}"#,
+        r#"{"success":true}"#,
+    ]);
+    let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+        .args(["--device", &url, "--json", "favorite", "photo.jpg", "on"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let requests = server.join().unwrap();
+    assert!(requests[0].starts_with("POST /api/lock-image "));
+    assert!(requests[1].starts_with("POST /api/settings/favorite "));
+    assert!(requests[2].starts_with("POST /api/unlock-image "));
+    let body: Value = serde_json::from_str(requests[1].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(body["filename"], "photo.jpg");
+    assert_eq!(body["favorite"], true);
+    assert!(body["session_id"].as_str().unwrap().len() > 10);
+    assert!(requests[0].contains(body["session_id"].as_str().unwrap()));
+    assert!(requests[2].contains(body["session_id"].as_str().unwrap()));
+}
+
+#[test]
+fn slideshow_commands_patch_only_requested_settings_and_enforce_hours() {
+    for (args, expected) in [
+        (
+            vec!["slideshow", "start", "--hours", "6"],
+            serde_json::json!({"rotation_enabled":true,"rotation_interval_hours":6}),
+        ),
+        (
+            vec!["slideshow", "start"],
+            serde_json::json!({"rotation_enabled":true}),
+        ),
+        (
+            vec!["slideshow", "stop"],
+            serde_json::json!({"rotation_enabled":false}),
+        ),
+        (
+            vec!["slideshow", "interval", "168"],
+            serde_json::json!({"rotation_interval_hours":168}),
+        ),
+    ] {
+        let (url, server) = serve(vec![r#"{"success":true}"#]);
+        let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+            .args(["--device", &url, "--json"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let requests = server.join().unwrap();
+        assert!(requests[0].starts_with("POST /api/settings/slideshow "));
+        let body: Value =
+            serde_json::from_str(requests[0].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(body, expected);
+    }
+    for hours in ["0", "169", "1.5", "-1"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+            .args(["slideshow", "interval", hours])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+    }
+    let (url, server) = serve(vec![r#"{"paused_reason":"editing","next_due_at":123}"#]);
+    let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+        .args(["--device", &url, "--json", "slideshow"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()["paused_reason"],
+        "editing"
+    );
+    assert!(server.join().unwrap()[0].starts_with("GET /api/slideshow "));
+}
+
+#[test]
+fn favorites_filter_gallery_and_reject_unsupported_servers() {
+    for (reply, success) in [
+        (
+            r#"[{"filename":"a","favorite":false},{"filename":"b","favorite":true}]"#,
+            true,
+        ),
+        (r#"[{"filename":"a"}]"#, false),
+    ] {
+        let (url, server) = serve(vec![reply]);
+        let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+            .args(["--device", &url, "--json", "favorites"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.success(), success);
+        if success {
+            let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(result.as_array().unwrap().len(), 1);
+            assert_eq!(result[0]["filename"], "b");
+        }
+        assert!(server.join().unwrap()[0].starts_with("GET /api/images "));
+    }
+}

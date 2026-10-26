@@ -104,6 +104,19 @@ enum Command {
         #[arg(value_parser = parse_orientation)]
         degrees: Option<u16>,
     },
+    /// Mark or unmark a photo as a slideshow favorite.
+    Favorite {
+        filename: String,
+        #[arg(value_enum)]
+        value: FavoriteValue,
+    },
+    /// List favorite photos, including whether they need processing.
+    Favorites,
+    /// Inspect or configure automatic rotation through favorite photos.
+    Slideshow {
+        #[command(subcommand)]
+        action: Option<SlideshowCommand>,
+    },
     /// List images and their saved settings.
     Images,
     /// Delete an original and its saved versions; refuses locked or pending photos.
@@ -143,6 +156,30 @@ enum Command {
         wait: bool,
         #[arg(long, default_value_t = 180, value_parser = clap::value_parser!(u64).range(1..))]
         timeout: u64,
+    },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum FavoriteValue {
+    On,
+    Off,
+}
+
+#[derive(Subcommand)]
+enum SlideshowCommand {
+    /// Show settings, next due time, next photo, and any pause reason.
+    Status,
+    /// Enable automatic rotation; optionally change the interval.
+    Start {
+        #[arg(long, value_parser = clap::value_parser!(u16).range(1..=168))]
+        hours: Option<u16>,
+    },
+    /// Stop automatic rotation (an already queued refresh will finish).
+    Stop,
+    /// Change the interval without enabling or disabling rotation.
+    Interval {
+        #[arg(value_parser = clap::value_parser!(u16).range(1..=168))]
+        hours: u16,
     },
 }
 
@@ -623,6 +660,43 @@ fn run(args: &Args) -> Result<Value> {
             }
             result
         }
+        Command::Favorite { filename, value } => {
+            valid_filename(filename)?;
+            let session = uuid::Uuid::new_v4().to_string();
+            frame.lock(filename, &session)?;
+            let result = frame.json_post("api/settings/favorite",
+                &json!({"filename":filename,"session_id":session,"favorite":matches!(value, FavoriteValue::On)}));
+            frame.unlock(filename, &session);
+            result
+        }
+        Command::Favorites => {
+            let gallery = frame.get("api/images")?;
+            let images = gallery.as_array().context("Invalid gallery")?;
+            if images.iter().any(|image| !image["favorite"].is_boolean()) {
+                bail!("Update the frame server to support favorites");
+            }
+            Ok(json!(images
+                .iter()
+                .filter(|image| image["favorite"] == true)
+                .collect::<Vec<_>>()))
+        }
+        Command::Slideshow { action } => match action {
+            None | Some(SlideshowCommand::Status) => frame.get("api/slideshow"),
+            Some(SlideshowCommand::Start { hours }) => {
+                let mut settings = json!({"rotation_enabled":true});
+                if let Some(hours) = hours {
+                    settings["rotation_interval_hours"] = json!(hours);
+                }
+                frame.json_post("api/settings/slideshow", &settings)
+            }
+            Some(SlideshowCommand::Stop) => {
+                frame.json_post("api/settings/slideshow", &json!({"rotation_enabled":false}))
+            }
+            Some(SlideshowCommand::Interval { hours }) => frame.json_post(
+                "api/settings/slideshow",
+                &json!({"rotation_interval_hours":hours}),
+            ),
+        },
         Command::Images => frame.get("api/images"),
         Command::Delete { filename } => {
             valid_filename(filename)?;
