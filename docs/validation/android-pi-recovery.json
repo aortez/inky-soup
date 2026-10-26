@@ -1,0 +1,6 @@
+{
+  "publicRejected": "Use a private WiFi IPv4 or .local frame address.",
+  "timeout": "Frame request timed out. Check WiFi and local-network access, then reconnect. A display request may already have started.",
+  "cancelled": "Canceled",
+  "recovered": 200
+}

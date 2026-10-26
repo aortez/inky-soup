@@ -1,0 +1,18 @@
+{
+  "base": "http://192.168.1.109:8000",
+  "config": {
+    "width": 1600,
+    "height": 1200,
+    "thumb_width": 150,
+    "thumb_height": 112,
+    "model": "impression-13.3-2025",
+    "color": "multi",
+    "physical_width": 1600,
+    "physical_height": 1200,
+    "rotation_degrees": 180,
+    "rotation_revision": 3,
+    "photo_rotation_supported": true,
+    "orientation_test_supported": true
+  },
+  "galleryCount": 15
+}

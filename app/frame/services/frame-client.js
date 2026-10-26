@@ -1,5 +1,6 @@
-import {imageSettings} from '../core/settings.js';
 import {pendingPhotoRotation} from '../core/photo-rotation.js';
+import {deviceFetch} from './transport.js';
+import {imageSettings} from '../core/settings.js';
 
 export function normalizeAddress(input) {
   const raw = String(input || '').trim();
@@ -22,11 +23,12 @@ export function normalizeAddress(input) {
 export async function request(base, path, options = {}) {
   let response;
   try {
-    response = await fetch(`${base}${path}`, {
+    response = await deviceFetch(base, path, {
       credentials: 'omit', cache: 'no-store', redirect: 'error',
       signal: AbortSignal.timeout(60000), ...options,
     });
-  } catch {
+  } catch (error) {
+    if (error?.message && !['TypeError', 'AbortError', 'TimeoutError'].includes(error.name)) throw error;
     throw new Error('Cannot reach the frame. Use the same WiFi, allow local-network access, then reconnect.');
   }
   if (!response.ok) {
@@ -170,7 +172,7 @@ export async function deletePhoto(base, filename, session) {
 
 export async function getPhoto(base, filename, thumbnail = false) {
   const path = thumbnail ? `thumbs/${encodeURIComponent(filename)}.png` : encodeURIComponent(filename);
-  const response = await fetch(`${base}/images/${path}`, {credentials: 'omit', cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(30000)});
+  const response = await deviceFetch(base, `/images/${path}`, {binary: true, signal: AbortSignal.timeout(60000)});
   if (!response.ok) throw new Error('Could not load this photo from the frame.');
   return response.blob();
 }

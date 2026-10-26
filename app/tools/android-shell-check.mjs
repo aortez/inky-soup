@@ -17,7 +17,7 @@ if (!device) {
   throw new Error('Connect one authorized Android device or provide --serial.');
 }
 const pkg = 'pizza.allan.frame';
-const adb = (...args) => execFileSync('adb', ['-s', device.serial(), ...args]);
+const adb = (...args) => execFileSync('adb', ['-s', device.serial(), ...args], {maxBuffer:8 * 1024 * 1024});
 const shell = (...args) => adb('shell', ...args).toString().trim();
 const original = Object.fromEntries(['wifi_on', 'mobile_data', 'stay_on_while_plugged_in'].map(key => [key, shell('settings', 'get', 'global', key)]));
 const output = resolve(values.output);

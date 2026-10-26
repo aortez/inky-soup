@@ -1,3 +1,4 @@
+import {androidApp} from '../core/platform.js';
 import {elements as el} from '../core/dom.js';
 import {state} from '../core/state.js';
 import {settingIds} from '../core/settings.js';
@@ -48,7 +49,9 @@ export function controls() {
   el['save-orientation'].disabled = el.orientation.disabled || Number(el.orientation.value) === state.config?.rotation_degrees;
   el['send-label'].textContent = state.job ? 'Refreshing…' : state.busy && state.view === 'editor' ? 'Working…' : 'Display this photo';
   el['send-panel'].setAttribute('aria-busy', String(working && state.view === 'editor'));
-  el['setup-link'].hidden = working;
+  el['setup-link'].hidden = androidApp || working;
+  el['preview-profile'].hidden = !androidApp || state.connected;
+  for (const id of ['preview-model', 'preview-layout']) el[id].disabled = working || state.connected || state.connecting;
 }
 
 export function showView(view) {

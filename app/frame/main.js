@@ -1,4 +1,5 @@
 import './style.css';
+import {selectDevice} from './services/transport.js';
 import {androidApp} from './core/platform.js';
 import {previewConfig, savedPreviewConfig, rememberPreviewConfig} from './core/preview-profile.js';
 import {elements as el} from './core/dom.js';
@@ -24,14 +25,19 @@ async function refreshGallery() {
 }
 
 async function connectFrame() {
-  if (androidApp) return;
   if (!state.session || state.busy || state.job || state.connecting) return;
   state.connecting = true; state.connected = false; controls();
   el['frame-detail'].textContent = 'Connecting…';
   el['connection-status'].textContent = 'Finding your frame… Allow local-network access if prompted.';
   try {
     const base = normalizeAddress(el.address.value);
-    const config = validateConfig(await request(base, '/api/display-config'));
+    await releaseEditLock();
+    await selectDevice(base);
+    const rawConfig = await request(base, '/api/display-config');
+    if (androidApp && (!Number.isSafeInteger(rawConfig.rotation_revision) || !rawConfig.physical_width)) {
+      throw new Error('Update the frame firmware to the revision-aware app API, then reconnect.');
+    }
+    const config = validateConfig(rawConfig);
     const images = await request(base, '/api/images');
     if (!Array.isArray(images)) throw new Error('The frame returned an invalid gallery.');
     await releaseEditLock();
@@ -51,7 +57,7 @@ async function connectFrame() {
     if (!state.job) await regenerateGallery();
   } catch (error) {
     state.connected = false;
-    el['connection-status'].textContent = navigator.onLine ? error.message : 'You’re offline. Keep editing your draft; reconnect to send it.';
+    el['connection-status'].textContent = (androidApp || navigator.onLine) ? error.message : 'You’re offline. Keep editing your draft; reconnect to send it.';
     el['frame-detail'].textContent = navigator.onLine ? 'Not connected' : 'Offline · Draft saved on this phone';
     el.connection.classList.remove('connected'); el.connection.open = true;
   } finally { state.connecting = false; controls(); }
@@ -161,9 +167,9 @@ async function storeCurrentPhoto(display) {
   try {
     const result = await savePhoto({base: state.frame.base, draft: state.draft, prepared: state.prepared,
       session: state.session, display, keepLock: true,
-      onStored: async ({base, filename, ...checkpoint}) => {
-        state.draft = {...state.draft, sourceFrame: base, sourceFilename: filename, ...checkpoint};
-        await saveDraft(state.draft).catch(() => {});
+      onStored: async ({base, filename, ...saved}) => {
+        state.draft = {...state.draft, ...saved, sourceFrame: base, sourceFilename: filename};
+        await saveDraft(state.draft);
       },
       onProgress: message => {
         activity(message, 'Your photo stays on your local network.', false, 'busy');
@@ -271,7 +277,7 @@ async function runImports() {
       if (lockError) throw lockError;
       clearInterval(lockTimer);
       const saved = await savePhoto({base, draft: item.draft, prepared, session: state.session, keepLock:owned,
-        onStored: ({base, filename, ...checkpoint}) => {Object.assign(item.draft, {sourceFrame:base, sourceFilename:filename}, checkpoint);},
+        onStored: ({base, filename, ...saved}) => {Object.assign(item.draft, saved, {sourceFrame:base, sourceFilename:filename});},
         onProgress: message => {item.status = message; renderImports();}});
       item.draft.sourceFrame = saved.base; item.draft.sourceFilename = saved.filename; item.status = 'Saved';
     } catch (error) {item.status = 'Failed'; item.error = error.message;}
@@ -368,7 +374,7 @@ el.send.addEventListener('click', () => storeCurrentPhoto(true));
 el.save.addEventListener('click', () => storeCurrentPhoto(false));
 el['settings-tab'].addEventListener('click', () => showView('settings'));
 for (const id of ['preview-model', 'preview-layout']) el[id].addEventListener('change', () => {
-  if (!androidApp) return;
+  if (!androidApp || state.connected || state.connecting || state.busy || state.job) return;
   state.config = previewConfig(el['preview-model'].value, el['preview-layout'].value === 'portrait');
   rememberPreviewConfig(state.config);
   el.dimensions.textContent = `${state.config.width} × ${state.config.height}`;
@@ -441,13 +447,14 @@ el.forget.addEventListener('click', async () => {
   state.busy = true; controls();
   await releaseEditLock();
   try { localStorage.removeItem('sparkle-frame'); } catch { /* Storage can be disabled. */ }
-  state.frame = null; state.config = null; state.connected = false;
+  state.frame = null; state.config = androidApp ? savedPreviewConfig() : null; state.connected = false;
   state.images = []; state.processor?.abort(); ++state.generation; state.processing = false; state.prepared = null;
   el.connection.open = true; el.connection.classList.remove('connected'); el.forget.hidden = true;
   el['frame-name'].textContent = 'Your frame'; el['frame-detail'].textContent = 'Connect once. Keep it close.';
   el['connection-status'].textContent = 'Frame forgotten. Your draft is still on this phone.';
   state.imports = []; renderImports();
   state.busy = false; renderGallery(selectPhoto); controls();
+  if (androidApp) prepare();
 });
 window.addEventListener('beforeinstallprompt', event => {
   if (androidApp) return;
@@ -464,10 +471,9 @@ async function start() {
   if (androidApp) {
     document.body.classList.add('native-shell');
     el.photo.multiple = false;
-    el.connection.hidden = true;
-    el['gallery-tab'].hidden = true;
+    el.connection.hidden = false;
     el['preview-profile'].hidden = false;
-    el['settings-heading'].textContent = 'Your photo preview.';
+    el['settings-heading'].textContent = 'Make it fit.';
     state.config = savedPreviewConfig();
     el['preview-model'].value = state.config.model;
     el['preview-layout'].value = state.config.rotation_degrees === 90 ? 'portrait' : 'landscape';
@@ -488,7 +494,7 @@ async function start() {
   if (handoff && !androidApp) {
     try {el.address.value = normalizeAddress(handoff);} catch (error) {el['connection-status'].textContent = error.message;}
     history.replaceState(null, '', location.pathname);
-  } else if (remembered?.base && !androidApp) {
+  } else if (remembered?.base) {
     try {
       const base = normalizeAddress(remembered.base);
       el.address.value = base;
@@ -505,7 +511,7 @@ async function start() {
   try {const draft = await readDraft(); if (draft?.blob) await useDraft(draft);} catch { /* Storage is optional. */ }
   syncOrientation(); controls();
   if (import.meta.env.PROD && !androidApp) watchAppUpdates(controls).catch(() => {});
-  if (!androidApp && !handoff && remembered?.base && navigator.onLine) connectFrame();
+  if (!handoff && remembered?.base && (androidApp || navigator.onLine)) connectFrame();
 }
 window.addEventListener('offline', () => {
   state.connected = false;

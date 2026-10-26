@@ -1,0 +1,64 @@
+{
+  "base": "http://192.168.1.149:8000",
+  "config": {
+    "width": 600,
+    "height": 448,
+    "thumb_width": 150,
+    "thumb_height": 112,
+    "model": "impression-5.7",
+    "color": "multi",
+    "physical_width": 600,
+    "physical_height": 448,
+    "rotation_degrees": 0,
+    "rotation_revision": 0
+  },
+  "photoBytes": 18992047,
+  "model": "Pixel 9 Pro XL",
+  "android": "17",
+  "checks": [
+    "Native configuration and gallery thumbnails load over WiFi.",
+    "Large original and derived PNGs transferred; session and orientation fields accepted.",
+    "Phone reports completed physical display job.",
+    "Uploaded original downloads, reopens, and acquires its editing lock."
+  ],
+  "galleryBefore": 3,
+  "dimensions": [
+    600,
+    448
+  ],
+  "elapsedMs": 46105,
+  "activity": "Your new view is ready.",
+  "detail": "The frame has finished refreshing.",
+  "job": "Job 6 · Completed · 36s since refresh started · d3e89f33-0f43-40d5-9dec-d281af3d8759.jpg",
+  "cliJob": {
+    "created_at": 1792973292405,
+    "dithered_path": "/data/inky-soup/flash-jobs/1792973292403572799-5.png",
+    "error_message": null,
+    "filename": "d3e89f33-0f43-40d5-9dec-d281af3d8759.jpg",
+    "finished_at": 1792973329148,
+    "flash_twice": false,
+    "job_id": 6,
+    "rotation_degrees": 0,
+    "started_at": 1792973292700,
+    "status": "Completed"
+  },
+  "draft": {
+    "name": "inky-android-wifi-large.jpg",
+    "photo_rotation_degrees": 0,
+    "photo_rotation_revision": 0,
+    "fit": "contain",
+    "saturation": 0.5,
+    "brightness": 0,
+    "contrast": 0,
+    "filter": "bicubic",
+    "dither": "floyd-steinberg",
+    "pending_photo_rotation": null,
+    "sourceFrame": "http://192.168.1.149:8000",
+    "sourceFilename": "d3e89f33-0f43-40d5-9dec-d281af3d8759.jpg"
+  },
+  "bridgeFiles": "",
+  "webView": "Mozilla/5.0 (Linux; Android 17; Pixel 9 Pro XL Build/CP2A.260605.016; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/155.0.8059.39 Mobile Safari/537.36",
+  "externalWebRequests": [],
+  "pageErrors": [],
+  "passed": true
+}

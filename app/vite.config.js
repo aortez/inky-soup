@@ -11,7 +11,8 @@ export default defineConfig(({mode}) => {
     plugins: android ? [{
       name: 'android-entry',
       transformIndexHtml(html) {
-        return html.replace(/\s*<link rel="manifest"[^>]+>/, '');
+        return html.replace(/\s*<link rel="manifest"[^>]+>/, '').replace('<head>', `<head>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' blob: data:; worker-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none'">`);
       },
       closeBundle() {
         copyFileSync(resolve('dist-android/frame/index.html'), resolve('dist-android/index.html'));

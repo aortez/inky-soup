@@ -142,6 +142,40 @@ for (const failure of ['before', 'after']) {
   }
 }
 
+test('reconnect rebuilds other photos without superseding an interrupted rotation receipt', async ({page}) => {
+  const f = await frame(page, {failRotation:'after'});
+  await choose(page, f.file);
+  await page.locator('#photo_rotation_degrees').selectOption('90');
+  await page.locator('#fit').selectOption('cover');
+  await expect(page.locator('#save')).toBeEnabled();
+  await page.locator('#save').click();
+  await expect(page.locator('#activity-detail')).toContainText('Cannot reach the frame');
+  const checkpoint = await storedDraft(page);
+  const filename = checkpoint.sourceFilename;
+  f.photos.push({filename:'other.png', photo_rotation_degrees:0, photo_rotation_revision:0,
+    needs_processing:true, thumb_ready:false});
+
+  await page.evaluate(() => sessionStorage.clear());
+  await page.reload();
+  await expect(page.locator('#import-summary')).toContainText('1 of 1 saved');
+  await expect(page.locator('#connect')).toBeEnabled();
+  const rotations = () => f.requests.filter(r => r.path === '/api/settings/photo-rotation')
+    .map(r => JSON.parse(r.body));
+  expect(rotations().filter(r => r.filename === filename)).toHaveLength(1);
+  expect(f.photos.find(p => p.filename === 'other.png').needs_processing).toBe(false);
+  expect((await storedDraft(page)).pending_photo_rotation).toEqual(checkpoint.pending_photo_rotation);
+
+  await page.locator('#choose-tab').click();
+  await expect(page.locator('#fit')).toHaveValue('cover');
+  await expect(page.locator('#save')).toBeEnabled();
+  await page.locator('#save').click();
+  await expect(page.locator('#activity-title')).toHaveText('Photo saved.');
+  const attempts = rotations().filter(r => r.filename === filename);
+  expect(attempts).toHaveLength(2);
+  expect(attempts[1]).toMatchObject({operation_id:attempts[0].operation_id, expected_revision:0});
+  expect((await storedDraft(page)).pending_photo_rotation).toBeNull();
+});
+
 test('retry resolves a lost rotation before applying a newly chosen angle', async ({page}) => {
   const f = await frame(page,{failRotation:'after'}); await choose(page,f.file);
   await page.locator('#photo_rotation_degrees').selectOption('90');
