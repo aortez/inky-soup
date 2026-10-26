@@ -591,3 +591,36 @@ fn favorites_filter_gallery_and_reject_unsupported_servers() {
         assert!(server.join().unwrap()[0].starts_with("GET /api/images "));
     }
 }
+
+#[test]
+fn rescue_status_and_show_restore_wait_use_the_server_queue() {
+    let (url, server) = serve(vec![r#"{"enabled":true,"card_active":false}"#]);
+    let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+        .args(["--device", &url, "--json", "rescue"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()["enabled"],
+        true
+    );
+    assert!(server.join().unwrap()[0].starts_with("GET /api/rescue "));
+    for action in ["show", "restore"] {
+        let (url, server) = serve(vec![
+            r#"{"success":true,"job_id":7}"#,
+            r#"{"job_id":7,"status":"Completed","filename":"offline-rescue.png"}"#,
+        ]);
+        let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+            .args(["--device", &url, "--json", "rescue", action, "--wait"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let requests = server.join().unwrap();
+        assert!(requests[0].starts_with(&format!("POST /api/rescue/{action} ")));
+        assert!(requests[1].starts_with("GET /api/flash/status/7 "));
+    }
+}

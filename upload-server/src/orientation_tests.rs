@@ -201,6 +201,7 @@ async fn orientation_api_preserves_jobs_and_recovers_after_restart() {
     check_rotation_retry_after_restart(&restarted).await;
     crate::slideshow_tests::check_slideshow_api_and_worker(&restarted).await;
     drop(restarted);
+    crate::rescue_tests::check_rescue().await;
     fs::remove_dir_all(root).unwrap();
 }
 
