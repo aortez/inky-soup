@@ -176,6 +176,12 @@ impl Slideshow {
             .saturating_add(u64::from(self.settings.rotation_interval_hours) * self.hour_ms)
     }
 
+    /// Whether the schedule calls for a display at `now`. A pause can still hold
+    /// it back.
+    fn is_due(&self, now: u64) -> bool {
+        self.settings.rotation_enabled && now >= self.next_due_at()
+    }
+
     fn paused_reason(
         &self,
         now: u64,
@@ -329,7 +335,7 @@ pub(crate) async fn inspect_or_tick(
     };
     let next = next_filename(&ready, state.settings.last_rotated_filename.as_deref());
     let mut job_id = None;
-    if enqueue && paused.is_none() && now >= state.next_due_at() {
+    if enqueue && paused.is_none() && state.is_due(now) {
         if let Some(filename) = next {
             match orientation::snapshot_image(&config::dithered_path(filename)) {
                 Ok(path) => {
@@ -357,6 +363,26 @@ pub(crate) async fn inspect_or_tick(
         "retry_not_before": state.retry_not_before, "storage_error": state.storage_error})
 }
 
+/// One scheduler check. Until rotation is enabled and due, which covers most
+/// checks, it returns `None` without taking the storage lock or reading the
+/// gallery. A due check queues the next ready favorite unless a pause holds it
+/// back, and returns the status.
+pub(crate) async fn tick(
+    state: &SlideshowState,
+    storage: &StorageLock,
+    queue: &FlashQueueState,
+    locks: &ImageLocksState,
+    now: u64,
+) -> Option<Value> {
+    // The slideshow lock is released here, before inspect_or_tick takes every
+    // lock in order.
+    let due = state.lock().await.is_due(now);
+    if !due {
+        return None;
+    }
+    Some(inspect_or_tick(state, storage, queue, locks, now, true).await)
+}
+
 pub fn spawn(
     state: SlideshowState,
     storage: StorageLock,
@@ -369,7 +395,7 @@ pub fn spawn(
             tokio::select! {
                 _ = &mut shutdown => break,
                 _ = tokio::time::sleep(Duration::from_secs(1)) => {
-                    inspect_or_tick(&state, &storage, &queue, &locks, current_time_millis(), true).await;
+                    tick(&state, &storage, &queue, &locks, current_time_millis()).await;
                 }
             }
         }
