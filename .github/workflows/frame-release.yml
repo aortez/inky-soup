@@ -15,7 +15,8 @@ concurrency:
 jobs:
   web:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Chromium's system packages took 7 and 10 minutes to download from a slow Ubuntu mirror in the first two release runs.
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: app
