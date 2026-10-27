@@ -6,6 +6,23 @@
 import { getCurrentPhotoRevision, getDisplayConfig as cachedDisplayConfig } from '../core/state.js';
 
 /**
+ * Read a JSON response, or throw the server's explanation of a failure.
+ * @param {Response} response - The server response.
+ * @param {string} failure - What failed, for a failure that has no explanation.
+ * @returns {Promise<Object>} The response body.
+ */
+async function readJson(response, failure) {
+  if (response.ok) {
+    return response.json();
+  }
+  // The server explains failures in JSON; a proxy or a dropped connection may not.
+  const result = await response.json().catch(() => ({}));
+  const error = new Error(result.message || `${failure}: ${response.statusText}`);
+  error.status = response.status;
+  throw error;
+}
+
+/**
  * Fetch display configuration from the server.
  * Returns dimensions for the connected Inky Impression display.
  * @returns {Promise<Object>} Display configuration.
@@ -82,11 +99,7 @@ export async function uploadCache(
     body: formData,
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to upload cache: ${response.statusText}`);
-  }
-
-  return response.json();
+  return readJson(response, 'Failed to upload cache');
 }
 
 /**
@@ -114,11 +127,7 @@ export async function uploadThumb(
     body: formData,
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to upload thumbnail: ${response.statusText}`);
-  }
-
-  return response.json();
+  return readJson(response, 'Failed to upload thumbnail');
 }
 
 /**
@@ -163,11 +172,7 @@ export async function uploadDithered(
     body: formData,
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to upload dithered image: ${response.statusText}`);
-  }
-
-  return response.json();
+  return readJson(response, 'Failed to upload dithered image');
 }
 
 /**
@@ -198,11 +203,7 @@ export async function submitFlashJob(
     body: formData,
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to submit flash job: ${response.statusText}`);
-  }
-
-  return response.json();
+  return readJson(response, 'Failed to submit flash job');
 }
 
 /**
@@ -213,13 +214,7 @@ export async function submitFlashJob(
 export async function getJobStatus(jobId) {
   const response = await fetch(`/api/flash/status/${jobId}`);
 
-  if (!response.ok) {
-    const error = new Error(`Failed to get job status: ${response.status} ${response.statusText}`);
-    error.status = response.status;
-    throw error;
-  }
-
-  return response.json();
+  return readJson(response, 'Failed to get job status');
 }
 
 /**
@@ -229,11 +224,7 @@ export async function getJobStatus(jobId) {
 export async function getFlashStatus() {
   const response = await fetch('/api/flash/status');
 
-  if (!response.ok) {
-    throw new Error(`Failed to get flash status: ${response.statusText}`);
-  }
-
-  return response.json();
+  return readJson(response, 'Failed to get flash status');
 }
 
 /**
@@ -244,11 +235,7 @@ export async function getFlashStatus() {
 export async function getThumbStatus(filename) {
   const response = await fetch(`/api/thumb-status/${encodeURIComponent(filename)}`);
 
-  if (!response.ok) {
-    throw new Error(`Failed to get thumbnail status: ${response.statusText}`);
-  }
-
-  return response.json();
+  return readJson(response, 'Failed to get thumbnail status');
 }
 
 /**
@@ -271,11 +258,7 @@ export async function lockImage(filename, sessionId, refreshOnly = false, signal
     signal,
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to lock image: ${response.statusText}`);
-  }
-
-  return response.json();
+  return readJson(response, 'Failed to lock image');
 }
 
 /**
@@ -291,11 +274,7 @@ export async function unlockImage(filename, sessionId) {
     body: JSON.stringify({ filename, session_id: sessionId }),
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to unlock image: ${response.statusText}`);
-  }
-
-  return response.json();
+  return readJson(response, 'Failed to unlock image');
 }
 
 /**
@@ -310,14 +289,8 @@ export async function deleteImage(filename, sessionId) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ filename, session_id: sessionId }),
   });
-  // Refusals explain themselves in JSON; other failures may not.
-  const result = await response.json().catch(() => ({}));
 
-  if (!response.ok) {
-    throw new Error(result.message || `Failed to delete image: ${response.statusText}`);
-  }
-
-  return result;
+  return readJson(response, 'Failed to delete image');
 }
 
 /**
@@ -350,7 +323,14 @@ export function uploadOriginalImage(file, onProgress, onSuccess, onError) {
         onError(new Error('Failed to parse server response'));
       }
     } else {
-      onError(new Error(`Upload failed with status ${xhr.status}`));
+      // The server explains failures in JSON; a proxy or a dropped connection may not.
+      let message = `Upload failed with status ${xhr.status}`;
+      try {
+        message = JSON.parse(xhr.responseText).message || message;
+      } catch (error) {
+        // Keep the status.
+      }
+      onError(new Error(message));
     }
   });
 

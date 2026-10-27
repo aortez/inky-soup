@@ -25,39 +25,39 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
     let initial = slideshow_status(client).await;
     assert_eq!(initial["paused_reason"], "disabled");
     for hours in [0, 169] {
-        assert_eq!(
+        api_error::expect_failure(
             client
                 .post("/api/settings/slideshow")
                 .header(ContentType::JSON)
                 .body(json!({"rotation_enabled":true,"rotation_interval_hours":hours}).to_string())
                 .dispatch()
-                .await
-                .status(),
-            Status::BadRequest
-        );
+                .await,
+            Status::BadRequest,
+        )
+        .await;
     }
     // The completion fields are read-only, including to clients on the local LAN.
-    assert_eq!(
+    api_error::expect_failure(
         client
             .post("/api/settings/slideshow")
             .header(ContentType::JSON)
             .body(r#"{"rotation_anchor_at":0}"#)
             .dispatch()
-            .await
-            .status(),
-        Status::UnprocessableEntity
-    );
-    assert_eq!(
+            .await,
+        Status::UnprocessableEntity,
+    )
+    .await;
+    api_error::expect_failure(
         client
             .post("/api/settings/slideshow")
             .header(ContentType::JSON)
             .header(rocket::http::Header::new("Origin", "https://evil.example"))
             .body(r#"{"rotation_enabled":true}"#)
             .dispatch()
-            .await
-            .status(),
-        Status::Forbidden
-    );
+            .await,
+        Status::Forbidden,
+    )
+    .await;
     assert_eq!(
         client
             .post("/api/settings/slideshow")
@@ -217,6 +217,17 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
     // Original/cache/thumb uploads and rejected final uploads cannot reset the timer.
     state.lock().await.content_completed(123).unwrap();
     let filename = "slideshow-a.png";
+    let (content_type, empty) = multipart(&[], false);
+    api_error::expect_failure(
+        client
+            .post("/upload")
+            .header(content_type)
+            .body(empty)
+            .dispatch()
+            .await,
+        Status::UnprocessableEntity,
+    )
+    .await;
     let (content_type, body) = multipart(&[], true);
     let body = body
         .replace("name=\"file\"", "name=\"submission.file\"")

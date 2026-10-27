@@ -1,5 +1,6 @@
 #[macro_use] extern crate rocket;
 
+mod api_error;
 mod browser_access;
 mod cache_worker;
 mod cleanup;
@@ -31,7 +32,7 @@ use log::{debug, error, info, warn};
 
 use rocket_dyn_templates::Template;
 use rocket::fairing::{Fairing, Info, Kind};
-use rocket::form::{Form, Contextual};
+use rocket::form::Form;
 use rocket::fs::{FileServer, TempFile};
 use rocket::http::Status;
 use rocket::serde::json::Json;
@@ -43,6 +44,7 @@ use std::fs;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use api_error::{failure, Failure};
 use browser_access::BrowserWrite;
 use flash_queue::{FlashJob, FlashQueue, FlashQueueState};
 use image_locks::ImageLocksState;
@@ -419,18 +421,18 @@ async fn unlock_image(
     _origin: BrowserWrite,
     request: Json<UnlockImageRequest>,
     locks_state: &State<ImageLocksState>,
-) -> Json<UnlockImageResponse> {
+) -> Result<Json<UnlockImageResponse>, Failure> {
     let filename = match sanitize_filename(&request.filename) {
         Some(name) => name,
         None => {
             warn!("Rejected invalid unlock filename: {}", request.filename);
-            return Json(UnlockImageResponse { success: false });
+            return Err(failure(Status::BadRequest, "Invalid filename"));
         }
     };
 
     match image_locks::release_lock(locks_state, &filename, &request.session_id).await {
-        Ok(_) => Json(UnlockImageResponse { success: true }),
-        Err(_) => Json(UnlockImageResponse { success: false }),
+        Ok(_) => Ok(Json(UnlockImageResponse { success: true })),
+        Err(error) => Err(failure(Status::InternalServerError, error)),
     }
 }
 
@@ -440,7 +442,7 @@ async fn unlock_image(
 struct UploadResponse {
     success: bool,
     message: String,
-    filename: Option<String>,
+    filename: String,
 }
 
 /// Response for upload-dithered endpoint.
@@ -449,7 +451,7 @@ struct UploadResponse {
 struct UploadDitheredResponse {
     success: bool,
     message: String,
-    path: Option<String>,
+    path: String,
 }
 
 /// Form data for dithered image upload.
@@ -490,7 +492,7 @@ struct CacheUpload<'v> {
 struct UploadCacheResponse {
     success: bool,
     message: String,
-    path: Option<String>,
+    path: String,
 }
 
 /// Form data for gallery thumbnail upload.
@@ -509,7 +511,7 @@ struct ThumbUpload<'v> {
 struct UploadThumbResponse {
     success: bool,
     message: String,
-    path: Option<String>,
+    path: String,
 }
 
 /// Response for flash submission (queue).
@@ -550,42 +552,27 @@ async fn upload_dithered(
     locks_state: &State<ImageLocksState>,
     storage: &State<StorageLock>,
     slideshow: &State<slideshow::SlideshowState>,
-) -> Json<UploadDitheredResponse> {
+) -> Result<Json<UploadDitheredResponse>, Failure> {
     // Sanitize filename to prevent path traversal.
     let filename = match sanitize_filename(&form.filename) {
         Some(name) => name,
         None => {
             warn!("Rejected invalid dithered upload filename: {}", form.filename);
-            return Json(UploadDitheredResponse {
-                success: false,
-                message: "Invalid filename".to_string(),
-                path: None,
-            });
+            return Err(failure(Status::BadRequest, "Invalid filename"));
         }
     };
     let Some(_storage) = storage::lock_for_editor(storage, locks_state, &filename, &form.session_id).await else {
         warn!("Upload dithered denied for {}: session {} does not own lock", filename, form.session_id);
-        return Json(UploadDitheredResponse {
-            success: false,
-            message: "You do not have edit access to this image".to_string(),
-            path: None,
-        });
+        return Err(failure(Status::Forbidden, "You do not have edit access to this image"));
     };
     let revision = display_settings::load_runtime_settings().rotation_revision;
     if form.rotation_revision.unwrap_or(0) != revision {
-        return Json(UploadDitheredResponse {
-            success: false,
-            message: "Display orientation changed. Reconnect and regenerate this photo.".into(),
-            path: None,
-        });
+        return Err(failure(Status::Conflict,
+            "Display orientation changed. Reconnect and regenerate this photo."));
     }
     let meta = metadata::get_all_metadata(&filename);
     if form.photo_rotation_revision.unwrap_or(0) != meta.photo_rotation_revision {
-        return Json(UploadDitheredResponse {
-            success: false,
-            message: "Photo rotation changed. Reopen this photo before saving.".into(),
-            path: None,
-        });
+        return Err(failure(Status::Conflict, "Photo rotation changed. Reopen this photo before saving."));
     }
     let filter = form.filter.clone();
     let fit_mode = form.fit_mode.clone().unwrap_or_else(|| "contain".to_string());
@@ -607,8 +594,8 @@ async fn upload_dithered(
     let mut pending = metadata::get_all_metadata(&filename);
     pending.processing_pending = true;
     if let Err(error) = metadata::try_save_metadata(&filename, &pending) {
-        return Json(UploadDitheredResponse { success: false,
-            message: format!("Could not start display image save: {error}"), path: None });
+        return Err(failure(Status::InternalServerError,
+            format!("Could not start display image save: {error}")));
     }
     match form.file.copy_to(&dithered_path).await {
         Ok(()) => {
@@ -632,35 +619,29 @@ async fn upload_dithered(
                 && meta.cache_photo_revision == meta.photo_rotation_revision
                 && meta.thumb_photo_revision == meta.photo_rotation_revision);
             if let Err(error) = metadata::try_save_metadata(&filename, &meta) {
-                return Json(UploadDitheredResponse {
-                    success: false, message: format!("Could not save image settings: {error}"), path: None,
-                });
+                return Err(failure(Status::InternalServerError,
+                    format!("Could not save image settings: {error}")));
             }
             // Clients commit a complete save/upload in cache -> thumbnail -> dithered
             // order. Partial uploads and settings that still need rendering do not
             // postpone the slideshow.
             if get_gallery_images().iter().any(|image| image.filename == filename && !image.needs_processing) {
                 if let Err(error) = slideshow.lock().await.content_completed(flash_queue::current_time_millis()) {
-                    return Json(UploadDitheredResponse {
-                        success: false, message: format!("Could not save slideshow completion: {error}"), path: None,
-                    });
+                    return Err(failure(Status::InternalServerError,
+                        format!("Could not save slideshow completion: {error}")));
                 }
             }
             debug!("Saved dithered image: {}", filename);
 
-            Json(UploadDitheredResponse {
+            Ok(Json(UploadDitheredResponse {
                 success: true,
                 message: "Dithered image uploaded successfully".to_string(),
-                path: Some(format!("images/dithered/{}.png", filename)),
-            })
+                path: format!("images/dithered/{}.png", filename),
+            }))
         }
         Err(e) => {
             error!("Failed to save dithered image {}: {}", filename, e);
-            Json(UploadDitheredResponse {
-                success: false,
-                message: format!("Failed to save dithered image: {}", e),
-                path: None,
-            })
+            Err(failure(Status::InternalServerError, format!("Failed to save dithered image: {}", e)))
         }
     }
 }
@@ -672,42 +653,27 @@ async fn upload_cache(
     mut form: Form<CacheUpload<'_>>,
     locks_state: &State<ImageLocksState>,
     storage: &State<StorageLock>,
-) -> Json<UploadCacheResponse> {
+) -> Result<Json<UploadCacheResponse>, Failure> {
     // Sanitize filename to prevent path traversal.
     let filename = match sanitize_filename(&form.filename) {
         Some(name) => name,
         None => {
             warn!("Rejected invalid cache upload filename: {}", form.filename);
-            return Json(UploadCacheResponse {
-                success: false,
-                message: "Invalid filename".to_string(),
-                path: None,
-            });
+            return Err(failure(Status::BadRequest, "Invalid filename"));
         }
     };
     let Some(_storage) = storage::lock_for_editor(storage, locks_state, &filename, &form.session_id).await else {
         warn!("Upload cache denied for {}: session {} does not own lock", filename, form.session_id);
-        return Json(UploadCacheResponse {
-            success: false,
-            message: "You do not have edit access to this image".to_string(),
-            path: None,
-        });
+        return Err(failure(Status::Forbidden, "You do not have edit access to this image"));
     };
     let revision = display_settings::load_runtime_settings().rotation_revision;
     if form.rotation_revision.unwrap_or(0) != revision {
-        return Json(UploadCacheResponse {
-            success: false,
-            message: "Display orientation changed. Reconnect and regenerate this photo.".into(),
-            path: None,
-        });
+        return Err(failure(Status::Conflict,
+            "Display orientation changed. Reconnect and regenerate this photo."));
     }
     let meta = metadata::get_all_metadata(&filename);
     if form.photo_rotation_revision.unwrap_or(0) != meta.photo_rotation_revision {
-        return Json(UploadCacheResponse {
-            success: false,
-            message: "Photo rotation changed. Reopen this photo before saving.".into(),
-            path: None,
-        });
+        return Err(failure(Status::Conflict, "Photo rotation changed. Reopen this photo before saving."));
     }
 
     // Extract all settings.
@@ -729,13 +695,12 @@ async fn upload_cache(
     let mut pending = metadata::get_all_metadata(&filename);
     pending.processing_pending = true;
     if let Err(error) = metadata::try_save_metadata(&filename, &pending) {
-        return Json(UploadCacheResponse { success: false,
-            message: format!("Could not start image save: {error}"), path: None });
+        return Err(failure(Status::InternalServerError, format!("Could not start image save: {error}")));
     }
     if let Err(error) = fs::remove_file(config::dithered_path(&filename)) {
         if error.kind() != std::io::ErrorKind::NotFound {
-            return Json(UploadCacheResponse { success: false,
-                message: format!("Could not invalidate display image: {error}"), path: None });
+            return Err(failure(Status::InternalServerError,
+                format!("Could not invalidate display image: {error}")));
         }
     }
     match form.file.copy_to(&cache_path).await {
@@ -751,23 +716,18 @@ async fn upload_cache(
             meta.cache_rotation_revision = revision;
             meta.cache_photo_revision = meta.photo_rotation_revision;
             if let Err(error) = metadata::try_save_metadata(&filename, &meta) {
-                return Json(UploadCacheResponse {
-                    success: false, message: format!("Could not save image settings: {error}"), path: None,
-                });
+                return Err(failure(Status::InternalServerError,
+                    format!("Could not save image settings: {error}")));
             }
-            Json(UploadCacheResponse {
+            Ok(Json(UploadCacheResponse {
                 success: true,
                 message: "Cache image uploaded successfully".to_string(),
-                path: Some(format!("images/cache/{}.png", filename)),
-            })
+                path: format!("images/cache/{}.png", filename),
+            }))
         }
         Err(e) => {
             error!("Failed to save cache image {}: {}", filename, e);
-            Json(UploadCacheResponse {
-                success: false,
-                message: format!("Failed to save cache image: {}", e),
-                path: None,
-            })
+            Err(failure(Status::InternalServerError, format!("Failed to save cache image: {}", e)))
         }
     }
 }
@@ -779,42 +739,27 @@ async fn upload_thumb(
     mut form: Form<ThumbUpload<'_>>,
     locks_state: &State<ImageLocksState>,
     storage: &State<StorageLock>,
-) -> Json<UploadThumbResponse> {
+) -> Result<Json<UploadThumbResponse>, Failure> {
     // Sanitize filename to prevent path traversal.
     let filename = match sanitize_filename(&form.filename) {
         Some(name) => name,
         None => {
             warn!("Rejected invalid thumbnail upload filename: {}", form.filename);
-            return Json(UploadThumbResponse {
-                success: false,
-                message: "Invalid filename".to_string(),
-                path: None,
-            });
+            return Err(failure(Status::BadRequest, "Invalid filename"));
         }
     };
     let Some(_storage) = storage::lock_for_editor(storage, locks_state, &filename, &form.session_id).await else {
         warn!("Upload thumbnail denied for {}: session {} does not own lock", filename, form.session_id);
-        return Json(UploadThumbResponse {
-            success: false,
-            message: "You do not have edit access to this image".to_string(),
-            path: None,
-        });
+        return Err(failure(Status::Forbidden, "You do not have edit access to this image"));
     };
     let revision = display_settings::load_runtime_settings().rotation_revision;
     if form.rotation_revision.unwrap_or(0) != revision {
-        return Json(UploadThumbResponse {
-            success: false,
-            message: "Display orientation changed. Reconnect and regenerate this photo.".into(),
-            path: None,
-        });
+        return Err(failure(Status::Conflict,
+            "Display orientation changed. Reconnect and regenerate this photo."));
     }
     let meta = metadata::get_all_metadata(&filename);
     if form.photo_rotation_revision.unwrap_or(0) != meta.photo_rotation_revision {
-        return Json(UploadThumbResponse {
-            success: false,
-            message: "Photo rotation changed. Reopen this photo before saving.".into(),
-            path: None,
-        });
+        return Err(failure(Status::Conflict, "Photo rotation changed. Reopen this photo before saving."));
     }
     debug!("Saving gallery thumbnail: {}", filename);
 
@@ -827,23 +772,19 @@ async fn upload_thumb(
             meta.thumb_rotation_revision = revision;
             meta.thumb_photo_revision = meta.photo_rotation_revision;
             if let Err(error) = metadata::try_save_metadata(&filename, &meta) {
-                return Json(UploadThumbResponse { success: false,
-                    message: format!("Could not save thumbnail metadata: {error}"), path: None });
+                return Err(failure(Status::InternalServerError,
+                    format!("Could not save thumbnail metadata: {error}")));
             }
             debug!("Saved gallery thumbnail: {}", filename);
-            Json(UploadThumbResponse {
+            Ok(Json(UploadThumbResponse {
                 success: true,
                 message: "Thumbnail uploaded successfully".to_string(),
-                path: Some(format!("images/thumbs/{}.png", filename)),
-            })
+                path: format!("images/thumbs/{}.png", filename),
+            }))
         }
         Err(e) => {
             error!("Failed to save thumbnail {}: {}", filename, e);
-            Json(UploadThumbResponse {
-                success: false,
-                message: format!("Failed to save thumbnail: {}", e),
-                path: None,
-            })
+            Err(failure(Status::InternalServerError, format!("Failed to save thumbnail: {}", e)))
         }
     }
 }
@@ -861,68 +802,62 @@ fn upload_form() -> Template {
 
 /// Queue a flash job (returns immediately).
 #[post("/flash", data = "<form>")]
-async fn submit_flash_image<'r>(
+async fn submit_flash_image(
     _origin: BrowserWrite,
-    mut form: Form<Contextual<'r, SubmitFlashImage>>,
+    form: Form<SubmitFlashImage>,
     queue_state: &State<FlashQueueState>,
     locks_state: &State<ImageLocksState>,
     storage: &State<StorageLock>,
-) -> Result<Json<FlashResponse>, (Status, String)> {
-    let submission = match form.value {
-        Some(ref mut s) => s,
-        None => {
-            warn!("Flash form validation failed");
-            return Err((Status::BadRequest, "Invalid form submission".to_string()));
-        }
-    };
+) -> Result<Json<FlashResponse>, Failure> {
+    let submission = &form.submission;
 
     // Sanitize filename to prevent path traversal.
-    let filename = match sanitize_filename(&submission.submission.filename) {
+    let filename = match sanitize_filename(&submission.filename) {
         Some(name) => name,
         None => {
-            warn!("Rejected invalid flash filename: {}", submission.submission.filename);
-            return Err((Status::BadRequest, "Invalid filename".to_string()));
+            warn!("Rejected invalid flash filename: {}", submission.filename);
+            return Err(failure(Status::BadRequest, "Invalid filename"));
         }
     };
 
     // Get path from sanitized filename.
     let dithered_path = config::dithered_path(&filename);
-    let flash_twice = submission.submission.flash_twice;
-    let session_id = &submission.submission.session_id;
+    let flash_twice = submission.flash_twice;
+    let session_id = &submission.session_id;
 
     info!("Flash request received: {} (flash_twice: {}, session: {})", filename, flash_twice, session_id);
 
     // Serialize file validation/enqueue with photo deletion.
     let Some(_storage) = storage::lock_for_editor(storage, locks_state, &filename, session_id).await else {
         warn!("Flash denied for {}: session {} does not own lock", filename, session_id);
-        return Err((Status::Forbidden, "You do not have edit access to this image".to_string()));
+        return Err(failure(Status::Forbidden, "You do not have edit access to this image"));
     };
     let display = get_display_config();
-    if submission.submission.rotation_revision.unwrap_or(0) != display.rotation_revision
+    if submission.rotation_revision.unwrap_or(0) != display.rotation_revision
         || metadata::get_all_metadata(&filename).dither_rotation_revision != display.rotation_revision
     {
-        return Err((Status::Conflict,
-            "Display orientation changed. Regenerate this photo before displaying it.".into()));
+        return Err(failure(Status::Conflict,
+            "Display orientation changed. Regenerate this photo before displaying it."));
     }
     let photo = metadata::get_all_metadata(&filename);
     if photo.processing_pending {
-        return Err((Status::Conflict, "Finish saving this photo before displaying it.".into()));
+        return Err(failure(Status::Conflict, "Finish saving this photo before displaying it."));
     }
-    if submission.submission.photo_rotation_revision.unwrap_or(0) != photo.photo_rotation_revision
+    if submission.photo_rotation_revision.unwrap_or(0) != photo.photo_rotation_revision
         || photo.dither_photo_revision != photo.photo_rotation_revision {
-        return Err((Status::Conflict, "Photo rotation changed. Regenerate this photo before displaying it.".into()));
+        return Err(failure(Status::Conflict, "Photo rotation changed. Regenerate this photo before displaying it."));
     }
     let mut queue = queue_state.lock().await;
 
     // Require pre-dithered version to exist (uploaded from preview dialog).
     if !dithered_path.exists() {
         error!("Flash failed for {}: pre-dithered image not found", filename);
-        return Err((Status::NotFound, format!("Pre-dithered image not found: {}", filename)));
+        return Err(failure(Status::NotFound, format!("Pre-dithered image not found: {}", filename)));
     }
 
     // Add to queue while file validation is still protected.
     let snapshot = orientation::snapshot_image(&dithered_path)
-        .map_err(|error| (Status::InternalServerError, error))?;
+        .map_err(|error| failure(Status::InternalServerError, error))?;
     let job_id = queue.enqueue(filename.clone(), snapshot.to_string_lossy().to_string(),
         flash_twice, display.rotation_degrees);
     let queue_position = queue.get_position(job_id).unwrap_or(0);
@@ -965,83 +900,67 @@ async fn flash_status(queue_state: &State<FlashQueueState>) -> Json<FlashStatusR
 
 /// Get status for a specific job.
 #[get("/api/flash/status/<job_id>")]
-async fn flash_job_status(job_id: u64, queue_state: &State<FlashQueueState>) -> Result<Json<FlashJob>, Status> {
+async fn flash_job_status(job_id: u64, queue_state: &State<FlashQueueState>) -> Result<Json<FlashJob>, Failure> {
     let queue = queue_state.lock().await;
 
     if let Some(job) = queue.find_job(job_id) {
         return Ok(Json(job));
     }
 
-    Err(Status::NotFound)
+    // Finished jobs are kept for a while, and a restart forgets them all.
+    Err(failure(Status::NotFound, format!("The frame no longer has display job {job_id}.")))
 }
 
 #[post("/upload", data = "<form>")]
-async fn submit_new_image<'r>(
+async fn submit_new_image(
     _origin: BrowserWrite,
-    mut form: Form<Contextual<'r, SubmitNewImage<'r>>>,
+    mut form: Form<SubmitNewImage<'_>>,
     storage: &State<StorageLock>,
-) -> Json<UploadResponse> {
+) -> Result<Json<UploadResponse>, Failure> {
     let _storage = storage.lock().await;
-    match form.value {
-        Some(ref mut submission) => {
-            let file = &mut submission.submission.file;
+    let file = &mut form.submission.file;
 
-            // Get the full original filename including extension.
-            // TempFile::name() strips extensions, so use raw_name() instead.
-            let filename = file.raw_name()
-                .and_then(|n| sanitize_filename(n.dangerous_unsafe_unsanitized_raw().as_str()))
-                .unwrap_or_else(|| {
-                    warn!("Upload has no filename, using fallback");
-                    "unnamed_upload".to_string()
-                });
+    // Get the full original filename including extension.
+    // TempFile::name() strips extensions, so use raw_name() instead.
+    let filename = file.raw_name()
+        .and_then(|n| sanitize_filename(n.dangerous_unsafe_unsanitized_raw().as_str()))
+        .unwrap_or_else(|| {
+            warn!("Upload has no filename, using fallback");
+            "unnamed_upload".to_string()
+        });
 
-            info!("Upload started: {}", filename);
+    info!("Upload started: {}", filename);
 
-            // Save as new image in gallery.
-            let image_file_path = config::original_path(&filename);
-            let mut pending = metadata::get_all_metadata(&filename);
-            pending.processing_pending = true;
-            if let Err(error) = metadata::try_save_metadata(&filename, &pending) {
-                return Json(UploadResponse { success: false,
-                    message: format!("Could not start image upload: {error}"), filename: None });
-            }
-            match file.copy_to(&image_file_path).await {
-                Ok(_) => {
-                    // Replacing an original cannot leave the previous photo eligible
-                    // for automatic display while its new pixels are being prepared.
-                    for path in [config::cache_path(&filename), config::thumb_path(&filename), config::dithered_path(&filename)] {
-                        if let Err(error) = fs::remove_file(&path) {
-                            if error.kind() != std::io::ErrorKind::NotFound {
-                                return Json(UploadResponse { success: false,
-                                    message: format!("Could not invalidate old image: {error}"), filename: None });
-                            }
-                        }
+    // Save as new image in gallery.
+    let image_file_path = config::original_path(&filename);
+    let mut pending = metadata::get_all_metadata(&filename);
+    pending.processing_pending = true;
+    if let Err(error) = metadata::try_save_metadata(&filename, &pending) {
+        return Err(failure(Status::InternalServerError, format!("Could not start image upload: {error}")));
+    }
+    match file.copy_to(&image_file_path).await {
+        Ok(_) => {
+            // Replacing an original cannot leave the previous photo eligible
+            // for automatic display while its new pixels are being prepared.
+            for path in [config::cache_path(&filename), config::thumb_path(&filename), config::dithered_path(&filename)] {
+                if let Err(error) = fs::remove_file(&path) {
+                    if error.kind() != std::io::ErrorKind::NotFound {
+                        return Err(failure(Status::InternalServerError,
+                            format!("Could not invalidate old image: {error}")));
                     }
-                    info!("Upload completed: {}", filename);
-                    // Cache is now generated client-side and uploaded separately via /api/upload-cache.
-                    Json(UploadResponse {
-                        success: true,
-                        message: "Upload completed successfully".to_string(),
-                        filename: Some(filename),
-                    })
-                }
-                Err(e) => {
-                    error!("Upload failed for {}: {}", filename, e);
-                    Json(UploadResponse {
-                        success: false,
-                        message: format!("Upload failed: {}", e),
-                        filename: None,
-                    })
                 }
             }
+            info!("Upload completed: {}", filename);
+            // Cache is now generated client-side and uploaded separately via /api/upload-cache.
+            Ok(Json(UploadResponse {
+                success: true,
+                message: "Upload completed successfully".to_string(),
+                filename,
+            }))
         }
-        None => {
-            warn!("Upload form validation failed");
-            Json(UploadResponse {
-                success: false,
-                message: "Invalid form submission".to_string(),
-                filename: None,
-            })
+        Err(e) => {
+            error!("Upload failed for {}: {}", filename, e);
+            Err(failure(Status::InternalServerError, format!("Upload failed: {}", e)))
         }
     }
 }
@@ -1157,6 +1076,7 @@ fn rocket() -> _ {
             photo_rotation::update_photo_rotation,
             test_card::flash_test_card
         ])
+        .register("/", catchers![api_error::catcher])
         // Use rank 10 (lower priority) for root static server so /images can take precedence.
         .mount("/", FileServer::from("static").rank(10));
 

@@ -66,8 +66,12 @@ describe('bundled Save completes the slideshow image pipeline', () => {
       requests.push({ path, body: options.body });
       if (path === '/api/lock-image') return { ok: true, json: async () => ({ locked: true }) };
       if (path === '/api/upload-dithered') await finalUpload;
-      return { ok: true, json: async () => ({ success: path !== failStage,
-        message: 'Save interrupted', path: 'images/thumbs/favorite.png.png' }) };
+      if (path === failStage) {
+        return { ok: false, status: 500, statusText: 'Internal Server Error',
+          json: async () => ({ success: false, message: 'Save interrupted' }) };
+      }
+      return { ok: true, json: async () => ({ success: true,
+        path: 'images/thumbs/favorite.png.png' }) };
     }));
   });
 

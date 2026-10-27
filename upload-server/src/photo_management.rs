@@ -1,5 +1,6 @@
 //! JSON photo management for hosted clients and the local CLI.
 
+use crate::api_error::{failure, Failure};
 use crate::browser_access::BrowserWrite;
 use crate::flash_queue::{FlashJobStatus, FlashQueueState};
 use crate::image_locks::ImageLocksState;
@@ -18,11 +19,7 @@ pub struct DeleteImage {
     session_id: String,
 }
 
-type DeleteResult = Result<Json<Value>, (Status, Json<Value>)>;
-
-fn failure(status: Status, message: &str) -> (Status, Json<Value>) {
-    (status, Json(json!({"success": false, "message": message})))
-}
+type DeleteResult = Result<Json<Value>, Failure>;
 
 #[post("/api/delete-image", data = "<request>")]
 pub async fn delete_image(

@@ -57,8 +57,12 @@ pub(crate) async fn check_rescue() {
         Status::Forbidden
     );
     assert_eq!(
-        client.post("/api/rescue/unknown").dispatch().await.status(),
-        Status::BadRequest
+        api_error::expect_failure(
+            client.post("/api/rescue/unknown").dispatch().await,
+            Status::BadRequest
+        )
+        .await,
+        "Choose show or restore"
     );
 
     // Ordinary refreshes save immutable pixels outside the gallery.

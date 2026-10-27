@@ -481,6 +481,7 @@ test.describe('Slideshow Save regression', () => {
       if (request.method() === 'POST') writes.push(new URL(request.url()).pathname);
     });
     await page.route('**/api/upload-thumb', route => route.fulfill({
+      status: 500,
       json: { success: false, message: 'Thumbnail interrupted' },
     }));
     await page.locator('.apply-filter-btn').click();

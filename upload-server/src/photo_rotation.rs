@@ -1,5 +1,6 @@
 //! Non-destructive source rotation, independent of frame mounting orientation.
 use crate::{
+    api_error::{failure, Failure},
     browser_access::BrowserWrite,
     config,
     image_locks::ImageLocksState,
@@ -23,10 +24,7 @@ pub struct PhotoRotation {
     operation_id: Option<String>,
 }
 
-type RotationResult = Result<Json<Value>, (Status, Json<Value>)>;
-fn failure(status: Status, message: &str) -> (Status, Json<Value>) {
-    (status, Json(json!({"success":false,"message":message})))
-}
+type RotationResult = Result<Json<Value>, Failure>;
 
 #[post("/api/settings/photo-rotation", format = "json", data = "<request>")]
 pub async fn update_photo_rotation(
