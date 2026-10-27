@@ -8,7 +8,9 @@ are the command references; this file explains the implementation.
 ## Components
 
 The modern shared UI and Android prototype live in `app/`. See `app/README.md`
-for builds, platform adapters, source provenance, and website artifact consumption.
+for builds, source layout, platform adapters, source provenance, and website
+artifact consumption. `app/frame/core/operations.js` says which app operations can
+run together.
 The Android app supports offline editing and direct native Pi networking (#21);
 native Improv BLE setup is implemented in #22. Android remembers frames by a
 persisted device identity and discovers changed addresses using NSD (#23). Signed

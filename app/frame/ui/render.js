@@ -1,6 +1,7 @@
 import {androidApp} from '../core/platform.js';
 import {elements as el} from '../core/dom.js';
 import {state} from '../core/state.js';
+import {allowed} from '../core/operations.js';
 import {settingIds} from '../core/settings.js';
 import {getPhoto} from '../services/frame-client.js';
 import {describeUpdate, updateBlockReason} from '../core/app-update.js';
@@ -51,40 +52,44 @@ export function controls() {
     el['app-update-detail'].textContent = state.updating ? 'Saving your draft and opening the new version…'
       : state.updateError || updateBlocked || 'A new version is ready. Reload when you’re ready; your draft will be kept.';
   }
-  const working = state.busy || Boolean(state.job);
-  el['frame-picker'].disabled = working || state.connecting;
-  el['discover-frames'].disabled = working || state.connecting;
-  for (const button of el['nearby-frames'].querySelectorAll('button')) button.disabled = working || state.connecting;
+  const can = name => allowed(state, name);
+  // A display job holds back connecting until its frame is lost. Android then
+  // follows the job by connecting again, or by setting the frame up again; the
+  // website checks the job's status instead.
+  const androidConnect = state.connected ? 'connect' : 'reconnect';
+  el['frame-picker'].disabled = !can('select-frame');
+  el['discover-frames'].disabled = !can('discover');
+  for (const button of el['nearby-frames'].querySelectorAll('button')) button.disabled = !can('connect');
   el['frame-recovery'].hidden = !androidApp || state.connected;
-  el.connect.disabled = !state.session || state.busy || (Boolean(state.job) && (!androidApp || state.connected)) || state.connecting;
-  el.address.disabled = working || state.connecting;
-  el.forget.disabled = working || state.connecting;
-  el['pick-photo'].disabled = working || !state.config;
-  el['refresh-gallery'].disabled = working || !state.connected;
+  el.connect.disabled = !state.session || !can(androidApp ? androidConnect : 'connect');
+  el.address.disabled = !can('connect');
+  el.forget.disabled = !can('forget');
+  el['pick-photo'].disabled = !can('choose') || !state.config;
+  el['refresh-gallery'].disabled = !can('refresh') || !state.connected;
   for (const button of el.gallery.querySelectorAll('button')) {
-    button.disabled = working || state.connecting || !state.connected;
+    button.disabled = !can('open') || !state.connected;
   }
   const existing = state.draft?.sourceFrame === state.frame?.base && state.draft?.sourceFilename;
   const readOnly = Boolean(existing && state.connected && !state.lock?.owned);
-  for (const id of settingIds) el[id].disabled = working || readOnly;
+  for (const id of settingIds) el[id].disabled = !can('adjust') || readOnly;
   el.photo_rotation_degrees.disabled ||= !state.config?.photo_rotation_supported;
-  el['test-orientation'].disabled = working || state.connecting || !state.connected || !state.config?.orientation_test_supported || Number(el.orientation.value) !== state.config?.rotation_degrees;
-  el.send.disabled = working || state.connecting || readOnly || state.processing || !state.prepared || !state.connected;
+  el['test-orientation'].disabled = !can('test-card') || !state.connected || !state.config?.orientation_test_supported || Number(el.orientation.value) !== state.config?.rotation_degrees;
+  el.send.disabled = !can('store') || readOnly || !state.prepared || !state.connected;
   el.save.disabled = el.send.disabled;
   el.delete.hidden = !existing;
-  el.delete.disabled = working || readOnly || !state.connected;
-  el['retry-edit'].disabled = working || !state.connected;
-  el['add-photos'].disabled = working || !state.connected;
-  el['retry-imports'].disabled = working || !state.connected;
-  el.orientation.disabled = working || state.connecting || !state.connected || !state.config?.orientation_supported;
+  el.delete.disabled = !can('delete') || readOnly || !state.connected;
+  el['retry-edit'].disabled = !can('lock') || !state.connected;
+  el['add-photos'].disabled = !can('import') || !state.connected;
+  el['retry-imports'].disabled = !can('import') || !state.connected;
+  el.orientation.disabled = !can('orientation') || !state.connected || !state.config?.orientation_supported;
   el['save-orientation'].disabled = el.orientation.disabled || Number(el.orientation.value) === state.config?.rotation_degrees;
   el['send-label'].textContent = state.job ? 'Refreshing…' : state.busy && state.view === 'editor' ? 'Working…' : 'Display this photo';
-  el['send-panel'].setAttribute('aria-busy', String(working && state.view === 'editor'));
-  el['setup-link'].hidden = androidApp || working;
+  el['send-panel'].setAttribute('aria-busy', String((state.busy || Boolean(state.job)) && state.view === 'editor'));
+  el['setup-link'].hidden = androidApp || !can('setup');
   el['add-frame'].hidden = !androidApp;
-  el['add-frame'].disabled = state.busy || (Boolean(state.job) && state.connected) || state.connecting || !state.session;
+  el['add-frame'].disabled = !state.session || !can(androidConnect);
   el['preview-profile'].hidden = !androidApp || state.connected;
-  for (const id of ['preview-model', 'preview-layout']) el[id].disabled = working || state.connected || state.connecting;
+  for (const id of ['preview-model', 'preview-layout']) el[id].disabled = !can('preview-profile') || state.connected;
 }
 
 export function showView(view) {
@@ -116,7 +121,7 @@ export async function renderGallery(select) {
       const picture = document.createElement('img');
       picture.alt = ''; picture.loading = 'lazy';
       const label = document.createElement('span'); label.textContent = image.filename;
-      button.disabled = state.busy || Boolean(state.job) || state.connecting || !state.connected;
+      button.disabled = !allowed(state, 'open') || !state.connected;
       button.append(picture, label); button.addEventListener('click', () => select(image, base));
       el.gallery.append(button);
       try {

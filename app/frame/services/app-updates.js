@@ -1,5 +1,5 @@
 import {state} from '../core/state.js';
-import {updateBlockReason} from '../core/app-update.js';
+import {allowed, begin, end} from '../core/operations.js';
 import {saveDraft} from './drafts.js';
 
 export async function watchAppUpdates(changed) {
@@ -57,9 +57,9 @@ function activate(worker) {
 }
 
 export async function reloadApp(changed) {
-  if (!state.updateWorker || state.updating || updateBlockReason(state)) return;
+  if (!state.updateWorker || !allowed(state, 'update')) return;
   const worker = state.updateWorker;
-  state.updating = true; state.busy = true; state.updateError = ''; changed();
+  begin(state, 'update'); state.updateError = ''; changed();
   try {
     if (state.draft) {
       try {await saveDraft(state.draft);}
@@ -68,6 +68,6 @@ export async function reloadApp(changed) {
     await activate(worker);
     window.location.reload();
   } catch (error) {
-    state.updating = false; state.busy = false; state.updateError = error.message; changed();
+    end(state, 'update'); state.updateError = error.message; changed();
   }
 }
