@@ -1,3 +1,5 @@
+import {blocker} from './operations.js';
+
 // Signed Android releases are published by the frame-release workflow; see docs/android-release.md.
 export const releaseManifestUrl = 'https://github.com/aortez/inky-soup/releases/download/frame-app/frame-release.json';
 // Automatic checks are rare so launches never wait on GitHub; Settings can always check now.
@@ -7,12 +9,11 @@ const manifestHost = new URL(releaseManifestUrl).host;
 const maximumApk = 64 * 1024 * 1024;
 
 export function updateBlockReason(state, action = 'Reload', doing = 'reloading') {
-  if (state.job) return `${action} will be available when your frame finishes refreshing.`;
-  if (state.busy || state.importing || state.connecting) return `Finish the current task before ${doing}.`;
-  if (state.processing) return `Your photo preview is finishing. ${action} will be available shortly.`;
-  if (state.imports.some(item => !item.regenerate && item.status !== 'Saved')) {
-    return `Finish adding your photos before ${doing}.`;
-  }
+  const hold = blocker(state, 'update');
+  if (hold === 'job') return `${action} will be available when your frame finishes refreshing.`;
+  if (hold === 'task' || hold === 'connection') return `Finish the current task before ${doing}.`;
+  if (hold === 'processing') return `Your photo preview is finishing. ${action} will be available shortly.`;
+  if (hold === 'imports') return `Finish adding your photos before ${doing}.`;
   return '';
 }
 

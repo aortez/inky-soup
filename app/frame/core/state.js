@@ -7,13 +7,18 @@ import {editSession} from './edit-session.js';
 export const state = {
   setup: null, discovery: null, discovered: [], reconnectTimer: null, foreground: true,
   frame: null, config: null, images: [], draft: null, prepared: null,
-  connected: false, connecting: false, galleryGeneration: 0,
-  busy: false, processing: false, processor: null, generation: 0,
+  connected: false, galleryGeneration: 0,
+  // The running task and frame connection, named as in core/operations.js.
+  operation: null, connection: null,
+  processing: false, processor: null, generation: 0,
   previewUrl: null, beforeUrl: null, galleryUrls: [], job: null, pollTimer: null,
   view: 'editor', previewMode: 'display', lock: null, imports: [], importing: false,
   session: null, installPrompt: null,
-  updateWorker: null, updating: false, updateError: '',
+  updateWorker: null, updateError: '',
   updates: null, installed: null, update: null,
+  get busy() {return Boolean(this.operation);},
+  get connecting() {return Boolean(this.connection);},
+  get updating() {return this.operation === 'update';},
 };
 
 export const sessionReady = editSession().then(session => {state.session = session;});

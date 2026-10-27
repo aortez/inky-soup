@@ -1,5 +1,6 @@
 import {elements as el} from '../core/dom.js';
 import {state} from '../core/state.js';
+import {allowed} from '../core/operations.js';
 import {NativeSetup} from '../services/native-setup.js';
 import {normalizeAddress} from '../services/frame-client.js';
 
@@ -59,7 +60,7 @@ export async function setupDialog({bridge, connect, connected = async () => {}})
     if (succeeded) await connected();
   }
   el['add-frame'].addEventListener('click', () => {
-    if (state.busy || (state.job && state.connected) || state.connecting) return;
+    if (!allowed(state, state.connected ? 'connect' : 'reconnect')) return;
     render({phase: 'idle'}); el['setup-dialog'].showModal();
   });
   el['setup-scan'].addEventListener('click', () => client.scan());

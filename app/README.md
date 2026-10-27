@@ -73,6 +73,27 @@ installation. Do not uninstall an app with a draft merely to bypass a signature
 mismatch. Public builds are signed by the release workflow; see
 [Android releases and in-app updates](../docs/android-release.md).
 
+## Source layout
+
+`frame/main.js` starts the app and wires its events to modules in `frame/ui/`:
+
+- `connection.js`: connecting, reconnecting, and choosing or forgetting frames.
+- `edit-lock.js`: the edit lock on a photo opened from the frame.
+- `editor.js`: the draft, its adjustments and its preview.
+- `gallery.js`: the frame's gallery, opening photos, and adding or rebuilding them.
+- `jobs.js`: following display jobs.
+- `orientation.js`: the mount orientation and its test card.
+- `render.js`: controls, the gallery, the preview and the import list.
+- `save.js`: saving, displaying and deleting the photo being edited.
+- `setup.js`: the Android Bluetooth setup dialog.
+- `updates.js`: Android app updates.
+
+`frame/core/operations.js` says which operations can run together. A task, such as
+saving or importing, marks the app busy and is recorded in `state.operation`. A
+connection selects, finds or connects to a frame and is recorded in
+`state.connection`. Handlers start an operation only when `allowed()` permits it,
+and `controls()` disables what it refuses, so a new operation needs an entry there.
+
 ## Web and Android boundaries
 
 - `frame/core/platform.js` selects the build target.
