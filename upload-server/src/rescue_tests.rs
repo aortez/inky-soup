@@ -15,14 +15,14 @@ pub(crate) async fn check_rescue() {
         slideshow::Slideshow::load(config::settings_dir().join("rescue-slideshow.json"), 100)
             .unwrap(),
     ));
-    let orientation = orientation::OrientationState::default();
+    let storage = StorageLock::default();
     let locks: ImageLocksState = Arc::new(Mutex::new(HashMap::new()));
     let client = Client::tracked(
         rocket::build()
             .manage(browser_access::BrowserAccess::from_env())
             .manage(queue.clone())
             .manage(slideshow.clone())
-            .manage(orientation.clone())
+            .manage(storage.clone())
             .manage(locks.clone())
             .mount(
                 "/",

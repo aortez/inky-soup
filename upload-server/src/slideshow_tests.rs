@@ -3,6 +3,7 @@ use super::*;
 use crate::orientation_tests::multipart;
 use rocket::{http::ContentType, local::asynchronous::Client};
 use serde_json::{json, Value};
+use std::path::Path;
 
 async fn slideshow_status(client: &Client) -> Value {
     client
@@ -17,10 +18,7 @@ async fn slideshow_status(client: &Client) -> Value {
 pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
     use slideshow::{inspect_or_tick, FlashSource, SlideshowState};
     let state = client.rocket().state::<SlideshowState>().unwrap();
-    let orientation = client
-        .rocket()
-        .state::<orientation::OrientationState>()
-        .unwrap();
+    let storage = client.rocket().state::<StorageLock>().unwrap();
     let queue = client.rocket().state::<FlashQueueState>().unwrap();
     let locks = client.rocket().state::<ImageLocksState>().unwrap();
     locks.lock().await.clear();
@@ -128,7 +126,7 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
     image_locks::try_acquire_lock(locks, "unrelated.png", "editor", false)
         .await
         .unwrap();
-    let tick = inspect_or_tick(state, orientation, queue, locks, now, true).await;
+    let tick = inspect_or_tick(state, storage, queue, locks, now, true).await;
     assert_eq!(tick["paused_reason"], "editing");
     assert!(queue.lock().await.is_idle());
     // Expired locks do not pause the scheduler, even before cleanup removes them.
@@ -139,8 +137,8 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
         .unwrap()
         .expires_at = std::time::Instant::now();
     let (first, concurrent) = tokio::join!(
-        inspect_or_tick(state, orientation, queue, locks, now, true),
-        inspect_or_tick(state, orientation, queue, locks, now, true)
+        inspect_or_tick(state, storage, queue, locks, now, true),
+        inspect_or_tick(state, storage, queue, locks, now, true)
     );
     assert_eq!(first["ready_count"], 2);
     assert_eq!(concurrent["paused_reason"], "display_busy");
@@ -175,12 +173,11 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
     );
     assert_eq!(completed["next_filename"], "slideshow-c.png");
     assert!(
-        inspect_or_tick(state, orientation, queue, locks, now, true).await["queued_job_id"]
-            .is_null()
+        inspect_or_tick(state, storage, queue, locks, now, true).await["queued_job_id"].is_null()
     );
     // Failed automatic work neither moves the cursor nor resets the timer.
     let due = completed["next_due_at"].as_u64().unwrap();
-    inspect_or_tick(state, orientation, queue, locks, due, true).await;
+    inspect_or_tick(state, storage, queue, locks, due, true).await;
     std::env::set_var("INKY_SOUP_DISPLAY_COMMAND", "/bin/false");
     assert!(flash_queue::process_next(queue, state).await);
     let failed = slideshow_status(client).await;
@@ -205,7 +202,7 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
     );
     assert!(manual["paused_reason"].is_null());
     let due = manual["next_due_at"].as_u64().unwrap();
-    inspect_or_tick(state, orientation, queue, locks, due, true).await;
+    inspect_or_tick(state, storage, queue, locks, due, true).await;
     assert_eq!(
         queue.lock().await.get_queued_jobs()[0].filename,
         "slideshow-c.png"
@@ -325,7 +322,7 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
         slideshow::Slideshow::load(config::settings_dir().join("slideshow.json"), 999).unwrap(),
     ));
     assert_eq!(
-        inspect_or_tick(&reloaded, orientation, queue, locks, now, false).await["settings"],
+        inspect_or_tick(&reloaded, storage, queue, locks, now, false).await["settings"],
         slideshow_status(client).await["settings"]
     );
     check_flash_completion_storage_recovery(client).await;
@@ -344,17 +341,14 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
 async fn check_flash_completion_storage_recovery(client: &Client) {
     use slideshow::{inspect_or_tick, SlideshowState};
     let state = client.rocket().state::<SlideshowState>().unwrap();
-    let orientation = client
-        .rocket()
-        .state::<orientation::OrientationState>()
-        .unwrap();
+    let storage = client.rocket().state::<StorageLock>().unwrap();
     let queue = client.rocket().state::<FlashQueueState>().unwrap();
     let locks = client.rocket().state::<ImageLocksState>().unwrap();
     locks.lock().await.clear();
     state.lock().await.content_completed(0).unwrap();
     inspect_or_tick(
         state,
-        orientation,
+        storage,
         queue,
         locks,
         flash_queue::current_time_millis(),
@@ -382,7 +376,7 @@ async fn check_flash_completion_storage_recovery(client: &Client) {
     assert!(anchor > 0);
     // Even overdue, no further display is allowed until completion is persisted.
     assert!(
-        inspect_or_tick(state, orientation, queue, locks, anchor + 3_600_000, true).await
+        inspect_or_tick(state, storage, queue, locks, anchor + 3_600_000, true).await
             ["queued_job_id"]
             .is_null()
     );
@@ -401,17 +395,12 @@ async fn check_flash_completion_storage_recovery(client: &Client) {
     assert_eq!(recovered["settings"], completed["settings"]);
     assert!(recovered["storage_error"].is_null());
     // Recovery must not repeat A immediately or lose its round-robin position.
-    assert!(inspect_or_tick(
-        state,
-        orientation,
-        queue,
-        locks,
-        anchor + 3_600_000 - 1,
-        true
-    )
-    .await["queued_job_id"]
-        .is_null());
-    inspect_or_tick(state, orientation, queue, locks, anchor + 3_600_000, true).await;
+    assert!(
+        inspect_or_tick(state, storage, queue, locks, anchor + 3_600_000 - 1, true).await
+            ["queued_job_id"]
+            .is_null()
+    );
+    inspect_or_tick(state, storage, queue, locks, anchor + 3_600_000, true).await;
     let next = queue.lock().await.get_queued_jobs()[0].clone();
     assert_ne!(next.filename, first.filename);
     assert!(flash_queue::process_next(queue, state).await);

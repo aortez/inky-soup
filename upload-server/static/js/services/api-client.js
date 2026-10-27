@@ -74,9 +74,7 @@ export async function uploadCache(
   if (fitMode) {
     formData.append('fit_mode', fitMode);
   }
-  if (sessionId) {
-    formData.append('session_id', sessionId);
-  }
+  formData.append('session_id', sessionId);
   formData.append('file', blob, `${filename}.png`);
 
   const response = await fetch('/api/upload-cache', {
@@ -95,13 +93,20 @@ export async function uploadCache(
  * Upload a thumbnail image (150x112 PNG) to the server.
  * @param {string} filename - Original filename (without .png extension).
  * @param {Blob} blob - PNG blob data.
+ * @param {string} sessionId - Session ID for lock verification.
  * @returns {Promise<Object>} Server response.
  */
-export async function uploadThumb(filename, blob, photoRevision = getCurrentPhotoRevision()) {
+export async function uploadThumb(
+  filename,
+  blob,
+  sessionId,
+  photoRevision = getCurrentPhotoRevision(),
+) {
   const formData = new FormData();
   formData.append('filename', filename);
   formData.append('photo_rotation_revision', String(photoRevision));
   formData.append('rotation_revision', String(cachedDisplayConfig().rotationRevision || 0));
+  formData.append('session_id', sessionId);
   formData.append('file', blob, `${filename}.png`);
 
   const response = await fetch('/api/upload-thumb', {
@@ -291,6 +296,28 @@ export async function unlockImage(filename, sessionId) {
   }
 
   return response.json();
+}
+
+/**
+ * Delete a photo and all of its saved versions.
+ * @param {string} filename - The filename to delete.
+ * @param {string} sessionId - The session ID holding the photo's edit lock.
+ * @returns {Promise<Object>} Delete response {success, filename, warnings}.
+ */
+export async function deleteImage(filename, sessionId) {
+  const response = await fetch('/api/delete-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename, session_id: sessionId }),
+  });
+  // Refusals explain themselves in JSON; other failures may not.
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(result.message || `Failed to delete image: ${response.statusText}`);
+  }
+
+  return result;
 }
 
 /**

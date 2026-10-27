@@ -121,24 +121,12 @@ pub async fn release_lock(
     Ok(true)
 }
 
-/// Checks if a session owns the lock for an image.
-pub async fn verify_lock_ownership(
-    locks: &ImageLocksState,
-    filename: &str,
-    session_id: &str,
-) -> Result<bool, String> {
-    let mut locks_map = locks.lock().await;
-
-    // Clean up expired locks first.
-    let now = Instant::now();
-    locks_map.retain(|_, lock| lock.expires_at > now);
-
-    if let Some(existing_lock) = locks_map.get(filename) {
-        return Ok(existing_lock.session_id == session_id);
-    }
-
-    // No lock exists - operation not allowed.
-    Ok(false)
+/// Checks if a session holds an unexpired lock on an image. Photo writes
+/// check this through `storage::lock_for_editor`.
+pub fn is_editor(locks: &HashMap<String, ImageLock>, filename: &str, session_id: &str) -> bool {
+    locks.get(filename).is_some_and(|lock| {
+        lock.session_id == session_id && lock.expires_at > Instant::now()
+    })
 }
 
 /// Gets remaining lock time in seconds for an image.

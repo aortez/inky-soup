@@ -17,7 +17,6 @@ export function initDOMCache() {
   // Detail view elements.
   elements.detailFilename = document.getElementById('detailFilename');
   elements.lockStatus = document.getElementById('lockStatus');
-  elements.deleteImagePath = document.getElementById('deleteImagePath');
   elements.saturationSlider = document.getElementById('saturationSlider');
   elements.saturationValue = document.getElementById('saturationValue');
   elements.brightnessSlider = document.getElementById('brightnessSlider');
@@ -57,7 +56,6 @@ export function initDOMCache() {
   // Delete confirmation modal.
   elements.deleteConfirmFilename = document.getElementById('deleteConfirmFilename');
   elements.deleteConfirmModal = document.getElementById('deleteConfirmModal');
-  elements.deleteForm = document.getElementById('deleteForm');
 
   // Upload elements.
   elements.dropZone = document.getElementById('dropZone');

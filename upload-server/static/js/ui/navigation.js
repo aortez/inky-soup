@@ -159,7 +159,6 @@ export async function showDetailView(
 
   // Update UI.
   elements.detailFilename.textContent = filename;
-  elements.deleteImagePath.value = path;
 
   // Set active filter button.
   queryAll('.filter-btn').forEach((btn) => {

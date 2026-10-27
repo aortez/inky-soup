@@ -19,9 +19,12 @@ mod rescue;
 mod rescue_tests;
 #[cfg(test)]
 mod slideshow_tests;
+mod storage;
 mod test_card;
 #[cfg(test)]
 mod orientation_tests;
+#[cfg(test)]
+mod photo_write_tests;
 
 use glob::glob;
 use log::{debug, error, info, warn};
@@ -31,26 +34,20 @@ use rocket::fairing::{Fairing, Info, Kind};
 use rocket::form::{Form, Contextual};
 use rocket::fs::{FileServer, TempFile};
 use rocket::http::Status;
-use rocket::response::Redirect;
 use rocket::serde::json::Json;
 use rocket::serde::{Deserialize, Serialize};
 use rocket::{Rocket, State};
 
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use browser_access::BrowserWrite;
 use flash_queue::{FlashJob, FlashQueue, FlashQueueState};
 use image_locks::ImageLocksState;
+use storage::StorageLock;
 
-
-#[derive(Debug, FromForm)]
-struct DeleteSubmission {
-    image_file_path: String
-}
 
 #[derive(Debug, FromForm)]
 struct FlashSubmission {
@@ -68,11 +65,6 @@ struct UploadSubmission<'v> {
     // flashing script.
     // #[field(validate = ext(ContentType::PNG))]
     file: TempFile<'v>,
-}
-
-#[derive(Debug, FromForm)]
-struct SubmitDeleteImage {
-    submission: DeleteSubmission,
 }
 
 #[derive(Debug, FromForm)]
@@ -488,7 +480,7 @@ struct CacheUpload<'v> {
     brightness: Option<i32>,
     contrast: Option<i32>,
     dither_algorithm: Option<String>,
-    session_id: Option<String>,
+    session_id: String,
     file: TempFile<'v>,
 }
 
@@ -507,6 +499,7 @@ struct ThumbUpload<'v> {
     filename: String,
     rotation_revision: Option<u64>,
     photo_rotation_revision: Option<u64>,
+    session_id: String,
     file: TempFile<'v>,
 }
 
@@ -555,19 +548,9 @@ async fn upload_dithered(
     _origin: BrowserWrite,
     mut form: Form<DitheredUpload<'_>>,
     locks_state: &State<ImageLocksState>,
-    orientation: &State<orientation::OrientationState>,
+    storage: &State<StorageLock>,
     slideshow: &State<slideshow::SlideshowState>,
 ) -> Json<UploadDitheredResponse> {
-    let _orientation = orientation.lock().await;
-    let revision = display_settings::load_runtime_settings().rotation_revision;
-    if form.rotation_revision.unwrap_or(0) != revision {
-        return Json(UploadDitheredResponse {
-            success: false,
-            message: "Display orientation changed. Reconnect and regenerate this photo.".into(),
-            path: None,
-        });
-    }
-
     // Sanitize filename to prevent path traversal.
     let filename = match sanitize_filename(&form.filename) {
         Some(name) => name,
@@ -580,6 +563,22 @@ async fn upload_dithered(
             });
         }
     };
+    let Some(_storage) = storage::lock_for_editor(storage, locks_state, &filename, &form.session_id).await else {
+        warn!("Upload dithered denied for {}: session {} does not own lock", filename, form.session_id);
+        return Json(UploadDitheredResponse {
+            success: false,
+            message: "You do not have edit access to this image".to_string(),
+            path: None,
+        });
+    };
+    let revision = display_settings::load_runtime_settings().rotation_revision;
+    if form.rotation_revision.unwrap_or(0) != revision {
+        return Json(UploadDitheredResponse {
+            success: false,
+            message: "Display orientation changed. Reconnect and regenerate this photo.".into(),
+            path: None,
+        });
+    }
     let meta = metadata::get_all_metadata(&filename);
     if form.photo_rotation_revision.unwrap_or(0) != meta.photo_rotation_revision {
         return Json(UploadDitheredResponse {
@@ -601,20 +600,6 @@ async fn upload_dithered(
         "Upload dithered: {} (filter: {}, fit: {}, sat: {}, bright: {}, contrast: {}, dither: {}, session: {})",
         filename, filter, fit_mode, saturation, brightness, contrast, dither_algorithm, session_id
     );
-
-    // Verify lock ownership.
-    let has_lock = image_locks::verify_lock_ownership(locks_state, &filename, session_id)
-        .await
-        .unwrap_or(false);
-
-    if !has_lock {
-        warn!("Upload dithered denied for {}: session {} does not own lock", filename, session_id);
-        return Json(UploadDitheredResponse {
-            success: false,
-            message: "You do not have edit access to this image".to_string(),
-            path: None,
-        });
-    }
 
     // Save dithered image to dithered directory (always as PNG).
     let dithered_path = config::dithered_path(&filename);
@@ -686,18 +671,8 @@ async fn upload_cache(
     _origin: BrowserWrite,
     mut form: Form<CacheUpload<'_>>,
     locks_state: &State<ImageLocksState>,
-    orientation: &State<orientation::OrientationState>,
+    storage: &State<StorageLock>,
 ) -> Json<UploadCacheResponse> {
-    let _orientation = orientation.lock().await;
-    let revision = display_settings::load_runtime_settings().rotation_revision;
-    if form.rotation_revision.unwrap_or(0) != revision {
-        return Json(UploadCacheResponse {
-            success: false,
-            message: "Display orientation changed. Reconnect and regenerate this photo.".into(),
-            path: None,
-        });
-    }
-
     // Sanitize filename to prevent path traversal.
     let filename = match sanitize_filename(&form.filename) {
         Some(name) => name,
@@ -710,6 +685,22 @@ async fn upload_cache(
             });
         }
     };
+    let Some(_storage) = storage::lock_for_editor(storage, locks_state, &filename, &form.session_id).await else {
+        warn!("Upload cache denied for {}: session {} does not own lock", filename, form.session_id);
+        return Json(UploadCacheResponse {
+            success: false,
+            message: "You do not have edit access to this image".to_string(),
+            path: None,
+        });
+    };
+    let revision = display_settings::load_runtime_settings().rotation_revision;
+    if form.rotation_revision.unwrap_or(0) != revision {
+        return Json(UploadCacheResponse {
+            success: false,
+            message: "Display orientation changed. Reconnect and regenerate this photo.".into(),
+            path: None,
+        });
+    }
     let meta = metadata::get_all_metadata(&filename);
     if form.photo_rotation_revision.unwrap_or(0) != meta.photo_rotation_revision {
         return Json(UploadCacheResponse {
@@ -726,28 +717,11 @@ async fn upload_cache(
     let brightness = form.brightness;
     let contrast = form.contrast;
     let dither_algorithm = form.dither_algorithm.clone();
-    let session_id = form.session_id.as_ref();
 
     debug!(
-        "Upload cache: {} (filter: {:?}, fit: {:?}, sat: {:?}, bright: {:?}, contrast: {:?}, dither: {:?}, session: {:?})",
-        filename, filter, fit_mode, saturation, brightness, contrast, dither_algorithm, session_id
+        "Upload cache: {} (filter: {:?}, fit: {:?}, sat: {:?}, bright: {:?}, contrast: {:?}, dither: {:?}, session: {})",
+        filename, filter, fit_mode, saturation, brightness, contrast, dither_algorithm, form.session_id
     );
-
-    // Verify lock ownership if session_id is provided.
-    if let Some(sid) = session_id {
-        let has_lock = image_locks::verify_lock_ownership(locks_state, &filename, sid)
-            .await
-            .unwrap_or(false);
-
-        if !has_lock {
-            warn!("Upload cache denied for {}: session {} does not own lock", filename, sid);
-            return Json(UploadCacheResponse {
-                success: false,
-                message: "You do not have edit access to this image".to_string(),
-                path: None,
-            });
-        }
-    }
 
     // Save cache image to cache directory.
     let cache_path = config::cache_path(&filename);
@@ -803,18 +777,9 @@ async fn upload_cache(
 async fn upload_thumb(
     _origin: BrowserWrite,
     mut form: Form<ThumbUpload<'_>>,
-    orientation: &State<orientation::OrientationState>,
+    locks_state: &State<ImageLocksState>,
+    storage: &State<StorageLock>,
 ) -> Json<UploadThumbResponse> {
-    let _orientation = orientation.lock().await;
-    let revision = display_settings::load_runtime_settings().rotation_revision;
-    if form.rotation_revision.unwrap_or(0) != revision {
-        return Json(UploadThumbResponse {
-            success: false,
-            message: "Display orientation changed. Reconnect and regenerate this photo.".into(),
-            path: None,
-        });
-    }
-
     // Sanitize filename to prevent path traversal.
     let filename = match sanitize_filename(&form.filename) {
         Some(name) => name,
@@ -827,6 +792,22 @@ async fn upload_thumb(
             });
         }
     };
+    let Some(_storage) = storage::lock_for_editor(storage, locks_state, &filename, &form.session_id).await else {
+        warn!("Upload thumbnail denied for {}: session {} does not own lock", filename, form.session_id);
+        return Json(UploadThumbResponse {
+            success: false,
+            message: "You do not have edit access to this image".to_string(),
+            path: None,
+        });
+    };
+    let revision = display_settings::load_runtime_settings().rotation_revision;
+    if form.rotation_revision.unwrap_or(0) != revision {
+        return Json(UploadThumbResponse {
+            success: false,
+            message: "Display orientation changed. Reconnect and regenerate this photo.".into(),
+            path: None,
+        });
+    }
     let meta = metadata::get_all_metadata(&filename);
     if form.photo_rotation_revision.unwrap_or(0) != meta.photo_rotation_revision {
         return Json(UploadThumbResponse {
@@ -878,63 +859,6 @@ fn upload_form() -> Template {
     })
 }
 
-#[post("/delete", data = "<form>")]
-async fn submit_delete_image<'r>(_origin: BrowserWrite, mut form: Form<Contextual<'r, SubmitDeleteImage>>, orientation: &State<orientation::OrientationState>) -> Result<Redirect, (Status, String)> {
-    let _orientation = orientation.lock().await;
-    let submission = match form.value {
-        Some(ref mut s) => s,
-        None => {
-            warn!("Delete form validation failed");
-            return Err((Status::BadRequest, "Invalid form submission".to_string()));
-        }
-    };
-
-    // Extract filename for logging.
-    let filename = Path::new(&submission.submission.image_file_path)
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or("unknown");
-    let image_file = config::original_path(filename);
-
-    info!("Delete started: {}", filename);
-
-    // Delete original file first - this is the critical operation.
-    if let Err(e) = fs::remove_file(&image_file) {
-        error!("Delete failed for {}: {}", filename, e);
-        return Err((Status::InternalServerError, format!("Failed to delete image: {}", e)));
-    }
-
-    // Also delete cached version if it exists (non-fatal if this fails).
-    let cache_path = config::cache_path(filename);
-    if cache_path.exists() {
-        if let Err(e) = fs::remove_file(&cache_path) {
-            warn!("Failed to remove cached image for {}: {}", filename, e);
-        }
-    }
-
-    // Also delete gallery thumbnail if it exists (non-fatal if this fails).
-    let thumb_path = config::thumb_path(filename);
-    if thumb_path.exists() {
-        if let Err(e) = fs::remove_file(&thumb_path) {
-            warn!("Failed to remove thumbnail for {}: {}", filename, e);
-        }
-    }
-
-    // Also delete dithered version if it exists (non-fatal if this fails).
-    let dithered_path = config::dithered_path(filename);
-    if dithered_path.exists() {
-        if let Err(e) = fs::remove_file(&dithered_path) {
-            warn!("Failed to remove dithered image for {}: {}", filename, e);
-        }
-    }
-
-    // Clean up metadata.
-    metadata::delete_metadata(filename);
-
-    info!("Delete completed: {}", filename);
-    Ok(Redirect::to(uri!(upload_form)))
-}
-
 /// Queue a flash job (returns immediately).
 #[post("/flash", data = "<form>")]
 async fn submit_flash_image<'r>(
@@ -942,7 +866,7 @@ async fn submit_flash_image<'r>(
     mut form: Form<Contextual<'r, SubmitFlashImage>>,
     queue_state: &State<FlashQueueState>,
     locks_state: &State<ImageLocksState>,
-    orientation: &State<orientation::OrientationState>,
+    storage: &State<StorageLock>,
 ) -> Result<Json<FlashResponse>, (Status, String)> {
     let submission = match form.value {
         Some(ref mut s) => s,
@@ -969,7 +893,10 @@ async fn submit_flash_image<'r>(
     info!("Flash request received: {} (flash_twice: {}, session: {})", filename, flash_twice, session_id);
 
     // Serialize file validation/enqueue with photo deletion.
-    let _orientation = orientation.lock().await;
+    let Some(_storage) = storage::lock_for_editor(storage, locks_state, &filename, session_id).await else {
+        warn!("Flash denied for {}: session {} does not own lock", filename, session_id);
+        return Err((Status::Forbidden, "You do not have edit access to this image".to_string()));
+    };
     let display = get_display_config();
     if submission.submission.rotation_revision.unwrap_or(0) != display.rotation_revision
         || metadata::get_all_metadata(&filename).dither_rotation_revision != display.rotation_revision
@@ -986,16 +913,6 @@ async fn submit_flash_image<'r>(
         return Err((Status::Conflict, "Photo rotation changed. Regenerate this photo before displaying it.".into()));
     }
     let mut queue = queue_state.lock().await;
-
-    // Verify lock ownership.
-    let has_lock = image_locks::verify_lock_ownership(locks_state, &filename, session_id)
-        .await
-        .unwrap_or(false);
-
-    if !has_lock {
-        warn!("Flash denied for {}: session {} does not own lock", filename, session_id);
-        return Err((Status::Forbidden, "You do not have edit access to this image".to_string()));
-    }
 
     // Require pre-dithered version to exist (uploaded from preview dialog).
     if !dithered_path.exists() {
@@ -1062,9 +979,9 @@ async fn flash_job_status(job_id: u64, queue_state: &State<FlashQueueState>) -> 
 async fn submit_new_image<'r>(
     _origin: BrowserWrite,
     mut form: Form<Contextual<'r, SubmitNewImage<'r>>>,
-    orientation: &State<orientation::OrientationState>,
+    storage: &State<StorageLock>,
 ) -> Json<UploadResponse> {
-    let _orientation = orientation.lock().await;
+    let _storage = storage.lock().await;
     match form.value {
         Some(ref mut submission) => {
             let file = &mut submission.submission.file;
@@ -1141,9 +1058,9 @@ impl Fairing for CleanupFairing {
         }
     }
 
-    async fn on_liftoff(&self, _rocket: &Rocket<rocket::Orbit>) {
+    async fn on_liftoff(&self, rocket: &Rocket<rocket::Orbit>) {
         info!("Starting background cleanup worker (runs every 5 minutes)");
-        cleanup::spawn_cleanup_task();
+        cleanup::spawn_cleanup_task(rocket.state::<StorageLock>().expect("Storage lock").clone());
     }
 }
 
@@ -1168,10 +1085,10 @@ impl Fairing for FlashQueueFairing {
         let slideshow = rocket.state::<slideshow::SlideshowState>().expect("Slideshow state").clone();
         flash_queue::spawn_flash_worker(queue_state.clone(), slideshow.clone());
         rescue::spawn(queue_state.clone(),
-            rocket.state::<orientation::OrientationState>().expect("Orientation state").clone(),
+            rocket.state::<StorageLock>().expect("Storage lock").clone(),
             rocket.state::<ImageLocksState>().expect("Image locks").clone(), rocket.shutdown());
         slideshow::spawn(slideshow,
-            rocket.state::<orientation::OrientationState>().expect("Orientation state").clone(),
+            rocket.state::<StorageLock>().expect("Storage lock").clone(),
             queue_state, rocket.state::<ImageLocksState>().expect("Image locks").clone(), rocket.shutdown());
     }
 }
@@ -1208,7 +1125,7 @@ fn rocket() -> _ {
         .manage(device::Device::load(&config::settings_dir()).expect("Could not load frame identity"))
         .manage(browser_access::BrowserAccess::from_env())
         .attach(browser_access::Cors)
-        .manage(orientation::OrientationState::default())
+        .manage(StorageLock::default())
         .manage(Arc::new(Mutex::new(slideshow::Slideshow::load(
             config::settings_dir().join("slideshow.json"), flash_queue::current_time_millis()
         ).expect("Could not load slideshow settings"))) as slideshow::SlideshowState)
@@ -1229,7 +1146,6 @@ fn rocket() -> _ {
             flash_job_status,
             flash_status,
             lock_image,
-            submit_delete_image,
             submit_flash_image,
             submit_new_image,
             thumb_status,
