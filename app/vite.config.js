@@ -1,4 +1,4 @@
-import {copyFileSync} from 'node:fs';
+import {copyFileSync, readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {defineConfig} from 'vite';
 import {framePwa} from './tools/frame-pwa.js';
@@ -6,8 +6,9 @@ import {framePwa} from './tools/frame-pwa.js';
 // Vite's configuration contract requires a default export.
 export default defineConfig(({mode}) => {
   const android = mode === 'android';
+  const {version} = JSON.parse(readFileSync('package.json', 'utf8'));
   return {
-    define: {'import.meta.env.APP_ANDROID': JSON.stringify(android)},
+    define: {'import.meta.env.APP_ANDROID': JSON.stringify(android), 'import.meta.env.APP_VERSION': JSON.stringify(version)},
     plugins: android ? [{
       name: 'android-entry',
       transformIndexHtml(html) {

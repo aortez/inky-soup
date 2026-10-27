@@ -13,11 +13,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      # Builds dist/ and tests the installed app from it; the archive is packed from those same files.
+      - run: npm run test:pwa
+      - run: node tools/web-bundle.mjs --output "$RUNNER_TEMP/web"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: frame-web-release
+          path: ${{ runner.temp }}/web/
+          if-no-files-found: error
+          overwrite: true
+
+  android:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    permissions:
-      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.name }}
     defaults:
       run:
         working-directory: app
@@ -93,21 +120,39 @@ jobs:
           name: frame-android-release
           path: ${{ runner.temp }}/release/
           if-no-files-found: error
+          overwrite: true
+
+  publish:
+    # Only this job can write releases, and it runs no project code. Nothing is published
+    # unless both the web archive and the signed APK were built and tested.
+    if: github.event_name == 'push'
+    needs: [web, android]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: frame-*-release
+          path: ${{ runner.temp }}/release
+          merge-multiple: true
       - name: Publish the versioned release and refresh the stable download links
-        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.tag.outputs.name }}
+          TAG: ${{ needs.android.outputs.tag }}
           REPOSITORY: ${{ github.repository }}
         run: |
           cd "$RUNNER_TEMP/release"
           # A re-run after a partial failure replaces the assets instead of failing on the existing release.
           if gh release view "$TAG" --repo "$REPOSITORY" > /dev/null 2>&1; then
-            gh release upload "$TAG" --repo "$REPOSITORY" --clobber frame.apk frame.apk.sha256 frame-release.json
+            gh release upload "$TAG" --repo "$REPOSITORY" --clobber frame.apk frame.apk.sha256 frame-release.json \
+              frame-web.tar.gz frame-web.tar.gz.sha256
           else
             gh release create "$TAG" --repo "$REPOSITORY" --verify-tag --title "Frame app $TAG" --generate-notes \
-              frame.apk frame.apk.sha256 frame-release.json
+              frame.apk frame.apk.sha256 frame-release.json frame-web.tar.gz frame-web.tar.gz.sha256
           fi
+          # The website pins versioned archives, so the stable release keeps only the Android files.
           NOTES="Stable download links for the newest Frame app release, currently $TAG. frame.apk is the first-install link and the app reads frame-release.json to find updates. The versioned releases hold the notes and history."
           if ! gh release view frame-app --repo "$REPOSITORY" > /dev/null 2>&1; then
             gh release create frame-app --repo "$REPOSITORY" --target "$GITHUB_SHA" --latest=false --title "Frame app (current release)" --notes "$NOTES"

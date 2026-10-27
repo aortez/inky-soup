@@ -722,6 +722,11 @@ async function start() {
       save: async () => {if (state.draft) await saveDraft(state.draft);},
       failed: () => activity('Could not save your draft', 'Keep the app open and try again.', true),
     });
+  } else {
+    // The website's service worker delivers web updates, so this card only names the version.
+    el['app-updates'].hidden = true;
+    el['app-card'].hidden = false;
+    el['app-version'].textContent = `Sparkle Duck ${import.meta.env.APP_VERSION} (web)`;
   }
   const handoff = new URLSearchParams(location.hash.slice(1)).get('device');
   const remembered = savedFrame();
