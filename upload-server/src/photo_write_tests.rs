@@ -30,26 +30,8 @@ const WRITES: [Write; 7] = [
     Write::Delete,
 ];
 
-impl Write {
-    /// The flash form reports its own validation failures; Rocket rejects the
-    /// other requests without a session.
-    fn missing_session_status(self) -> Status {
-        match self {
-            Write::Flash => Status::BadRequest,
-            _ => Status::UnprocessableEntity,
-        }
-    }
-
-    /// Uploads report a refusal as `success: false` in a 200 response.
-    fn refused_status(self) -> Status {
-        match self {
-            Write::Cache | Write::Thumb | Write::Dithered => Status::Ok,
-            _ => Status::Forbidden,
-        }
-    }
-}
-
-/// Returns the response status and whether the write was accepted.
+/// Returns the response status and whether the write was accepted. A refused
+/// write must explain itself in the API's failure body.
 async fn send(
     client: &Client,
     write: Write,
@@ -117,9 +99,14 @@ async fn send(
     };
     let response = request.dispatch().await;
     let status = response.status();
-    let accepted =
-        status == Status::Ok && response.into_json::<Value>().await.unwrap()["success"] == true;
-    (status, accepted)
+    if status != Status::Ok {
+        api_error::expect_failure(response, status).await;
+        return (status, false);
+    }
+    (
+        status,
+        response.into_json::<Value>().await.unwrap()["success"] == true,
+    )
 }
 
 async fn hold_lock(locks: &ImageLocksState, session: &str, expires_at: Instant) {
@@ -157,7 +144,8 @@ pub(crate) async fn check_photo_write_guards() {
                     submit_flash_image,
                     photo_management::delete_image
                 ],
-            ),
+            )
+            .register("/", catchers![api_error::catcher]),
     )
     .await
     .unwrap();
@@ -215,7 +203,7 @@ pub(crate) async fn check_photo_write_guards() {
         let case = format!("{write:?} without a session");
         assert_eq!(
             send(&client, write, None, revision).await,
-            (write.missing_session_status(), false),
+            (Status::UnprocessableEntity, false),
             "{case}"
         );
         unchanged(&case);
@@ -233,7 +221,7 @@ pub(crate) async fn check_photo_write_guards() {
             let case = format!("{write:?} under {lock}");
             assert_eq!(
                 send(&client, write, Some("editor"), revision).await,
-                (write.refused_status(), false),
+                (Status::Forbidden, false),
                 "{case}"
             );
             unchanged(&case);

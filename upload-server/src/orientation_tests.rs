@@ -105,10 +105,14 @@ async fn orientation_api_preserves_jobs_and_recovers_after_restart() {
                 .body(body)
                 .dispatch()
                 .await;
-            assert_eq!(
-                response.into_json::<Value>().await.unwrap()["success"],
-                revision == 1
-            );
+            if revision == 1 {
+                assert_eq!(
+                    response.into_json::<Value>().await.unwrap()["success"],
+                    true
+                );
+            } else {
+                api_error::expect_failure(response, Status::Conflict).await;
+            }
         }
         if revision == 0 {
             assert!(!config::dithered_path("photo.png").exists());
@@ -151,14 +155,17 @@ async fn orientation_api_preserves_jobs_and_recovers_after_restart() {
     drop(changed);
     assert!(!config::dithered_path("photo.png").exists());
     assert_eq!(
-        client
-            .post("/flash")
-            .header(content_type)
-            .body(body)
-            .dispatch()
-            .await
-            .status(),
-        Status::Conflict
+        api_error::expect_failure(
+            client
+                .post("/flash")
+                .header(content_type)
+                .body(body)
+                .dispatch()
+                .await,
+            Status::Conflict
+        )
+        .await,
+        "Display orientation changed. Regenerate this photo before displaying it."
     );
     assert_eq!(
         display_settings::load_runtime_settings().rotation_degrees,
@@ -168,6 +175,17 @@ async fn orientation_api_preserves_jobs_and_recovers_after_restart() {
         display_settings::load_runtime_settings().rotation_revision,
         2
     );
+    // A client that missed the change cannot undo it.
+    api_error::expect_failure(
+        client
+            .post("/api/settings/display-rotation")
+            .header(ContentType::JSON)
+            .body(json!({"rotation_degrees":90,"expected_revision":1}).to_string())
+            .dispatch()
+            .await,
+        Status::Conflict,
+    )
+    .await;
     check_photo_rotation_and_cards(&client, &queue).await;
     prepare_rotation_retry(&client).await;
     // Restart with the real startup path: the old in-memory queue is gone,
@@ -186,6 +204,17 @@ async fn orientation_api_preserves_jobs_and_recovers_after_restart() {
         .unwrap();
     assert_eq!(status["queue_length"], 0);
     assert!(status["current_job"].is_null());
+    assert_eq!(
+        api_error::expect_failure(
+            restarted
+                .get(format!("/api/flash/status/{}", job.job_id))
+                .dispatch()
+                .await,
+            Status::NotFound
+        )
+        .await,
+        format!("The frame no longer has display job {}.", job.job_id)
+    );
     assert!(!Path::new(&job.dithered_path).exists());
     assert_eq!(
         fs::read(config::original_path("photo.png")).unwrap(),
@@ -203,8 +232,9 @@ async fn orientation_api_preserves_jobs_and_recovers_after_restart() {
     crate::slideshow_tests::check_slideshow_api_and_worker(&restarted).await;
     // The legacy UI deletes through the guarded /api/delete-image route instead.
     assert_eq!(
-        restarted.post("/delete").dispatch().await.status(),
-        Status::NotFound
+        api_error::expect_failure(restarted.post("/delete").dispatch().await, Status::NotFound)
+            .await,
+        "POST /delete was not found on this frame."
     );
     drop(restarted);
     crate::rescue_tests::check_rescue().await;
@@ -267,10 +297,14 @@ async fn check_photo_rotation_and_cards(client: &Client, queue: &FlashQueueState
                 .body(body)
                 .dispatch()
                 .await;
-            assert_eq!(
-                response.into_json::<Value>().await.unwrap()["success"],
-                revision == 1
-            );
+            if revision == 1 {
+                assert_eq!(
+                    response.into_json::<Value>().await.unwrap()["success"],
+                    true
+                );
+            } else {
+                api_error::expect_failure(response, Status::Conflict).await;
+            }
         }
         let gallery = client
             .get("/api/images")
@@ -357,16 +391,17 @@ async fn check_photo_rotation_and_cards(client: &Client, queue: &FlashQueueState
         if valid {
             body.splice(start..start + b"prepared pixels".len(), header.clone());
         }
-        assert_eq!(
-            client
-                .post("/api/flash-test-card")
-                .header(kind)
-                .body(body)
-                .dispatch()
-                .await
-                .status(),
-            status
-        );
+        let response = client
+            .post("/api/flash-test-card")
+            .header(kind)
+            .body(body)
+            .dispatch()
+            .await;
+        if status == Status::Ok {
+            assert_eq!(response.status(), Status::Ok);
+        } else {
+            api_error::expect_failure(response, status).await;
+        }
         assert_eq!(snapshots(), count + usize::from(status == Status::Ok));
     }
     assert_eq!(get_gallery_images().len(), before);

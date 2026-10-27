@@ -60,6 +60,7 @@ reboot does not remove panel power. Test a patched driver without hardware using
 ## Rust modules
 
 - `main.rs`: routes, forms, display configuration, application state, startup.
+- `api_error.rs`: the JSON failure body, also for requests refused before a route runs.
 - `config.rs`: image directories and path construction.
 - `metadata.rs`: per-image settings, validation, migration, atomic JSON writes.
 - `image_locks.rs`: editing sessions and lock expiry.
@@ -72,8 +73,8 @@ reboot does not remove panel power. Test a patched driver without hardware using
 Server unit tests live in `flash_queue.rs` and `browser_access.rs`. The API tests run as one
 sequence from `orientation_tests.rs`; `photo_write_tests.rs` sends every photo write route and
 `/flash` a request with no session, another session's lock, an expired lock and a queued
-photo. The old `src/tests.rs` file is unused Rocket example code, not an active integration
-suite.
+photo, and checks the failure body of each refusal. The old `src/tests.rs` file is unused
+Rocket example code, not an active integration suite.
 
 ## JavaScript architecture
 
@@ -133,6 +134,13 @@ The legacy shared metadata file is migrated to per-image files on startup.
 | POST | `/flash` | Enqueue a display update with edit ownership |
 | GET | `/api/flash/status` | Current job and queue |
 | GET | `/api/flash/status/<job_id>` | Individual job status |
+
+Failures use an HTTP error status and the JSON body `{"success": false, "message": "…"}`
+from `api_error.rs`, and clients show the message. Its catcher answers in the same shape
+when Rocket refuses a request before a route runs: 400 for an unreadable body, 403 for a
+foreign origin, 404 for an unknown path, 413 for an oversized upload and 422 for a missing
+or invalid field. `/api/lock-image` is the exception: clients branch on its answer to a
+refused lock, `200` with `locked: false` and a `reason`.
 
 Photo writes take the storage lock in `storage.rs` before the flash queue and the
 edit locks; so do orientation changes, rescue, the slideshow scheduler and the

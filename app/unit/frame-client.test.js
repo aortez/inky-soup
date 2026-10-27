@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {normalizeAddress,validateConfig,savePhoto} from '../frame/services/frame-client.js';
+import {normalizeAddress,validateConfig,savePhoto,sendPhoto} from '../frame/services/frame-client.js';
 import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 
@@ -93,3 +93,23 @@ for (const existing of [false, true]) {
     assert.equal(requests.at(-1).path, '/api/unlock-image');
   });
 }
+
+test('a refused display refresh shows the frame’s explanation and releases the photo', async t => {
+  const message = 'Display orientation changed. Regenerate this photo before displaying it.';
+  const paths = [];
+  t.mock.method(globalThis, 'fetch', async url => {
+    const path = new URL(url).pathname;
+    paths.push(path);
+    if (path === '/api/lock-image') return Response.json({locked:true});
+    if (path === '/flash') return Response.json({success:false,message}, {status:409});
+    return Response.json({success:true});
+  });
+  const blob = new Blob(['prepared pixels'], {type:'image/png'});
+  const base = 'http://frame.local:8000';
+  const draft = {blob,sourceFrame:base,sourceFilename:'photo.png',photo_rotation_degrees:0,photo_rotation_revision:0};
+  await assert.rejects(sendPhoto({base,draft,session:'test',
+    prepared:{cache:blob,thumb:blob,dithered:blob,rotation_revision:0,photo_rotation_degrees:0}}),
+  error => error.message === message && error.status === 409);
+  assert.deepEqual(paths, ['/api/lock-image','/api/upload-cache','/api/upload-thumb','/api/upload-dithered',
+    '/flash','/api/unlock-image']);
+});

@@ -1,6 +1,7 @@
 //! Favorites and a persistent, hours-based slideshow over client-prepared images.
 //! Lock order: storage -> queue -> image locks -> slideshow state.
 use crate::{
+    api_error::{failure, Failure},
     browser_access::BrowserWrite,
     config, display_settings,
     flash_queue::{current_time_millis, FlashJob, FlashQueueState},
@@ -227,13 +228,7 @@ pub struct Favorite {
     session_id: String,
 }
 
-type ApiResult = Result<Json<Value>, (Status, Json<Value>)>;
-fn failure(status: Status, message: impl ToString) -> (Status, Json<Value>) {
-    (
-        status,
-        Json(json!({"success": false, "message": message.to_string()})),
-    )
-}
+type ApiResult = Result<Json<Value>, Failure>;
 
 #[post("/api/settings/favorite", format = "json", data = "<request>")]
 pub async fn set_favorite(

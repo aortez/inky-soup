@@ -1,9 +1,13 @@
 //! Queue a client-rendered orientation card without creating a gallery photo.
 use crate::{
-    browser_access::BrowserWrite, flash_queue::FlashQueueState, orientation, storage::StorageLock,
+    api_error::{failure, Failure},
+    browser_access::BrowserWrite,
+    flash_queue::FlashQueueState,
+    orientation,
+    storage::StorageLock,
     FlashResponse,
 };
-use rocket::serde::json::{json, Json, Value};
+use rocket::serde::json::Json;
 use rocket::{form::Form, fs::TempFile, http::Status, State};
 use std::{fs, io::Read};
 
@@ -19,9 +23,7 @@ pub async fn flash_test_card(
     mut form: Form<TestCard<'_>>,
     storage: &State<StorageLock>,
     queue: &State<FlashQueueState>,
-) -> Result<Json<FlashResponse>, (Status, Json<Value>)> {
-    let failure =
-        |status, message: &str| (status, Json(json!({"success":false,"message":message})));
+) -> Result<Json<FlashResponse>, Failure> {
     let _guard = storage.lock().await;
     let config = crate::get_display_config();
     if form.rotation_revision != config.rotation_revision {

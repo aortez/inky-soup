@@ -1,6 +1,7 @@
 //! Offline recovery uses prepared cards and the normal flash queue. All mutable
 //! state lives under the queue lock; callers acquire storage -> queue -> edits.
 use crate::{
+    api_error::{failure, Failure},
     browser_access::BrowserWrite,
     config,
     flash_queue::{FlashJob, FlashQueue, FlashQueueState},
@@ -545,22 +546,21 @@ pub async fn control(
     queue: &State<FlashQueueState>,
     storage: &State<StorageLock>,
     locks: &State<ImageLocksState>,
-) -> Result<Json<Value>, (Status, Json<Value>)> {
-    let fail = |status, message: &str| (status, Json(json!({"success":false,"message":message})));
+) -> Result<Json<Value>, Failure> {
     if !matches!(action, "show" | "restore") {
-        return Err(fail(Status::BadRequest, "Choose show or restore"));
+        return Err(failure(Status::BadRequest, "Choose show or restore"));
     }
     let _storage = storage.lock().await;
     let mut queue = queue.lock().await;
     let locks = locks.lock().await;
     if !queue.is_idle() || locks.values().any(|l| l.expires_at > Instant::now()) {
-        return Err(fail(
+        return Err(failure(
             Status::Conflict,
             "Wait for the display and photo editors to finish",
         ));
     }
     let Some(mut state) = queue.rescue.take() else {
-        return Err(fail(Status::ServiceUnavailable, "Rescue is unavailable"));
+        return Err(failure(Status::ServiceUnavailable, "Rescue is unavailable"));
     };
     let result = enqueue(&mut queue, &mut state, action == "restore", false);
     if result.is_ok() {
@@ -569,7 +569,7 @@ pub async fn control(
     queue.rescue = Some(state);
     result
         .map(|id| Json(json!({"success":true,"job_id":id})))
-        .map_err(|e| fail(Status::Conflict, &e))
+        .map_err(|e| failure(Status::Conflict, e))
 }
 
 #[cfg(test)]

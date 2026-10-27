@@ -1,6 +1,9 @@
 //! Display orientation changes and the private snapshots that flash jobs display.
 use crate::{
-    browser_access::BrowserWrite, config, derived_assets, display_settings, storage::StorageLock,
+    api_error::{failure, Failure},
+    browser_access::BrowserWrite,
+    config, derived_assets, display_settings,
+    storage::StorageLock,
 };
 use rocket::http::Status;
 use rocket::serde::json::{json, Json, Value};
@@ -17,11 +20,7 @@ pub struct RotationRequest {
     expected_revision: u64,
 }
 
-type RotationResult = Result<Json<Value>, (Status, Json<Value>)>;
-
-fn failure(status: Status, message: &str) -> (Status, Json<Value>) {
-    (status, Json(json!({"success":false,"message":message})))
-}
+type RotationResult = Result<Json<Value>, Failure>;
 
 fn change_rotation(path: &Path, dirs: [&Path; 3], request: &RotationRequest) -> RotationResult {
     let rotation = display_settings::parse_rotation_degrees(request.rotation_degrees)
@@ -47,7 +46,7 @@ fn change_rotation(path: &Path, dirs: [&Path; 3], request: &RotationRequest) -> 
         // Persist the revision first. Even failed file removal cannot make an old
         // render valid again, including after 0 -> 180 -> 0 or a server restart.
         display_settings::save_runtime_settings_to_path(path, &settings)
-            .map_err(|error| failure(Status::InternalServerError, &error))?;
+            .map_err(|error| failure(Status::InternalServerError, error))?;
         removed = derived_assets::invalidate_all_derived_assets(dirs[0], dirs[1], dirs[2]);
     }
     Ok(Json(
