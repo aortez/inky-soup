@@ -1,10 +1,11 @@
 # Frame app
 
-The shared modern Frame UI and Android shell live here. The editor is imported
+The shared modern Frame UI and Android shell live here. The editor was imported
 from the published `aortez.github.io` master revision recorded in `source.json`,
-including its merged photo-rotation and interrupted-save recovery changes. The
-Android platform adaptations remain in this shared source. Source and worker license
-notices are retained in `LICENSE` and `public/frame/vendor/`.
+including its merged photo-rotation and interrupted-save recovery changes; the
+website no longer keeps a copy. The Android platform adaptations remain in this
+shared source. Source and worker license notices are retained in `LICENSE` and
+`public/frame/vendor/`.
 
 ## Android prototype (#20 / #21 / #22)
 
@@ -118,8 +119,8 @@ writes a JSON record and screenshot and does not contact or refresh a Pi.
 
 ## Publishing the same frontend on allan.pizza
 
-This repository owns the frontend source, and allan.pizza should deploy a tested
-build of it rather than copies of `frame/` and its workers (#41). Every
+This repository owns the frontend source, and allan.pizza deploys a tested build
+of it instead of keeping copies of `frame/` and its workers (#41). Every
 `app-v<version>` release attaches that build as `frame-web.tar.gz`, with
 `frame-web.tar.gz.sha256`, beside the APK. The web and Android apps therefore
 share one version, which Settings shows under **This app** on both, and a web-only
@@ -134,9 +135,16 @@ app CI workflow packs every build the same way, so a missing page fails before a
 release. Its `frame-web` and `frame-android-debug` artifacts are for review only:
 they expire, and downloading them needs a token.
 
-The website pins a release tag and its archive's SHA-256, copied from the
-release's `frame-web.tar.gz.sha256`. Its CI builds the site's own pages, then
-overlays the archive onto the Pages artifact:
+The website's [`frame-app.json`](https://github.com/aortez/aortez.github.io/blob/master/frame-app.json)
+pins a release tag and its archive's SHA-256, copied from the release's
+`frame-web.tar.gz.sha256`. Its `npm run build` builds the site's own pages, then
+[`tools/frame-app.mjs`](https://github.com/aortez/aortez.github.io/blob/master/tools/frame-app.mjs)
+downloads the pinned archive, refuses a checksum mismatch, and extracts it into
+`dist/`. It fails before extracting anything if the site's own build already has
+one of the archive's files, and leaves the rest of the site, including its CNAME
+and Go demo assets, in place. Overlaying the whole archive keeps HTML, workers,
+and service-worker cache hashes in agreement. Another consumer can do the same in
+shell, where `--keep-old-files` fails instead of replacing an existing file:
 
 ```sh
 curl -fsSL -o frame-web.tar.gz "https://github.com/aortez/inky-soup/releases/download/$TAG/frame-web.tar.gz"
@@ -144,17 +152,14 @@ echo "$SHA256  frame-web.tar.gz" | sha256sum --check
 tar --extract --gzip --keep-old-files --file frame-web.tar.gz --directory dist
 ```
 
-`--keep-old-files` fails if the website's own build still produces any of these
-files, and overlaying the whole archive keeps HTML, workers, and service-worker
-cache hashes in agreement. Preserve unrelated website files, including its CNAME
-and Go demo assets. To publish a release on allan.pizza, update the pin in a
-website pull request; to roll back, revert it. Installed web apps then find a new
-service worker and offer **Reload**, as for any update.
+To publish a release on allan.pizza, update `frame-app.json` in a website pull
+request; to roll back, revert it. Installed web apps then find a new service worker
+and offer **Reload**, as for any update.
 
-Until the website consumes these archives, it serves its own copied sources. Photo
-rotation and its retry fixes are synchronized through website commit
-`a44aedb2317d26de24e71be8623ded4ea0ff0e1f`; `source.json` records that source
-revision and the original import.
+`source.json` records the original import and website commit
+`a44aedb2317d26de24e71be8623ded4ea0ff0e1f`, the last revision synchronized before
+the website removed its copy in
+[aortez.github.io#21](https://github.com/aortez/aortez.github.io/pull/21).
 
 ## Direct Pi transport
 
