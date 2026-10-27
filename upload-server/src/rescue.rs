@@ -1,12 +1,13 @@
 //! Offline recovery uses prepared cards and the normal flash queue. All mutable
-//! state lives under the queue lock; callers acquire orientation -> queue -> edits.
+//! state lives under the queue lock; callers acquire storage -> queue -> edits.
 use crate::{
     browser_access::BrowserWrite,
     config,
     flash_queue::{FlashJob, FlashQueue, FlashQueueState},
     image_locks::ImageLocksState,
-    orientation::{self, OrientationState},
+    orientation,
     slideshow::FlashSource,
+    storage::StorageLock,
 };
 use rocket::{
     http::Status,
@@ -494,7 +495,7 @@ async fn probe() -> Result<bool, String> {
 
 pub fn spawn(
     queue: FlashQueueState,
-    orientation: OrientationState,
+    storage: StorageLock,
     locks: ImageLocksState,
     mut shutdown: rocket::Shutdown,
 ) {
@@ -508,7 +509,7 @@ pub fn spawn(
                 .is_some_and(|r| r.enabled)
             {
                 let sample = probe().await;
-                let _orientation = orientation.lock().await;
+                let _storage = storage.lock().await;
                 let mut queue = queue.lock().await;
                 let locks = locks.lock().await;
                 let now = Instant::now();
@@ -542,14 +543,14 @@ pub async fn control(
     _origin: BrowserWrite,
     action: &str,
     queue: &State<FlashQueueState>,
-    orientation: &State<OrientationState>,
+    storage: &State<StorageLock>,
     locks: &State<ImageLocksState>,
 ) -> Result<Json<Value>, (Status, Json<Value>)> {
     let fail = |status, message: &str| (status, Json(json!({"success":false,"message":message})));
     if !matches!(action, "show" | "restore") {
         return Err(fail(Status::BadRequest, "Choose show or restore"));
     }
-    let _orientation = orientation.lock().await;
+    let _storage = storage.lock().await;
     let mut queue = queue.lock().await;
     let locks = locks.lock().await;
     if !queue.is_idle() || locks.values().any(|l| l.expires_at > Instant::now()) {

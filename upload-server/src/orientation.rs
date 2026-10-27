@@ -1,5 +1,7 @@
-//! Serialize orientation changes with derived uploads and flash snapshots.
-use crate::{browser_access::BrowserWrite, config, derived_assets, display_settings};
+//! Display orientation changes and the private snapshots that flash jobs display.
+use crate::{
+    browser_access::BrowserWrite, config, derived_assets, display_settings, storage::StorageLock,
+};
 use rocket::http::Status;
 use rocket::serde::json::{json, Json, Value};
 use rocket::State;
@@ -8,9 +10,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::Mutex;
-
-pub type OrientationState = std::sync::Arc<Mutex<()>>;
 
 #[derive(Deserialize)]
 pub struct RotationRequest {
@@ -61,9 +60,9 @@ fn change_rotation(path: &Path, dirs: [&Path; 3], request: &RotationRequest) -> 
 pub async fn update_display_rotation(
     _origin: BrowserWrite,
     request: Json<RotationRequest>,
-    orientation: &State<OrientationState>,
+    storage: &State<StorageLock>,
 ) -> RotationResult {
-    let _guard = orientation.lock().await;
+    let _guard = storage.lock().await;
     let mut result = change_rotation(
         &config::display_runtime_settings_path(),
         [

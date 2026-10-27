@@ -962,11 +962,6 @@
           <button class="delete-button" onclick="showDeleteConfirmation()">Delete</button>
         </div>
 
-        <!-- Hidden form field for delete. -->
-        <form id="deleteForm" action="/delete" method="post" style="display: none;">
-          <input type="hidden" name="submission.image_file_path" id="deleteImagePath" value="" />
-        </form>
-
         <!-- Pipeline Flow -->
         <div class="pipeline">
           <!-- Stage 1: Filtered/Resized Image -->

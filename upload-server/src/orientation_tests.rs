@@ -2,6 +2,7 @@ use super::*;
 use rocket::http::ContentType;
 use rocket::local::asynchronous::Client;
 use serde_json::{json, Value};
+use std::path::Path;
 
 pub(crate) fn multipart(fields: &[(&str, String)], file: bool) -> (ContentType, String) {
     let mut body = String::new();
@@ -45,7 +46,7 @@ async fn orientation_api_preserves_jobs_and_recovers_after_restart() {
     let client = Client::tracked(
         rocket::build()
             .manage(browser_access::BrowserAccess::from_env())
-            .manage(orientation::OrientationState::default())
+            .manage(StorageLock::default())
             .manage(Arc::new(Mutex::new(
                 slideshow::Slideshow::load(config::settings_dir().join("slideshow.json"), 100)
                     .unwrap(),
@@ -200,8 +201,14 @@ async fn orientation_api_preserves_jobs_and_recovers_after_restart() {
     );
     check_rotation_retry_after_restart(&restarted).await;
     crate::slideshow_tests::check_slideshow_api_and_worker(&restarted).await;
+    // The legacy UI deletes through the guarded /api/delete-image route instead.
+    assert_eq!(
+        restarted.post("/delete").dispatch().await.status(),
+        Status::NotFound
+    );
     drop(restarted);
     crate::rescue_tests::check_rescue().await;
+    crate::photo_write_tests::check_photo_write_guards().await;
     fs::remove_dir_all(root).unwrap();
 }
 

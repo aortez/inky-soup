@@ -688,7 +688,12 @@ export async function generateThumbnails(dataUrl, filename, options = {}) {
     }
 
     if (lockError) throw lockError;
-    const thumbData = await uploadThumb(filename, thumbBlob, settings.photoRevision || 0);
+    const thumbData = await uploadThumb(
+      filename,
+      thumbBlob,
+      sessionId,
+      settings.photoRevision || 0,
+    );
     if (!thumbData.success) {
       throw new Error(thumbData.message || 'Thumbnail upload failed');
     }

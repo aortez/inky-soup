@@ -63,13 +63,17 @@ reboot does not remove panel power. Test a patched driver without hardware using
 - `config.rs`: image directories and path construction.
 - `metadata.rs`: per-image settings, validation, migration, atomic JSON writes.
 - `image_locks.rs`: editing sessions and lock expiry.
+- `storage.rs`: the storage lock and the edit-lock check that photo writes take.
 - `flash_queue.rs`: queue, job status/history, background display worker.
 - `slideshow.rs`: persisted favorites scheduling, status, and completion tracking.
 - `cache_worker.rs`: cache path helper.
-- `cleanup.rs`: periodic cleanup of orphaned derived files.
+- `cleanup.rs`: periodic cleanup of orphaned derived files, under the storage lock.
 
-Server unit tests live in `flash_queue.rs` and `browser_access.rs`. The old `src/tests.rs` file is
-unused Rocket example code, not an active integration suite.
+Server unit tests live in `flash_queue.rs` and `browser_access.rs`. The API tests run as one
+sequence from `orientation_tests.rs`; `photo_write_tests.rs` sends every photo write route and
+`/flash` a request with no session, another session's lock, an expired lock and a queued
+photo. The old `src/tests.rs` file is unused Rocket example code, not an active integration
+suite.
 
 ## JavaScript architecture
 
@@ -119,17 +123,25 @@ The legacy shared metadata file is migrated to per-image files on startup.
 | GET | `/api/display-config` | Display and thumbnail dimensions |
 | POST | `/api/settings/display-rotation` | Persist mount orientation with an expected revision |
 | POST | `/upload` | Store an original image |
-| POST | `/delete` | Legacy form deletion |
 | POST | `/api/delete-image` | Delete a photo with edit ownership and queue protection |
-| POST | `/api/upload-cache` | Store resized output and settings |
-| POST | `/api/upload-thumb` | Store thumbnail |
-| POST | `/api/upload-dithered` | Store display-ready image and settings |
+| POST | `/api/upload-cache` | Store resized output and settings with edit ownership |
+| POST | `/api/upload-thumb` | Store thumbnail with edit ownership |
+| POST | `/api/upload-dithered` | Store display-ready image and settings with edit ownership |
 | GET | `/api/thumb-status/<filename>` | Thumbnail readiness |
 | POST | `/api/lock-image` | Acquire an editing lock |
 | POST | `/api/unlock-image` | Release an editing lock |
-| POST | `/flash` | Enqueue a display update |
+| POST | `/flash` | Enqueue a display update with edit ownership |
 | GET | `/api/flash/status` | Current job and queue |
 | GET | `/api/flash/status/<job_id>` | Individual job status |
+
+Photo writes take the storage lock in `storage.rs` before the flash queue and the
+edit locks; so do orientation changes, rescue, the slideshow scheduler and the
+cleanup worker. Derived uploads, photo rotation, favorites, flashing and deletion
+require the caller's unexpired edit lock, and deletion also refuses a queued or
+refreshing photo. A queued photo can still be saved, because its job displays a
+snapshot. `/upload` has no session field: released Frame apps send a new original
+without the session they hold, so checking it needs a client release first. The
+locks coordinate cooperating editors; the API is unauthenticated.
 
 Mount orientation is 0/90/180/270 degrees clockwise, viewed from the front.
 `/api/display-config` returns logical editing dimensions in `width`/`height`,
@@ -146,7 +158,7 @@ Originals and their settings survive. The app rebuilds derived images client-sid
 Derived upload forms carry `rotation_revision`, flash forms carry
 `submission.rotation_revision`, and metadata records each asset's revision.
 Omitting it means revision 0, compatible only before the first orientation change.
-Settings changes, derived uploads, and flash snapshots share an orientation lock.
+Settings changes, derived uploads, and flash snapshots share the storage lock.
 Flash jobs copy their pixels into `flash-jobs/` and capture the mount angle at
 submission. The driver receives the compensating rotation via `--rotation`;
 completed/failed jobs remove their snapshots. Queues do not survive a restart;

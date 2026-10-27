@@ -3,8 +3,9 @@
  * Handles delete confirmation modal.
  */
 
-import { getCurrentFilename } from '../core/state.js';
+import { getCurrentFilename, getCurrentSessionId } from '../core/state.js';
 import { elements } from '../core/dom.js';
+import { deleteImage } from '../services/api-client.js';
 
 /**
  * Show delete confirmation modal.
@@ -22,10 +23,17 @@ export function closeDeleteConfirmation() {
 }
 
 /**
- * Confirm deletion and submit form.
+ * Delete the open photo with this page's edit lock, then return to the gallery.
  */
-export function confirmDelete() {
-  elements.deleteForm.submit();
+export async function confirmDelete() {
+  try {
+    await deleteImage(getCurrentFilename(), getCurrentSessionId());
+  } catch (err) {
+    closeDeleteConfirmation();
+    alert(`Cannot delete: ${err.message}`);
+    return;
+  }
+  window.location.href = '/';
 }
 
 /**

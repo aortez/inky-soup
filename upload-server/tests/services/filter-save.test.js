@@ -86,6 +86,9 @@ describe('bundled Save completes the slideshow image pipeline', () => {
     expect(requests.map(request => request.path)).toEqual([
       '/api/lock-image', '/api/upload-cache', '/api/upload-thumb', '/api/upload-dithered',
     ]);
+    // The server refuses any of the three uploads without the edit session.
+    expect(requests.slice(1).map(request => request.body.get('session_id')))
+      .toEqual(['editor', 'editor', 'editor']);
     const finalBody = requests.at(-1).body;
     expect(finalBody.get('brightness')).toBe('15');
     expect(finalBody.get('filter')).toBe('lanczos');

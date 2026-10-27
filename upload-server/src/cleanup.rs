@@ -8,23 +8,25 @@ use tokio::time;
 
 use crate::config;
 use crate::metadata;
+use crate::storage::{StorageGuard, StorageLock};
 
 const CLEANUP_INTERVAL_SECS: u64 = 300; // 5 minutes.
 
 /// Spawns the background cleanup task.
-pub fn spawn_cleanup_task() {
-    tokio::spawn(async {
+pub fn spawn_cleanup_task(storage: StorageLock) {
+    tokio::spawn(async move {
         let mut interval = time::interval(Duration::from_secs(CLEANUP_INTERVAL_SECS));
 
         loop {
             interval.tick().await;
-            run_cleanup();
+            run_cleanup(&storage.lock().await);
         }
     });
 }
 
-/// Runs a single cleanup pass.
-fn run_cleanup() {
+/// Runs a single cleanup pass. Holding the storage lock keeps it from
+/// removing files or metadata that a writer is creating.
+fn run_cleanup(_storage: &StorageGuard<'_>) {
     debug!("Running cleanup task...");
 
     // Build set of valid original image filenames.

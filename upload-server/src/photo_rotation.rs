@@ -1,7 +1,10 @@
 //! Non-destructive source rotation, independent of frame mounting orientation.
 use crate::{
-    browser_access::BrowserWrite, config, image_locks::ImageLocksState, metadata,
-    orientation::OrientationState,
+    browser_access::BrowserWrite,
+    config,
+    image_locks::ImageLocksState,
+    metadata,
+    storage::{self, StorageLock},
 };
 use rocket::{
     http::Status,
@@ -9,7 +12,7 @@ use rocket::{
     State,
 };
 use serde::Deserialize;
-use std::{fs, time::Instant};
+use std::fs;
 
 #[derive(Deserialize)]
 pub struct PhotoRotation {
@@ -29,7 +32,7 @@ fn failure(status: Status, message: &str) -> (Status, Json<Value>) {
 pub async fn update_photo_rotation(
     _origin: BrowserWrite,
     request: Json<PhotoRotation>,
-    orientation: &State<OrientationState>,
+    storage: &State<StorageLock>,
     locks: &State<ImageLocksState>,
 ) -> RotationResult {
     let filename = &request.filename;
@@ -46,16 +49,14 @@ pub async fn update_photo_rotation(
     }) {
         return Err(failure(Status::BadRequest, "Invalid rotation operation ID"));
     }
-    let _orientation = orientation.lock().await;
-    let locks = locks.lock().await;
-    if !locks.get(filename).is_some_and(|lock| {
-        lock.session_id == request.session_id && lock.expires_at > Instant::now()
-    }) {
+    let Some(_storage) =
+        storage::lock_for_editor(storage, locks, filename, &request.session_id).await
+    else {
         return Err(failure(
             Status::Forbidden,
             "Acquire edit access before rotating this photo",
         ));
-    }
+    };
     if !config::original_path(filename).is_file() {
         return Err(failure(Status::NotFound, "Photo not found"));
     }

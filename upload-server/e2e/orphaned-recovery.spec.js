@@ -43,12 +43,14 @@ test.describe('Orphaned Image Recovery', () => {
       const isLoaded = await thumbnail.evaluate((img) => img.complete && img.naturalWidth > 0);
       expect(isLoaded).toBe(true);
     } finally {
-      // Cleanup via delete API.
-      await request.post('/delete', {
-        form: {
-          'submission.image_file_path': `images/${filename}`,
-        },
-      });
+      // Clean up through the guarded route once recovery has released its edit lock.
+      const owner = { filename, session_id: 'orphan-cleanup' };
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const lock = await request.post('/api/lock-image', { data: owner });
+        if ((await lock.json()).locked) break;
+        await new Promise((resolve) => { setTimeout(resolve, 500); });
+      }
+      await request.post('/api/delete-image', { data: owner });
     }
   });
 });

@@ -1,12 +1,12 @@
 //! Favorites and a persistent, hours-based slideshow over client-prepared images.
-//! Lock order: orientation -> queue -> image locks -> slideshow state.
+//! Lock order: storage -> queue -> image locks -> slideshow state.
 use crate::{
     browser_access::BrowserWrite,
     config, display_settings,
     flash_queue::{current_time_millis, FlashJob, FlashQueueState},
     image_locks::ImageLocksState,
-    metadata,
-    orientation::{self, OrientationState},
+    metadata, orientation,
+    storage::{self, StorageLock},
 };
 use rocket::{
     http::Status,
@@ -239,23 +239,21 @@ fn failure(status: Status, message: impl ToString) -> (Status, Json<Value>) {
 pub async fn set_favorite(
     _origin: BrowserWrite,
     request: Json<Favorite>,
-    orientation: &State<OrientationState>,
+    storage: &State<StorageLock>,
     locks: &State<ImageLocksState>,
 ) -> ApiResult {
     let filename = &request.filename;
     if crate::sanitize_filename(filename).as_ref() != Some(filename) || filename.contains('\0') {
         return Err(failure(Status::BadRequest, "Invalid filename"));
     }
-    let _orientation = orientation.lock().await;
-    let locks = locks.lock().await;
-    if !locks.get(filename).is_some_and(|lock| {
-        lock.session_id == request.session_id && lock.expires_at > Instant::now()
-    }) {
+    let Some(_storage) =
+        storage::lock_for_editor(storage, locks, filename, &request.session_id).await
+    else {
         return Err(failure(
             Status::Forbidden,
             "Acquire edit access before changing favorites",
         ));
-    }
+    };
     if !config::original_path(filename).is_file() {
         return Err(failure(Status::NotFound, "Photo not found"));
     }
@@ -297,34 +295,24 @@ pub async fn configure(
 #[get("/api/slideshow")]
 pub async fn status(
     state: &State<SlideshowState>,
-    orientation: &State<OrientationState>,
+    storage: &State<StorageLock>,
     queue: &State<FlashQueueState>,
     locks: &State<ImageLocksState>,
 ) -> Json<Value> {
-    Json(
-        inspect_or_tick(
-            state,
-            orientation,
-            queue,
-            locks,
-            current_time_millis(),
-            false,
-        )
-        .await,
-    )
+    Json(inspect_or_tick(state, storage, queue, locks, current_time_millis(), false).await)
 }
 
 /// Hold all guards through snapshot creation/enqueue so no editor, deletion,
 /// orientation change or manual job can slip between the check and the enqueue.
 pub(crate) async fn inspect_or_tick(
     state: &SlideshowState,
-    orientation: &OrientationState,
+    storage: &StorageLock,
     queue: &FlashQueueState,
     locks: &ImageLocksState,
     now: u64,
     enqueue: bool,
 ) -> Value {
-    let _orientation = orientation.lock().await;
+    let _storage = storage.lock().await;
     let mut queue = queue.lock().await;
     let locks = locks.lock().await;
     let mut state = state.lock().await;
@@ -376,7 +364,7 @@ pub(crate) async fn inspect_or_tick(
 
 pub fn spawn(
     state: SlideshowState,
-    orientation: OrientationState,
+    storage: StorageLock,
     queue: FlashQueueState,
     locks: ImageLocksState,
     mut shutdown: rocket::Shutdown,
@@ -386,7 +374,7 @@ pub fn spawn(
             tokio::select! {
                 _ = &mut shutdown => break,
                 _ = tokio::time::sleep(Duration::from_secs(1)) => {
-                    inspect_or_tick(&state, &orientation, &queue, &locks, current_time_millis(), true).await;
+                    inspect_or_tick(&state, &storage, &queue, &locks, current_time_millis(), true).await;
                 }
             }
         }

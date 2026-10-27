@@ -3,13 +3,13 @@
 use crate::browser_access::BrowserWrite;
 use crate::flash_queue::{FlashJobStatus, FlashQueueState};
 use crate::image_locks::ImageLocksState;
+use crate::storage::{self, StorageLock};
 use rocket::http::Status;
 use rocket::serde::json::{json, Json, Value};
 use rocket::serde::Deserialize;
 use rocket::State;
 use std::fs;
 use std::path::Path;
-use std::time::Instant;
 
 #[derive(Deserialize)]
 #[serde(crate = "rocket::serde")]
@@ -28,15 +28,17 @@ fn failure(status: Status, message: &str) -> (Status, Json<Value>) {
 pub async fn delete_image(
     _origin: BrowserWrite,
     request: Json<DeleteImage>,
+    storage: &State<StorageLock>,
     locks: &State<ImageLocksState>,
     queue: &State<FlashQueueState>,
 ) -> DeleteResult {
-    delete_from(&crate::config::IMAGES_DIR, &request, locks, queue).await
+    delete_from(&crate::config::IMAGES_DIR, &request, storage, locks, queue).await
 }
 
 async fn delete_from(
     root: &Path,
     request: &DeleteImage,
+    storage: &StorageLock,
     locks: &ImageLocksState,
     queue: &FlashQueueState,
 ) -> DeleteResult {
@@ -51,18 +53,17 @@ async fn delete_from(
         ));
     }
 
-    // Queue first, then image locks: flash submission uses the same order.
-    // Keep both guards through removal so another session cannot take over mid-delete.
-    let queue = queue.lock().await;
-    let mut locks = locks.lock().await;
-    if !locks.get(filename).is_some_and(|lock| {
-        lock.session_id == request.session_id && lock.expires_at > Instant::now()
-    }) {
+    // Hold the storage lock and then the queue through removal, so no upload,
+    // rotation or display job can start on this photo until every version is gone.
+    let Some(_storage) =
+        storage::lock_for_editor(storage, locks, filename, &request.session_id).await
+    else {
         return Err(failure(
             Status::Forbidden,
             "Acquire edit access before deleting this photo",
         ));
-    }
+    };
+    let queue = queue.lock().await;
     let pending = queue
         .get_queued_jobs()
         .into_iter()
@@ -102,7 +103,7 @@ async fn delete_from(
             }
         }
     }
-    locks.remove(filename);
+    locks.lock().await.remove(filename);
     Ok(Json(
         json!({"success": true, "filename": filename, "warnings": warnings}),
     ))
@@ -115,6 +116,7 @@ mod tests {
     use crate::image_locks::{try_acquire_lock, ImageLock};
     use std::collections::HashMap;
     use std::sync::Arc;
+    use std::time::Instant;
     use tokio::sync::Mutex;
 
     #[rocket::async_test]
@@ -133,6 +135,7 @@ mod tests {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, b"disposable test data").unwrap();
         }
+        let storage = StorageLock::default();
         let locks: ImageLocksState = Arc::new(Mutex::new(HashMap::new()));
         let queue: FlashQueueState = Arc::new(Mutex::new(FlashQueue::new()));
         let request = DeleteImage {
@@ -140,7 +143,7 @@ mod tests {
             session_id: "owner".into(),
         };
         assert_eq!(
-            delete_from(&root, &request, &locks, &queue)
+            delete_from(&root, &request, &storage, &locks, &queue)
                 .await
                 .unwrap_err()
                 .0,
@@ -150,7 +153,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            delete_from(&root, &request, &locks, &queue)
+            delete_from(&root, &request, &storage, &locks, &queue)
                 .await
                 .unwrap_err()
                 .0,
@@ -164,7 +167,7 @@ mod tests {
             },
         );
         assert_eq!(
-            delete_from(&root, &request, &locks, &queue)
+            delete_from(&root, &request, &storage, &locks, &queue)
                 .await
                 .unwrap_err()
                 .0,
@@ -178,7 +181,7 @@ mod tests {
             .await
             .enqueue("photo.png".into(), "unused".into(), false, 0);
         assert_eq!(
-            delete_from(&root, &request, &locks, &queue)
+            delete_from(&root, &request, &storage, &locks, &queue)
                 .await
                 .unwrap_err()
                 .0,
@@ -193,13 +196,15 @@ mod tests {
             session_id: "owner".into(),
         };
         assert_eq!(
-            delete_from(&root, &invalid, &locks, &queue)
+            delete_from(&root, &invalid, &storage, &locks, &queue)
                 .await
                 .unwrap_err()
                 .0,
             Status::BadRequest
         );
-        let result = delete_from(&root, &request, &locks, &queue).await.unwrap();
+        let result = delete_from(&root, &request, &storage, &locks, &queue)
+            .await
+            .unwrap();
         assert_eq!(result["success"], true);
         for path in paths {
             assert!(!root.join(path).exists());
