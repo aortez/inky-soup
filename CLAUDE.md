@@ -284,8 +284,10 @@ fail startup rather than silently overwriting the user's schedule. Changing
 settings or favorites preserves the anchor. `next_due_at` remains available when
 paused, representing the deadline to resume from, not a promise to refresh then.
 
-The scheduler checks once per second, using the same immutable snapshot/queue as
-manual flashing. It serializes checks and enqueue with orientation changes, edit
+The scheduler checks once per second. Until rotation is enabled and due, a check
+reads only the schedule, without the storage lock or a gallery scan; status
+requests still scan. A due check uses the same immutable snapshot/queue as manual
+flashing, and serializes the check and enqueue with orientation changes, edit
 locks, and queue operations. Only idle queues with no active edit locks can accept
 an automatic job. Eligible favorites have all three current derived assets and no
 incomplete upload; sort filenames lexically, choose after the successful cursor,

@@ -15,8 +15,27 @@ async fn slideshow_status(client: &Client) -> Value {
         .unwrap()
 }
 
+/// Whether a scheduler tick at `now` returns while the test holds the storage
+/// lock. Ticks read the gallery under that lock, so one that returns has read no
+/// photo metadata.
+async fn tick_skips_gallery(client: &Client, now: u64) -> bool {
+    let rocket = client.rocket();
+    let storage = rocket.state::<StorageLock>().unwrap();
+    let _held = storage.lock().await;
+    let tick = slideshow::tick(
+        rocket.state::<slideshow::SlideshowState>().unwrap(),
+        storage,
+        rocket.state::<FlashQueueState>().unwrap(),
+        rocket.state::<ImageLocksState>().unwrap(),
+        now,
+    );
+    tokio::time::timeout(std::time::Duration::from_millis(100), tick)
+        .await
+        .is_ok()
+}
+
 pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
-    use slideshow::{inspect_or_tick, FlashSource, SlideshowState};
+    use slideshow::{inspect_or_tick, tick, FlashSource, SlideshowState};
     let state = client.rocket().state::<SlideshowState>().unwrap();
     let storage = client.rocket().state::<StorageLock>().unwrap();
     let queue = client.rocket().state::<FlashQueueState>().unwrap();
@@ -24,6 +43,8 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
     locks.lock().await.clear();
     let initial = slideshow_status(client).await;
     assert_eq!(initial["paused_reason"], "disabled");
+    // While disabled, not even a tick at the due time reads the gallery.
+    assert!(tick_skips_gallery(client, initial["next_due_at"].as_u64().unwrap()).await);
     for hours in [0, 169] {
         api_error::expect_failure(
             client
@@ -72,6 +93,19 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
         slideshow_status(client).await["paused_reason"],
         "no_favorites"
     );
+    // Restart the timer at the real time, so that the server's own scheduler
+    // isn't due while these ticks run at times either side of `due`.
+    state
+        .lock()
+        .await
+        .content_completed(flash_queue::current_time_millis())
+        .unwrap();
+    let due = slideshow_status(client).await["next_due_at"]
+        .as_u64()
+        .unwrap();
+    assert!(tick_skips_gallery(client, due - 1).await);
+    // A due tick waits for the storage lock to read the gallery.
+    assert!(!tick_skips_gallery(client, due).await);
     let revision = display_settings::load_runtime_settings().rotation_revision;
     for filename in ["slideshow-a.png", "slideshow-b.png", "slideshow-c.png"] {
         fs::write(config::original_path(filename), b"original").unwrap();
@@ -126,8 +160,8 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
     image_locks::try_acquire_lock(locks, "unrelated.png", "editor", false)
         .await
         .unwrap();
-    let tick = inspect_or_tick(state, storage, queue, locks, now, true).await;
-    assert_eq!(tick["paused_reason"], "editing");
+    let paused = tick(state, storage, queue, locks, now).await.unwrap();
+    assert_eq!(paused["paused_reason"], "editing");
     assert!(queue.lock().await.is_idle());
     // Expired locks do not pause the scheduler, even before cleanup removes them.
     locks
@@ -137,11 +171,11 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
         .unwrap()
         .expires_at = std::time::Instant::now();
     let (first, concurrent) = tokio::join!(
-        inspect_or_tick(state, storage, queue, locks, now, true),
-        inspect_or_tick(state, storage, queue, locks, now, true)
+        tick(state, storage, queue, locks, now),
+        tick(state, storage, queue, locks, now)
     );
-    assert_eq!(first["ready_count"], 2);
-    assert_eq!(concurrent["paused_reason"], "display_busy");
+    assert_eq!(first.unwrap()["ready_count"], 2);
+    assert_eq!(concurrent.unwrap()["paused_reason"], "display_busy");
     assert_eq!(queue.lock().await.get_queued_jobs().len(), 1);
     let first_job = queue.lock().await.get_queued_jobs()[0].clone();
     assert_eq!(first_job.filename, "slideshow-a.png");
@@ -172,12 +206,10 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
             >= now
     );
     assert_eq!(completed["next_filename"], "slideshow-c.png");
-    assert!(
-        inspect_or_tick(state, storage, queue, locks, now, true).await["queued_job_id"].is_null()
-    );
+    assert!(tick(state, storage, queue, locks, now).await.is_none());
     // Failed automatic work neither moves the cursor nor resets the timer.
     let due = completed["next_due_at"].as_u64().unwrap();
-    inspect_or_tick(state, storage, queue, locks, due, true).await;
+    tick(state, storage, queue, locks, due).await;
     std::env::set_var("INKY_SOUP_DISPLAY_COMMAND", "/bin/false");
     assert!(flash_queue::process_next(queue, state).await);
     let failed = slideshow_status(client).await;
@@ -202,7 +234,7 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
     );
     assert!(manual["paused_reason"].is_null());
     let due = manual["next_due_at"].as_u64().unwrap();
-    inspect_or_tick(state, storage, queue, locks, due, true).await;
+    tick(state, storage, queue, locks, due).await;
     assert_eq!(
         queue.lock().await.get_queued_jobs()[0].filename,
         "slideshow-c.png"
@@ -350,20 +382,19 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
 }
 
 async fn check_flash_completion_storage_recovery(client: &Client) {
-    use slideshow::{inspect_or_tick, SlideshowState};
+    use slideshow::{tick, SlideshowState};
     let state = client.rocket().state::<SlideshowState>().unwrap();
     let storage = client.rocket().state::<StorageLock>().unwrap();
     let queue = client.rocket().state::<FlashQueueState>().unwrap();
     let locks = client.rocket().state::<ImageLocksState>().unwrap();
     locks.lock().await.clear();
     state.lock().await.content_completed(0).unwrap();
-    inspect_or_tick(
+    tick(
         state,
         storage,
         queue,
         locks,
         flash_queue::current_time_millis(),
-        true,
     )
     .await;
     let first = queue.lock().await.get_queued_jobs()[0].clone();
@@ -386,11 +417,10 @@ async fn check_flash_completion_storage_recovery(client: &Client) {
         .unwrap();
     assert!(anchor > 0);
     // Even overdue, no further display is allowed until completion is persisted.
-    assert!(
-        inspect_or_tick(state, storage, queue, locks, anchor + 3_600_000, true).await
-            ["queued_job_id"]
-            .is_null()
-    );
+    assert!(tick(state, storage, queue, locks, anchor + 3_600_000)
+        .await
+        .unwrap()["queued_job_id"]
+        .is_null());
     fs::remove_dir(blocker).unwrap();
     assert_eq!(
         client
@@ -406,12 +436,10 @@ async fn check_flash_completion_storage_recovery(client: &Client) {
     assert_eq!(recovered["settings"], completed["settings"]);
     assert!(recovered["storage_error"].is_null());
     // Recovery must not repeat A immediately or lose its round-robin position.
-    assert!(
-        inspect_or_tick(state, storage, queue, locks, anchor + 3_600_000 - 1, true).await
-            ["queued_job_id"]
-            .is_null()
-    );
-    inspect_or_tick(state, storage, queue, locks, anchor + 3_600_000, true).await;
+    assert!(tick(state, storage, queue, locks, anchor + 3_600_000 - 1)
+        .await
+        .is_none());
+    tick(state, storage, queue, locks, anchor + 3_600_000).await;
     let next = queue.lock().await.get_queued_jobs()[0].clone();
     assert_ne!(next.filename, first.filename);
     assert!(flash_queue::process_next(queue, state).await);
