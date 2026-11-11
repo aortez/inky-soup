@@ -116,6 +116,17 @@ for(const beforeResume of [false,true])for(const moved of [false,true])test(`pic
   expect(writes).toContain('/api/upload-dithered');
   expect(writes).not.toContain('/flash');
 });
+test('a picker result reports a failed reconnect without uploading to an unverified frame',async({page})=>{
+  await bridge(page);await page.goto('/');
+  await expect(page.locator('#frame-detail')).toHaveText('Connected · 600 × 448');
+  await page.evaluate(()=>{window.apiCalls=[];window.scenario.holdIdentity=true;window.resumeFrame();});
+  await expect.poll(()=>page.evaluate(()=>typeof window.finishIdentity)).toBe('function');
+  await page.locator('#import-photos').setInputFiles({name:'picker.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64')});
+  await page.evaluate(()=>{window.scenario.missing=true;window.finishIdentity();});
+  await expect(page.locator('#activity-title')).toHaveText('Could not add the selected photos');
+  await expect(page.locator('#activity-detail')).toHaveText('Reconnect to your frame, then choose the photos again.');
+  expect(await page.evaluate(()=>window.apiCalls.every(call=>call.method==='GET'))).toBe(true);
+});
 for(const restarted of [false,true])test(`remembered job is reconciled without resubmission; restarted=${restarted}`,async({page})=>{
   await bridge(page,{moved:true,job:true,restarted});await page.goto('/');
   await expect(page.locator('#activity-title')).toHaveText(restarted?'Previous refresh status unavailable':'Your new view is ready.');
