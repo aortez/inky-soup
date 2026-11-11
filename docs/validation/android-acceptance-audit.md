@@ -18,7 +18,14 @@ to `a422fcf` over Wi-Fi SSH. A separate test APK passed import, editing, source
 rotation and refresh recovery on both panels, with owner-confirmed physical
 output and exact restoration of the previous pictures. It also exposed and
 validated a fix for discarded Add photos selections during Android resume. That
-fix still needs a signed release; these results do not certify public 0.2.2.
+run did not include a signed release; its results do not certify public 0.2.2.
+
+The later [signed 0.2.3 verification](android-release-0.2.3.md) completes that
+release step. The Pixel updated through the normal in-app installer, preserving
+both remembered frames and an exact draft/settings snapshot. The signed build
+saved picker imports on both models; one initial small-frame return explicitly
+requested a retry. All original photos/settings and displayed snapshots were
+preserved. This is focused update/import evidence, not complete #25 acceptance.
 
 ## Acceptance evidence and gaps
 
@@ -37,8 +44,8 @@ is a new hardware pass from this audit.
 | Permissions, Bluetooth interruption, bad credentials and expiry recover | [BLE hardware record](android-ble.md) covers permission denial/grant, Bluetooth off, cancellation/reconnect, explicit setup-window closure, and wrong credentials/retry. | Recheck on signed build; distinguish explicit closure from natural expiry and deliberately exercise an in-flight disconnect. SDK 37 local-network runtime denial remains outside the current target-SDK-36 claim. |
 | Reboot, address change and multiple frames | [Reconnect](android-reconnect.md) passed both remembered frames, address changes, reboot, persistent selection and stable identity. | Short regression with the selected signed build and both frames available. |
 | Wi-Fi recovery without developer tools in the user flow | Reconnect evidence covers small-Pi offline reboot, native BLE reprovisioning, readable rescue card and automatic photo restoration. [Large-frame rescue](offline-rescue-zero-w.md) covers outage/card/restore. | Physical power-cycle and phone-only recovery flow on both models; record physical results. Developer tools may observe but must not perform the user's setup steps. |
-| Signed update preserves frames, settings and drafts | [Update record](android-update.md) passed 0.2.0 → 0.2.1, preserving one remembered frame and a brightness-adjusted draft. | Verify both remembered frames and preview settings. Complete the carried-over updater cases below. |
-| Preserve user photos and settings | Reconnect and deployment records document preserved galleries, photo hashes and restored network state. | Capture a baseline for this run and compare after cleanup. Delete only identified disposable fixtures; restore mounts, connections and phone settings. |
+| Signed update preserves frames, settings and drafts | [Signed 0.2.3](android-release-0.2.3.md) passed 0.2.2 → 0.2.3 through the in-app updater, with both remembered frames, exact draft bytes/metadata, nine controls and unchanged preview preference. | Recheck a non-default preview-profile preference and an active job receipt. Complete the carried-over updater cases below. |
+| Preserve user photos and settings | [November 11](android-acceptance-2026-11-11.md) and [signed 0.2.3](android-release-0.2.3.md) compare all 36 original/metadata hashes, unchanged mounts and restored display snapshots; test fixtures removed and phone settings restored. | Repeat baseline and cleanup comparisons for each remaining acceptance run. |
 
 ## Updater cases carried into #25
 
@@ -89,16 +96,19 @@ performed during this audit.
 ## Version requirements
 
 Pin an exact signed APK and firmware revision for the acceptance run. The
-available public baseline is 0.2.2. To certify the newer shared UI, first produce
-a higher-version signed candidate from the chosen commit using the existing
-[release workflow](../android-release.md); a debug APK does not establish the
-signed install/update flow. Record whether concurrent favorites work is included.
+available public baseline is now 0.2.3, source `6867d5b`, whose ordinary signed
+update and picker imports passed the linked follow-up. Use that exact APK for
+the remaining checks. A later candidate needs a higher version and the existing
+[release workflow](../android-release.md); a debug APK does not establish its
+signed install/update flow. Favorites/slideshow app controls (#33) remain outside
+this release and acceptance pass.
 
 Use a matching server/display payload containing identity/discovery, native BLE
 support, photo and mount rotation, test cards, and offline rescue. For acceptance
 of current main, include the photo-write guards (#54) and JSON failures (#55).
-The large frame's recorded deployment predates those changes. Verify deployed
-hashes against the selected bundle before attributing results to it. Preserve
+Both frames were updated to `a422fcf` in the November 11 follow-up, including
+those server changes. Verify deployed hashes against the selected bundle before
+attributing later results to it. Preserve
 the working provisioner unless the chosen firmware requires a change.
 
 Build the server for each CPU: ARMv6/VFPv2 for the original Zero W, and the

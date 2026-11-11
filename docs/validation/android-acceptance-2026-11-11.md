@@ -12,6 +12,10 @@ verifies the intended frame. A separate debug installation tested the fix; the
 regular signed app and its draft remain intact. A signed release containing the
 fix is still required for [#25](https://github.com/aortez/inky-soup/issues/25).
 
+Later the same day, the [signed 0.2.3 follow-up](android-release-0.2.3.md)
+completed publication, the normal in-app update and picker imports on both
+frames. The remainder of this record describes the earlier debug-APK run.
+
 ## Deployment
 
 - Small: Pi Zero 2 W, 5.7-inch seven-color panel, `192.168.1.100`, 600 × 448,
