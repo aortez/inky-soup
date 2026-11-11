@@ -181,7 +181,10 @@ this prototype.
 
 The first hardware pass on 2026-10-26 is recorded in
 [android-update.md](validation/android-update.md); it covered the update itself and
-the permission decline, and lists what remains. The checklist:
+the permission decline, and lists what remains. The later
+[0.2.3 verification](validation/android-release-0.2.3.md) covers a normal forward
+update with two remembered frames and exact draft preservation, plus real picker
+imports on both panels. The checklist:
 
 1. Publish two signed versions and install the older one from its versioned link
    on the test phone, allowing the browser to install unknown apps. The stable link
