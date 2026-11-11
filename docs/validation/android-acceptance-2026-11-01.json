@@ -1,0 +1,227 @@
+{
+  "date_local": "2026-11-01",
+  "inventory_recorded_at_utc": "2026-11-02T03:36:37.225792+00:00",
+  "phone": {
+    "model": "Pixel 9 Pro XL",
+    "android": "17",
+    "sdk": 37,
+    "build": "CP2A.260605.016",
+    "webview": "155.0.8059.39",
+    "application_id": "pizza.allan.frame",
+    "initial_version": "0.2.1",
+    "initial_version_code": 2001,
+    "target_sdk": 36,
+    "installed_apk_sha256": "0bcdba1a5aa464f97fb726dc7bc57cff9c0e5ad65d5c9b0fa59d43d63eb13ea9",
+    "signing_sha256": "323dc7c2a994fa3217530c2fa8e7beffc1fc9ed4b4c6c43e92e29baebc7ea605",
+    "final_version": "0.2.2",
+    "final_version_code": 2002,
+    "final_apk_sha256": "c303df80e01da67071d8d0e11451c844ed704af0cbc603432578f3f2381e24e8",
+    "final_signing_sha256": "323dc7c2a994fa3217530c2fa8e7beffc1fc9ed4b4c6c43e92e29baebc7ea605"
+  },
+  "frames": {
+    "inky-soup": {
+      "identity": {
+        "api_version": 1,
+        "capabilities": [
+          "device-identity-v1",
+          "display-config",
+          "improv-ble"
+        ],
+        "id": "aa3cdd6af7762024fb2812013228463c",
+        "instance_id": "e83f23403c4d247300af95f98735655f",
+        "name": "inky-soup"
+      },
+      "display": {
+        "color": "multi",
+        "height": 1200,
+        "model": "impression-13.3-2025",
+        "orientation_test_supported": true,
+        "photo_rotation_supported": true,
+        "physical_height": 1200,
+        "physical_width": 1600,
+        "rotation_degrees": 0,
+        "rotation_revision": 4,
+        "thumb_height": 112,
+        "thumb_width": 150,
+        "width": 1600
+      },
+      "recorded_deployment_revision": "ac70c96f416c9487c9e8e82938cb32e3cd839af7",
+      "server_sha256": "7ee197951b51c52a1256fa432c7bb110c632dea4b9ee2028c76fd038bb827a1f",
+      "display_script_sha256": "a7c4b199ad495524d34b9238f78b9ea7747a2b557ed9cb147c1e3963be2e19a0",
+      "provisioner_sha256": "05ef2c5ab8db6401f178a0129cca080fe49a4e9764f63ae916d95154338a2d2d",
+      "hashes_unchanged": true,
+      "queue_after": {
+        "current_job": null,
+        "queue": [],
+        "queue_length": 0
+      },
+      "hashed_file_count": 30,
+      "original_count": 15,
+      "baseline_manifest_sha256": "1934ad7827b7e4f1772fdf1344ace3e036e718071b131ed11ab1135f5fdc6d47",
+      "final_manifest_sha256": "1934ad7827b7e4f1772fdf1344ace3e036e718071b131ed11ab1135f5fdc6d47",
+      "status_after": {
+        "device": "http://inky-soup.local:8000/",
+        "display": {
+          "color": "multi",
+          "height": 1200,
+          "model": "impression-13.3-2025",
+          "orientation_test_supported": true,
+          "photo_rotation_supported": true,
+          "physical_height": 1200,
+          "physical_width": 1600,
+          "rotation_degrees": 0,
+          "rotation_revision": 4,
+          "thumb_height": 112,
+          "thumb_width": 150,
+          "width": 1600
+        },
+        "flash": {
+          "current_job": null,
+          "queue": [],
+          "queue_length": 0
+        }
+      }
+    },
+    "inky-soup-small": {
+      "identity": {
+        "api_version": 1,
+        "capabilities": [
+          "device-identity-v1",
+          "display-config",
+          "improv-ble"
+        ],
+        "id": "72d38d6af1b56f99ae0fb4407f44f621",
+        "instance_id": "0b5567c6a6afad51bd2c692850e3eb09",
+        "name": "inky-soup-small"
+      },
+      "display": {
+        "color": "multi",
+        "height": 448,
+        "model": "impression-5.7",
+        "orientation_test_supported": true,
+        "photo_rotation_supported": true,
+        "physical_height": 448,
+        "physical_width": 600,
+        "rotation_degrees": 0,
+        "rotation_revision": 0,
+        "thumb_height": 112,
+        "thumb_width": 150,
+        "width": 600
+      },
+      "recorded_deployment_revision": "ac70c96f416c9487c9e8e82938cb32e3cd839af7",
+      "server_sha256": "e7ec55d71497926f72bdf221115da06b9675ba79a9e43677bc47511bb949f5a8",
+      "display_script_sha256": "a7c4b199ad495524d34b9238f78b9ea7747a2b557ed9cb147c1e3963be2e19a0",
+      "provisioner_sha256": "05ef2c5ab8db6401f178a0129cca080fe49a4e9764f63ae916d95154338a2d2d",
+      "hashes_unchanged": true,
+      "queue_after": {
+        "current_job": null,
+        "queue": [],
+        "queue_length": 0
+      },
+      "hashed_file_count": 6,
+      "original_count": 3,
+      "baseline_manifest_sha256": "75737ddd956f2dbf2785f1ecdc210048ae6cf07d84a23f822122e7b90d17465d",
+      "final_manifest_sha256": "75737ddd956f2dbf2785f1ecdc210048ae6cf07d84a23f822122e7b90d17465d",
+      "status_after": {
+        "device": "http://inky-soup-small.local:8000/",
+        "display": {
+          "color": "multi",
+          "height": 448,
+          "model": "impression-5.7",
+          "orientation_test_supported": true,
+          "photo_rotation_supported": true,
+          "physical_height": 448,
+          "physical_width": 600,
+          "rotation_degrees": 0,
+          "rotation_revision": 0,
+          "thumb_height": 112,
+          "thumb_width": 150,
+          "width": 600
+        },
+        "flash": {
+          "current_job": null,
+          "queue": [],
+          "queue_length": 0
+        }
+      }
+    }
+  },
+  "checks": [
+    {
+      "name": "Cancel actual Android installer",
+      "result": "passed with wording issue",
+      "details": "0.2.1 remains installed and Install becomes enabled again after preview processing. The handoff notice still says to confirm the update in the installer until a cold relaunch."
+    },
+    {
+      "name": "Native Wi-Fi discovery",
+      "result": "passed",
+      "details": "Both frame identities discovered. Added small frame, connected at 600 x 448, switched back to large frame at 1600 x 1200."
+    },
+    {
+      "name": "Force-stop and relaunch",
+      "result": "passed for observed draft fields and selected frame",
+      "details": "Seven displayed draft fields match; large frame reconnects; downloaded update remains installable."
+    },
+    {
+      "name": "Signed in-app update 0.2.1 to 0.2.2",
+      "result": "passed",
+      "details": "Native installer and Play Protect flow; installed APK hash matches published 0.2.2 and release signer is unchanged."
+    },
+    {
+      "name": "Remembered frames after update",
+      "result": "passed",
+      "details": "Both picker entries retained; each reconnects with its correct dimensions. Large-frame selection restored."
+    },
+    {
+      "name": "Draft after update",
+      "result": "passed for observed fields",
+      "details": "Filename, dimensions, rotation, composition, saturation, brightness and contrast match the baseline; preview regenerates."
+    },
+    {
+      "name": "Preserve Pi photos, metadata and mounts",
+      "result": "passed",
+      "details": "All 36 original/metadata file hashes match before/after, mounts unchanged, queues idle. No display refresh or firmware deployment requested."
+    }
+  ],
+  "draft_before": {
+    "draft-name": "a9d98f36-1c47-4a3d-a696-f5704b110876.jpg",
+    "dimensions": "1600 \u00d7 1200",
+    "photo_rotation_degrees": "Original \u00b7 0\u00b0",
+    "fit": "Show whole photo",
+    "saturation-value": "0.6",
+    "brightness-value": "25",
+    "contrast-value": "-10"
+  },
+  "draft_after_relaunch": {
+    "draft-name": "a9d98f36-1c47-4a3d-a696-f5704b110876.jpg",
+    "dimensions": "1600 \u00d7 1200",
+    "photo_rotation_degrees": "Original \u00b7 0\u00b0",
+    "fit": "Show whole photo",
+    "saturation-value": "0.6",
+    "brightness-value": "25",
+    "contrast-value": "-10"
+  },
+  "draft_after_update": {
+    "draft-name": "a9d98f36-1c47-4a3d-a696-f5704b110876.jpg",
+    "dimensions": "1600 \u00d7 1200",
+    "photo_rotation_degrees": "Original \u00b7 0\u00b0",
+    "fit": "Show whole photo",
+    "saturation-value": "0.6",
+    "brightness-value": "25",
+    "contrast-value": "-10"
+  },
+  "remembered_frames_after_update": [
+    "inky-soup \u00b7 13.3\u2033 \u00b7 28463c",
+    "inky-soup-small \u00b7 5.7\u2033 \u00b7 44f621"
+  ],
+  "limits": [
+    "Fresh browser installation not tested.",
+    "Interrupted APK download, invalid update metadata and active-display installation deferral remain open.",
+    "Preview-profile preferences and saved job receipts were not inspected.",
+    "No new BLE provisioning, outage, orientation change or physical display test.",
+    "Results cover released 0.2.1/0.2.2 and installed firmware, not current main or concurrent favorites work.",
+    "Installer-cancellation handoff wording remains stale until relaunch; present in current source too."
+  ],
+  "completed_at_utc": "2026-11-02T03:38:45.840411+00:00",
+  "final_preview_status": "Ready. The screen\u2019s ink colors may look softer than this preview."
+}

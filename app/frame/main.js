@@ -11,7 +11,7 @@ import {installedApp} from './services/native-updates.js';
 import {activity, controls, showView, renderPreview} from './ui/render.js';
 import {acquireEditLock, retryEditLock} from './ui/edit-lock.js';
 import {useDraft, prepare, adjustDraft, choosePreviewProfile} from './ui/editor.js';
-import {refreshGallery, importPhotos, regenerateGallery, runImports, chooseFiles} from './ui/gallery.js';
+import {refreshGallery, importPhotos, regenerateGallery, runImports, chooseFiles, resumePhotoImport} from './ui/gallery.js';
 import {pollJob} from './ui/jobs.js';
 import {storeCurrentPhoto, deleteCurrentPhoto} from './ui/save.js';
 import {syncOrientation, previewOrientation, changeOrientation, testOrientation} from './ui/orientation.js';
@@ -109,7 +109,12 @@ async function start() {
       showView('editor');
     }});
     await watchNativeApp({
-      resume: async () => {state.foreground = true; await reconnect(); void checkForUpdates({automatic: true});},
+      resume: async () => {
+        state.foreground = true;
+        await reconnect();
+        await resumePhotoImport();
+        void checkForUpdates({automatic: true});
+      },
       pause: () => {state.foreground = false;},
       back: () => {
         if (el['setup-dialog'].open) {void setup.close(); return true;}

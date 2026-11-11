@@ -15,6 +15,7 @@ async function bridge(page, scenario = {}) {
     window.apiCalls=[]; window.discoveries=0; window.scenario={...scenario,...JSON.parse(localStorage.getItem('test-network') || '{}')};
     let counter=0;const files=new Map(),listeners={};
     window.resumeFrame=()=>listeners.appStateChange?.({isActive:true});
+    window.pauseFrame=()=>listeners.appStateChange?.({isActive:false});
     window.Capacitor={PluginHeaders:['FrameTransport','FrameDiscovery','FrameBle','App'].map(name=>({name,methods:[
       ...['select','request','read','release','create','append','discover','removeListener'].map(name=>({name,rtype:'promise'})),{name:'addListener',rtype:'callback'},
     ]})), nativeCallback(plugin,method,args,callback){listeners[args.eventName]=callback;return `${plugin}-${args.eventName}`;},
@@ -25,12 +26,17 @@ async function bridge(page, scenario = {}) {
         return {services:window.scenario.missing?[]:window.services};
       }
       if(plugin!=='FrameTransport')return {};
-      if(method==='select'||method==='append')return {};
+      if(method==='select')return {};
+      if(method==='append'){files.set(args.id,(files.get(args.id)||'')+atob(args.data));return {};}
       if(method==='create')return {id:String(++counter)};
       if(method==='release'){files.delete(args.id);return {};}
       if(method==='read')return {data:btoa(files.get(args.id).slice(args.offset))};
       if(method==='request'){
         window.apiCalls.push({base:args.base,path:args.path,method:args.method});
+        if(args.path==='/api/device'&&window.scenario.holdIdentity){
+          window.scenario.holdIdentity=false;
+          await new Promise(resolve=>{window.finishIdentity=resolve;});
+        }
         if(window.scenario.missing)throw Error('Cannot reach frame');
         if(args.path.startsWith('/api/flash/status/')) window.reconciledJob=true;
         if(args.path==='/api/images'&&window.reconciledJob&&window.scenario.holdCompletionGallery) {
@@ -42,6 +48,7 @@ async function bridge(page, scenario = {}) {
         identity={...identity,base:args.base};
         if(window.scenario.restarted&&identity.id===small.id)identity.instance_id='d'.repeat(32);
         let data=args.path==='/api/lock-image'?{locked:true}:args.path==='/api/device'?identity:args.path==='/api/display-config'?identity.config:args.path.startsWith('/api/flash/status/')?{filename:'photo.jpg',created_at:123,status:window.scenario.jobStatus || 'Completed'}:[];
+        if(args.path==='/upload')data={filename:/filename="([^"]+)"/.exec(files.get(args.bodyId))[1]};
         const text=JSON.stringify(data),id=String(++counter);files.set(id,text);
         return {id,size:text.length,status:200,contentType:'application/json'};
       }
@@ -80,6 +87,45 @@ test('resume discovers an address change without setup',async({page})=>{
   await expect(page.locator('#address')).toHaveValue('http://192.168.1.9:8000');
   await expect(page.locator('#frame-detail')).toHaveText('Connected · 600 × 448');
   await expect(page.locator('#setup-dialog')).not.toBeVisible();
+});
+for(const beforeResume of [false,true])for(const moved of [false,true])test(`picker result waits for frame verification; beforeResume=${beforeResume}, moved=${moved}`,async({page})=>{
+  await bridge(page);await page.goto('/');
+  await expect(page.locator('#frame-detail')).toHaveText('Connected · 600 × 448');
+  const png=await page.evaluate(()=>{
+    const canvas=document.createElement('canvas');canvas.width=16;canvas.height=16;
+    const ctx=canvas.getContext('2d');ctx.fillStyle='#f00';ctx.fillRect(0,0,16,16);
+    return canvas.toDataURL().split(',')[1];
+  });
+  const file={name:'picker.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')};
+  await page.evaluate(()=>{window.apiCalls=[];window.scenario.holdIdentity=true;});
+  if(beforeResume){
+    await page.evaluate(()=>window.pauseFrame());
+    await page.locator('#import-photos').setInputFiles(file);
+  }
+  await page.evaluate(()=>{window.resumeFrame();});
+  await expect.poll(()=>page.evaluate(()=>typeof window.finishIdentity)).toBe('function');
+  if(!beforeResume)await page.locator('#import-photos').setInputFiles(file);
+  expect(await page.evaluate(()=>window.apiCalls.filter(call=>call.method==='POST'))).toHaveLength(0);
+  await page.evaluate(moved=>{window.scenario.moved=moved;window.finishIdentity();},moved);
+  await expect(page.locator('#import-summary')).toHaveText('1 of 1 saved. Photos are saved without refreshing the display.');
+  await expect(page.locator('#frame-detail')).toHaveText('Connected · 600 × 448');
+  const calls=await page.evaluate(()=>window.apiCalls.filter(call=>call.method==='POST'));
+  expect(calls.every(call=>call.base===`http://192.168.1.${moved?9:2}:8000`)).toBe(true);
+  const writes=calls.map(call=>call.path);
+  expect(writes.filter(path=>path==='/upload')).toHaveLength(1);
+  expect(writes).toContain('/api/upload-dithered');
+  expect(writes).not.toContain('/flash');
+});
+test('a picker result reports a failed reconnect without uploading to an unverified frame',async({page})=>{
+  await bridge(page);await page.goto('/');
+  await expect(page.locator('#frame-detail')).toHaveText('Connected · 600 × 448');
+  await page.evaluate(()=>{window.apiCalls=[];window.scenario.holdIdentity=true;window.resumeFrame();});
+  await expect.poll(()=>page.evaluate(()=>typeof window.finishIdentity)).toBe('function');
+  await page.locator('#import-photos').setInputFiles({name:'picker.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64')});
+  await page.evaluate(()=>{window.scenario.missing=true;window.finishIdentity();});
+  await expect(page.locator('#activity-title')).toHaveText('Could not add the selected photos');
+  await expect(page.locator('#activity-detail')).toHaveText('Reconnect to your frame, then choose the photos again.');
+  expect(await page.evaluate(()=>window.apiCalls.every(call=>call.method==='GET'))).toBe(true);
 });
 for(const restarted of [false,true])test(`remembered job is reconciled without resubmission; restarted=${restarted}`,async({page})=>{
   await bridge(page,{moved:true,job:true,restarted});await page.goto('/');
