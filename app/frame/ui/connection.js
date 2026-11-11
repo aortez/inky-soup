@@ -11,7 +11,7 @@ import {saveDraft} from '../services/drafts.js';
 import {activity, controls, showView, renderGallery, renderImports} from './render.js';
 import {releaseEditLock, acquireEditLock} from './edit-lock.js';
 import {prepare} from './editor.js';
-import {selectPhoto, regenerateGallery} from './gallery.js';
+import {selectPhoto, regenerateGallery, resumePhotoImport} from './gallery.js';
 import {pollJob, showJobUnavailable} from './jobs.js';
 import {syncOrientation} from './orientation.js';
 
@@ -98,7 +98,7 @@ export async function connectFrame({base: setupBase, signal, expected, automatic
     if (state.job) showJobUnavailable(error, state.job);
     if (setupBase && !automatic) throw error;
     return false;
-  } finally { end(state, operation); controls(); }
+  } finally { end(state, operation); controls(); await resumePhotoImport(); }
 }
 
 export async function reconnect() {

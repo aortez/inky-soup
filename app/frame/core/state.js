@@ -12,7 +12,7 @@ export const state = {
   operation: null, connection: null,
   processing: false, processor: null, generation: 0,
   previewUrl: null, beforeUrl: null, galleryUrls: [], job: null, pollTimer: null,
-  view: 'editor', previewMode: 'display', lock: null, imports: [], importing: false,
+  view: 'editor', previewMode: 'display', lock: null, imports: [], importing: false, pendingPhotoImport: null,
   session: null, installPrompt: null,
   updateWorker: null, updateError: '',
   updates: null, installed: null, update: null,

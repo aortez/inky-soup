@@ -1,5 +1,6 @@
 import {elements as el} from '../core/dom.js';
 import {state} from '../core/state.js';
+import {androidApp} from '../core/platform.js';
 import {allowed, begin, end} from '../core/operations.js';
 import {imageSettings, validatePhoto} from '../core/settings.js';
 import {pendingPhotoRotation} from '../core/photo-rotation.js';
@@ -35,6 +36,11 @@ export async function selectPhoto(image, base) {
 }
 
 export async function importPhotos(files) {
+  if (files.length && androidApp && (!state.foreground || state.connecting)) {
+    // Picker results can arrive before or during resume's identity verification.
+    state.pendingPhotoImport = {files, deviceId: state.frame?.id};
+    return;
+  }
   if (!allowed(state, 'import') || !state.connected) return;
   begin(state, 'import'); controls();
   await releaseEditLock();
@@ -129,4 +135,15 @@ export async function chooseFiles(files) {
   el.activity.hidden = true;
   await useDraft({blob: file, name: file.name});
   end(state, 'choose'); controls();
+}
+
+export async function resumePhotoImport() {
+  if (!state.pendingPhotoImport || !state.foreground || state.connecting) return;
+  const {files, deviceId} = state.pendingPhotoImport;
+  state.pendingPhotoImport = null;
+  if (!state.connected || state.frame?.id !== deviceId) {
+    activity('Could not add the selected photos', 'Reconnect to your frame, then choose the photos again.', true);
+    return;
+  }
+  await importPhotos(files);
 }
