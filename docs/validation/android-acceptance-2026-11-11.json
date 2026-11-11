@@ -1,0 +1,364 @@
+{
+  "date_local": "2026-11-11",
+  "completed_at_utc": "2026-11-11T23:12:29.078312+00:00",
+  "server_revision": "a422fcfe3b12197025ae7410c20ae2c3822f5e86",
+  "server_sha256": "c05dfc8e2dab0c3ddde74163838d08b3135fc45d4eec02d03cbcc4fb14f3dd4e",
+  "server_build": {
+    "rust": "1.85.0",
+    "zig": "0.14.1",
+    "target": "arm-unknown-linux-gnueabihf",
+    "cpu": "arm1176jzf-s",
+    "elf_cpu_arch": "ARMv6",
+    "elf_fp_arch": "VFPv2"
+  },
+  "test_app": {
+    "application_id": "pizza.allan.frame.acceptance",
+    "version": "0.2.2",
+    "version_code": 2002,
+    "signed": "debug",
+    "signing_sha256": "a7eda63bb6fba3246ca045c50bf5149785df3d39f189a7bf535b1ef5d8dd31c0",
+    "final_apk_sha256": "b8f226fe896916cd25de2fb5b98447ceefadacd6c95aac3514495281dac9e0bf",
+    "branch": "android-picker-resume",
+    "source_sha256": {
+      "app/frame/core/state.js": "c6cb056031ee7619a8717b5324bb2466c6d81015414aeb3f081a609c98b8ce8b",
+      "app/frame/main.js": "de52a43a4dd8f082bfc59143b6cc87fcb6394e6b6ed70a50f2d550ea787c7e9b",
+      "app/frame/ui/connection.js": "682df02ef40408217099a09dfeefdb1dfb116da510a393aac9fed00f4d41af38",
+      "app/frame/ui/gallery.js": "488e59241444c13c13f3df3875db13003a5edba2ee546230593a38d5815aa66a"
+    },
+    "removed_after_tests": true,
+    "source_commit": "13831f2a87bb7026caaedac3ecaf5605bd44505f"
+  },
+  "regular_phone_app": {
+    "application_id": "pizza.allan.frame",
+    "version": "0.2.2",
+    "apk_sha256": "c303df80e01da67071d8d0e11451c844ed704af0cbc603432578f3f2381e24e8",
+    "apk_unchanged": true,
+    "final_draft_fields": {
+      "draft-name": "a9d98f36-1c47-4a3d-a696-f5704b110876.jpg",
+      "dimensions": "1600 \u00d7 1200",
+      "photo_rotation_degrees": "0",
+      "fit": "contain",
+      "saturation": "0.6",
+      "brightness": "25",
+      "contrast": "-10"
+    },
+    "keep_awake_restored": "0"
+  },
+  "automated_checks": {
+    "server_rust": 35,
+    "cli_rust": 27,
+    "legacy_frontend": 136,
+    "app_unit": 76,
+    "android_bundle_browser": 45,
+    "javascript_lint": "passed; existing legacy warnings",
+    "debug_apk_build": "passed with separate application ID"
+  },
+  "visual_confirmation": "Both look correct",
+  "frames": {
+    "small": {
+      "wifi_ip": "192.168.1.100",
+      "device_id": "72d38d6af1b56f99ae0fb4407f44f621",
+      "server_instance_after": "520ba3736297147e4db35b5f2387a081",
+      "display": {
+        "color": "multi",
+        "height": 448,
+        "model": "impression-5.7",
+        "orientation_test_supported": true,
+        "photo_rotation_supported": true,
+        "physical_height": 448,
+        "physical_width": 600,
+        "rotation_degrees": 0,
+        "rotation_revision": 0,
+        "thumb_height": 112,
+        "thumb_width": 150,
+        "width": 600
+      },
+      "deployment": {
+        "display": {
+          "color": "multi",
+          "height": 448,
+          "model": "impression-5.7",
+          "orientation_test_supported": true,
+          "photo_rotation_supported": true,
+          "physical_height": 448,
+          "physical_width": 600,
+          "rotation_degrees": 0,
+          "rotation_revision": 0,
+          "thumb_height": 112,
+          "thumb_width": 150,
+          "width": 600
+        },
+        "ok": true,
+        "revision": "a422fcfe3b12197025ae7410c20ae2c3822f5e86",
+        "software_backup": "/var/lib/inky-soup/deployments/9ac005a340cc41699c159b20a85d63b3"
+      },
+      "original_count": 3,
+      "original_and_metadata_file_count": 6,
+      "before_manifest_sha256": "75737ddd956f2dbf2785f1ecdc210048ae6cf07d84a23f822122e7b90d17465d",
+      "after_manifest_sha256": "75737ddd956f2dbf2785f1ecdc210048ae6cf07d84a23f822122e7b90d17465d",
+      "installed_asset_count_verified": 37,
+      "services": [
+        "active",
+        "active"
+      ],
+      "provisioner_sha256": "05ef2c5ab8db6401f178a0129cca080fe49a4e9764f63ae916d95154338a2d2d",
+      "phone_flow": {
+        "base": "http://192.168.1.100:8000",
+        "filename": "43c48f10-0e56-4817-bbc3-b4fff279a6c0.png",
+        "checks": [
+          "Native photo rotation 90 and revision-checked save passed.",
+          "Native photo rotation 0 and revision-checked save passed.",
+          "Physical refresh completed after background, force-stop and relaunch; job reconciled."
+        ],
+        "jobId": 1,
+        "started": {
+          "source": "manual",
+          "job_id": 1,
+          "filename": "43c48f10-0e56-4817-bbc3-b4fff279a6c0.png",
+          "dithered_path": "/data/inky-soup/flash-jobs/1794437638476198108-0.png",
+          "flash_twice": false,
+          "rotation_degrees": 0,
+          "status": "Flashing",
+          "created_at": 1794437638476,
+          "started_at": 1794437638565,
+          "finished_at": null,
+          "error_message": null
+        },
+        "receiptBeforeStop": "{\"id\":1,\"filename\":\"43c48f10-0e56-4817-bbc3-b4fff279a6c0.png\",\"base\":\"http://192.168.1.100:8000\",\"deviceId\":\"72d38d6af1b56f99ae0fb4407f44f621\",\"instanceId\":\"520ba3736297147e4db35b5f2387a081\",\"createdAt\":1794437638476}",
+        "completed": {
+          "source": "manual",
+          "job_id": 1,
+          "filename": "43c48f10-0e56-4817-bbc3-b4fff279a6c0.png",
+          "dithered_path": "/data/inky-soup/flash-jobs/1794437638476198108-0.png",
+          "flash_twice": false,
+          "rotation_degrees": 0,
+          "status": "Completed",
+          "created_at": 1794437638476,
+          "started_at": 1794437638565,
+          "finished_at": 1794437675170,
+          "error_message": null
+        },
+        "previewDimensions": [
+          600,
+          448
+        ],
+        "passed": true
+      },
+      "phone_display_submission_count": 1,
+      "palette": {
+        "dimensions": [
+          600,
+          448
+        ],
+        "native_palette_pixel_counts": {
+          "255,255,255": 92016,
+          "0,0,255": 25897,
+          "255,255,0": 30163,
+          "0,255,0": 26380,
+          "255,140,0": 22204,
+          "255,0,0": 25680,
+          "0,0,0": 46460
+        }
+      },
+      "final_picker_import": {
+        "favorite": false,
+        "path": "images/ded74f27-745b-4353-9fe4-d420981b5058.png",
+        "filename": "ded74f27-745b-4353-9fe4-d420981b5058.png",
+        "thumb_ready": true,
+        "needs_processing": false,
+        "photo_rotation_degrees": 0,
+        "photo_rotation_revision": 0,
+        "filter": "bicubic",
+        "fit_mode": "contain",
+        "cache_version": 2,
+        "saturation": 0.5,
+        "brightness": 0,
+        "contrast": 0,
+        "dither_algorithm": "floyd-steinberg"
+      },
+      "restore_job": {
+        "created_at": 1794438235669,
+        "dithered_path": "/data/inky-soup/flash-jobs/1794438235667555637-1.png",
+        "error_message": null,
+        "filename": "fef63dc1-d4a7-4602-8912-b88eb036769b.png",
+        "finished_at": 1794438272413,
+        "flash_twice": false,
+        "job_id": 2,
+        "rotation_degrees": 0,
+        "source": "manual",
+        "started_at": 1794438235913,
+        "status": "Completed"
+      },
+      "restored_display": {
+        "display_sha256": "241d649e06086f1526454278752421e5b038a070b273a4c61ee39dfb496f03ea",
+        "active_card": false
+      },
+      "disposable_photos_removed": 3,
+      "flash_after": {
+        "current_job": null,
+        "queue": [],
+        "queue_length": 0
+      },
+      "json_error_404": {
+        "message": "GET /api/no-such-acceptance-route was not found on this frame.",
+        "success": false
+      },
+      "staged_bundle_removed": true
+    },
+    "large": {
+      "wifi_ip": "192.168.1.109",
+      "device_id": "aa3cdd6af7762024fb2812013228463c",
+      "server_instance_after": "451797daaf625e4693fd070202a41e4d",
+      "display": {
+        "color": "multi",
+        "height": 1200,
+        "model": "impression-13.3-2025",
+        "orientation_test_supported": true,
+        "photo_rotation_supported": true,
+        "physical_height": 1200,
+        "physical_width": 1600,
+        "rotation_degrees": 0,
+        "rotation_revision": 4,
+        "thumb_height": 112,
+        "thumb_width": 150,
+        "width": 1600
+      },
+      "deployment": {
+        "display": {
+          "color": "multi",
+          "height": 1200,
+          "model": "impression-13.3-2025",
+          "orientation_test_supported": true,
+          "photo_rotation_supported": true,
+          "physical_height": 1200,
+          "physical_width": 1600,
+          "rotation_degrees": 0,
+          "rotation_revision": 4,
+          "thumb_height": 112,
+          "thumb_width": 150,
+          "width": 1600
+        },
+        "ok": true,
+        "revision": "a422fcfe3b12197025ae7410c20ae2c3822f5e86",
+        "software_backup": "/var/lib/inky-soup/deployments/ba3fc54acb5344078a99a10cfe0c434f"
+      },
+      "original_count": 15,
+      "original_and_metadata_file_count": 30,
+      "before_manifest_sha256": "1934ad7827b7e4f1772fdf1344ace3e036e718071b131ed11ab1135f5fdc6d47",
+      "after_manifest_sha256": "1934ad7827b7e4f1772fdf1344ace3e036e718071b131ed11ab1135f5fdc6d47",
+      "installed_asset_count_verified": 37,
+      "services": [
+        "active",
+        "active"
+      ],
+      "provisioner_sha256": "05ef2c5ab8db6401f178a0129cca080fe49a4e9764f63ae916d95154338a2d2d",
+      "phone_flow": {
+        "base": "http://192.168.1.109:8000",
+        "filename": "26413295-01af-4c8f-95d0-0c70bb3ffd27.png",
+        "checks": [
+          "Native photo rotation 90 and revision-checked save passed.",
+          "Native photo rotation 0 and revision-checked save passed.",
+          "Physical refresh completed after background, force-stop and relaunch; job reconciled."
+        ],
+        "jobId": 1,
+        "started": {
+          "source": "manual",
+          "job_id": 1,
+          "filename": "26413295-01af-4c8f-95d0-0c70bb3ffd27.png",
+          "dithered_path": "/data/inky-soup/flash-jobs/1794437793621215570-0.png",
+          "flash_twice": false,
+          "rotation_degrees": 0,
+          "status": "Flashing",
+          "created_at": 1794437793623,
+          "started_at": 1794437793710,
+          "finished_at": null,
+          "error_message": null
+        },
+        "receiptBeforeStop": "{\"id\":1,\"filename\":\"26413295-01af-4c8f-95d0-0c70bb3ffd27.png\",\"base\":\"http://192.168.1.109:8000\",\"deviceId\":\"aa3cdd6af7762024fb2812013228463c\",\"instanceId\":\"451797daaf625e4693fd070202a41e4d\",\"createdAt\":1794437793623}",
+        "completed": {
+          "source": "manual",
+          "job_id": 1,
+          "filename": "26413295-01af-4c8f-95d0-0c70bb3ffd27.png",
+          "dithered_path": "/data/inky-soup/flash-jobs/1794437793621215570-0.png",
+          "flash_twice": false,
+          "rotation_degrees": 0,
+          "status": "Completed",
+          "created_at": 1794437793623,
+          "started_at": 1794437793710,
+          "finished_at": 1794437835960,
+          "error_message": null
+        },
+        "previewDimensions": [
+          1600,
+          1200
+        ],
+        "passed": true
+      },
+      "phone_display_submission_count": 1,
+      "palette": {
+        "dimensions": [
+          1600,
+          1200
+        ],
+        "native_palette_pixel_counts": {
+          "255,255,255": 653821,
+          "0,0,255": 184869,
+          "255,255,0": 286274,
+          "0,255,0": 184976,
+          "255,0,0": 266533,
+          "0,0,0": 343527
+        }
+      },
+      "final_picker_import": {
+        "favorite": false,
+        "path": "images/bd4d7783-3fbf-49c7-9509-c3b769a21bf9.png",
+        "filename": "bd4d7783-3fbf-49c7-9509-c3b769a21bf9.png",
+        "thumb_ready": true,
+        "needs_processing": false,
+        "photo_rotation_degrees": 0,
+        "photo_rotation_revision": 0,
+        "filter": "bicubic",
+        "fit_mode": "contain",
+        "cache_version": 2,
+        "saturation": 0.5,
+        "brightness": 0,
+        "contrast": 0,
+        "dither_algorithm": "floyd-steinberg"
+      },
+      "restore_job": {
+        "created_at": 1794438236879,
+        "dithered_path": "/data/inky-soup/flash-jobs/1794438236860335311-1.png",
+        "error_message": null,
+        "filename": "9c59580d-e6e8-4353-a048-1015c9fe3cb1.png",
+        "finished_at": 1794438279733,
+        "flash_twice": false,
+        "job_id": 2,
+        "rotation_degrees": 0,
+        "source": "manual",
+        "started_at": 1794438236992,
+        "status": "Completed"
+      },
+      "restored_display": {
+        "display_sha256": "19608333c2282be674c70f3a24c0f45b83c811f9a6f86b005b66bed68ee01241",
+        "active_card": false
+      },
+      "disposable_photos_removed": 3,
+      "flash_after": {
+        "current_job": null,
+        "queue": [],
+        "queue_length": 0
+      },
+      "json_error_404": {
+        "message": "GET /api/no-such-acceptance-route was not found on this frame.",
+        "success": false
+      },
+      "staged_bundle_removed": true
+    }
+  },
+  "limits": [
+    "Signed 0.2.2 reproduced the picker bug; the fix was checked in a separate debug package, not released.",
+    "Physical edit/refresh/force-stop tests ran during development of the fix; the final queued-import APK was separately checked with real picker imports on both frames.",
+    "No fresh browser install, BLE provisioning, mounting changes, deliberate lost submission response, invalid update metadata or active-refresh APK install in this run.",
+    "Installer-cancellation banner wording from November 1 remains a separate follow-up."
+  ]
+}
