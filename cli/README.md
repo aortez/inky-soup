@@ -349,7 +349,9 @@ The frame cycles through the ready photos with any of the slideshow's tags in
 filename order, wrapping at the end. `slideshow all` shows every photo instead, and
 `slideshow tags` with no tags switches back to the ones chosen before. Photos that
 need processing are skipped: use the app to save them, or upload a prepared image
-with `upload --prepared`.
+with `upload --prepared`. While the slideshow is due but has nothing ready, the
+frame looks again once a minute, or as soon as its settings change, so a prepared
+photo given one of its tags can take a minute to appear.
 Processing remains on the client. An active edit lock on **any** photo pauses
 automatic submission, as does a busy flash queue. Stop prevents future automatic
 jobs; a job already queued finishes. Manual `flash` works for any photo and

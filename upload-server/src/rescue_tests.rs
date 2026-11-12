@@ -141,6 +141,11 @@ pub(crate) async fn check_rescue() {
         status().await.into_json::<Value>().await.unwrap()["card_active"],
         true
     );
+    // While the card is shown, a due slideshow check reads no photo metadata.
+    assert!(
+        crate::slideshow_tests::tick_skips_gallery(&client, after["next_due_at"].as_u64().unwrap())
+            .await
+    );
 
     // Reboot while showing rescue remembers the image and waits for stable recovery.
     queue.lock().await.rescue = Some(rescue::Rescue::load(directory.clone(), true));

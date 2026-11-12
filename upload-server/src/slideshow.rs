@@ -28,6 +28,8 @@ use tokio::sync::Mutex;
 pub type SlideshowState = Arc<Mutex<Slideshow>>;
 const HOUR_MS: u64 = 3_600_000;
 const RETRY_MS: u64 = 60_000;
+/// How long a due slideshow waits to scan again after finding nothing ready.
+const RESCAN_MS: u64 = 60_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -79,6 +81,7 @@ pub struct Slideshow {
     path: PathBuf,
     hour_ms: u64,
     retry_not_before: u64,
+    scan_not_before: u64,
     storage_error: Option<String>,
 }
 
@@ -111,6 +114,7 @@ impl Slideshow {
             path,
             hour_ms: HOUR_MS,
             retry_not_before: 0,
+            scan_not_before: 0,
             storage_error: None,
         };
         // Only debug/test binaries accept acceleration; production always uses hours.
@@ -141,6 +145,9 @@ impl Slideshow {
             Ok(()) => {
                 self.settings = settings;
                 self.storage_error = None;
+                // Any saved change, such as new settings, ends the wait for the
+                // next scan.
+                self.scan_not_before = 0;
                 Ok(())
             }
             Err(error) => {
@@ -222,13 +229,14 @@ impl Slideshow {
         self.settings.rotation_enabled && now >= self.next_due_at()
     }
 
+    /// Why the slideshow is paused, if it is. `photos` holds the counts of matching
+    /// and ready photos, or is `None` to check only the pauses that need no scan.
     fn paused_reason(
         &self,
         now: u64,
         editing: bool,
         idle: bool,
-        matching: usize,
-        ready: usize,
+        photos: Option<(usize, usize)>,
     ) -> Option<&'static str> {
         if !self.settings.rotation_enabled {
             Some("disabled")
@@ -238,9 +246,9 @@ impl Slideshow {
             Some("editing")
         } else if !idle {
             Some("display_busy")
-        } else if matching == 0 {
+        } else if photos.is_some_and(|(matching, _)| matching == 0) {
             Some("no_matching_photos")
-        } else if ready == 0 {
+        } else if photos.is_some_and(|(_, ready)| ready == 0) {
             Some("needs_processing")
         } else if now < self.retry_not_before {
             Some("retry_backoff")
@@ -335,13 +343,17 @@ pub(crate) async fn inspect_or_tick(
         .collect();
     ready.sort();
     let editing = locks.values().any(|lock| lock.expires_at > Instant::now());
+    let photos = Some((matching.len(), ready.len()));
     let paused = if queue.rescue.as_ref().is_some_and(|r| r.blocks_slideshow()) {
         Some("rescue")
     } else {
-        state.paused_reason(now, editing, queue.is_idle(), matching.len(), ready.len())
+        state.paused_reason(now, editing, queue.is_idle(), photos)
     };
     let next = next_filename(&ready, state.settings.last_rotated_filename.as_deref());
     let mut job_id = None;
+    if enqueue && state.is_due(now) && ready.is_empty() {
+        state.scan_not_before = now.saturating_add(RESCAN_MS);
+    }
     if enqueue && paused.is_none() && state.is_due(now) {
         if let Some(filename) = next {
             match orientation::snapshot_image(&config::dithered_path(filename)) {
@@ -364,16 +376,18 @@ pub(crate) async fn inspect_or_tick(
     json!({"settings": state.settings, "next_due_at": state.next_due_at(),
         "paused_reason": if queue.rescue.as_ref().is_some_and(|r| r.blocks_slideshow()) {
             Some("rescue")
-        } else { state.paused_reason(now, editing, queue.is_idle(), matching.len(), ready.len()) },
+        } else { state.paused_reason(now, editing, queue.is_idle(), photos) },
         "last_flash_source": state.settings.last_flash_source, "next_filename": next,
         "matching_count": matching.len(), "ready_count": ready.len(), "queued_job_id": job_id,
         "retry_not_before": state.retry_not_before, "storage_error": state.storage_error})
 }
 
-/// One scheduler check. Until rotation is enabled and due, which covers most
-/// checks, it returns `None` without taking the storage lock or reading the
-/// gallery. A due check queues the next ready photo unless a pause holds it
-/// back, and returns the status.
+/// One scheduler check. Once rotation is due, it queues the next ready photo
+/// unless a pause holds it back, and returns the status. It returns `None`
+/// without taking the storage lock or reading the gallery until rotation is due,
+/// while rescue, a storage error, an edit lock, a busy queue or the retry backoff
+/// holds it back, and for a minute after a due check found nothing ready, or until
+/// a saved change.
 pub(crate) async fn tick(
     state: &SlideshowState,
     storage: &StorageLock,
@@ -381,11 +395,26 @@ pub(crate) async fn tick(
     locks: &ImageLocksState,
     now: u64,
 ) -> Option<Value> {
-    // The slideshow lock is released here, before inspect_or_tick takes every
-    // lock in order.
-    let due = state.lock().await.is_due(now);
-    if !due {
-        return None;
+    {
+        // Most checks end here, holding only the slideshow lock.
+        let slideshow = state.lock().await;
+        if !slideshow.is_due(now) || now < slideshow.scan_not_before {
+            return None;
+        }
+    }
+    {
+        // Every lock but storage, in order, released before inspect_or_tick takes
+        // them all.
+        let queue = queue.lock().await;
+        let locks = locks.lock().await;
+        let editing = locks.values().any(|lock| lock.expires_at > Instant::now());
+        let paused = state
+            .lock()
+            .await
+            .paused_reason(now, editing, queue.is_idle(), None);
+        if paused.is_some() || queue.rescue.as_ref().is_some_and(|r| r.blocks_slideshow()) {
+            return None;
+        }
     }
     Some(inspect_or_tick(state, storage, queue, locks, now, true).await)
 }
@@ -463,10 +492,13 @@ mod tests {
         assert_eq!(state.settings.rotation_anchor_at, 100);
         assert_eq!(state.settings.last_rotated_filename, None);
         assert_eq!(
-            state.paused_reason(201, false, true, 1, 1),
+            state.paused_reason(201, false, true, Some((1, 1))),
             Some("retry_backoff")
         );
-        assert_eq!(state.paused_reason(200 + RETRY_MS, false, true, 1, 1), None);
+        assert_eq!(
+            state.paused_reason(200 + RETRY_MS, false, true, Some((1, 1))),
+            None
+        );
         state.flash_finished(&automatic, true, 300);
         assert_eq!(state.settings.rotation_anchor_at, 300);
         assert_eq!(
@@ -520,12 +552,12 @@ mod tests {
         assert!(state.content_completed(900).is_err());
         assert_eq!(state.settings, before);
         assert_eq!(
-            state.paused_reason(1000, false, true, 1, 1),
+            state.paused_reason(1000, false, true, Some((1, 1))),
             Some("storage_error")
         );
         fs::remove_dir(&state.path).unwrap();
         state.content_completed(1100).unwrap();
-        assert_eq!(state.paused_reason(1100, false, true, 1, 1), None);
+        assert_eq!(state.paused_reason(1100, false, true, Some((1, 1))), None);
         fs::write(&state.path, b"broken settings").unwrap();
         assert!(Slideshow::load(state.path.clone(), 1200).is_err());
         fs::remove_dir_all(root).unwrap();
@@ -568,7 +600,7 @@ mod tests {
                 })
             );
             assert_eq!(
-                state.paused_reason(1000, false, true, 2, 2),
+                state.paused_reason(1000, false, true, Some((2, 2))),
                 Some("storage_error")
             );
             // A failed content/settings write must not lose the physical completion
@@ -600,7 +632,7 @@ mod tests {
                 completion.last_rotated_filename
             );
             assert_eq!(state.next_due_at(), 900 + 2 * HOUR_MS);
-            assert_eq!(state.paused_reason(1000, false, true, 2, 2), None);
+            assert_eq!(state.paused_reason(1000, false, true, Some((2, 2))), None);
             assert_eq!(
                 Slideshow::load(state.path.clone(), 1000).unwrap().settings,
                 state.settings
@@ -678,7 +710,7 @@ mod tests {
     fn pause_reasons_and_round_robin_survive_a_removed_cursor() {
         let (root, mut state) = fixture("pauses");
         assert_eq!(
-            state.paused_reason(100, false, true, 1, 1),
+            state.paused_reason(100, false, true, Some((1, 1))),
             Some("disabled")
         );
         state
@@ -688,19 +720,24 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
-        assert_eq!(state.paused_reason(100, true, true, 1, 1), Some("editing"));
         assert_eq!(
-            state.paused_reason(100, false, false, 1, 1),
+            state.paused_reason(100, true, true, Some((1, 1))),
+            Some("editing")
+        );
+        assert_eq!(
+            state.paused_reason(100, false, false, Some((1, 1))),
             Some("display_busy")
         );
         assert_eq!(
-            state.paused_reason(100, false, true, 0, 0),
+            state.paused_reason(100, false, true, Some((0, 0))),
             Some("no_matching_photos")
         );
         assert_eq!(
-            state.paused_reason(100, false, true, 1, 0),
+            state.paused_reason(100, false, true, Some((1, 0))),
             Some("needs_processing")
         );
+        // Before a scan, the photos can't pause it.
+        assert_eq!(state.paused_reason(100, false, true, None), None);
         let ready = vec!["a.jpg".into(), "c.jpg".into()];
         for (cursor, expected) in [
             (None, "a.jpg"),

@@ -309,17 +309,20 @@ interval fail startup rather than silently overwriting the user's schedule. Chan
 settings or tags preserves the anchor. `next_due_at` remains available when
 paused, representing the deadline to resume from, not a promise to refresh then.
 
-The scheduler checks once per second. Until rotation is enabled and due, a check
-reads only the schedule, without the storage lock or a gallery scan; status
-requests still scan. A due check uses the same immutable snapshot/queue as manual
-flashing, and serializes the check and enqueue with orientation changes, edit
-locks, and queue operations. Only idle queues with no active edit locks can accept
-an automatic job. Eligible photos match the slideshow's tags, or any photo while it
-shows every photo, and have all three current derived assets and no incomplete
-upload; sort filenames lexically, choose after the successful cursor, then wrap.
-Deleted or untagged cursor photos do not disrupt this order. Stale photos are
-skipped. With none matching, status reports `no_matching_photos`; with none ready,
-`needs_processing`.
+The scheduler checks once per second. Until rotation is enabled and due, a check reads
+only the schedule, without the storage lock or a gallery scan. A due check also skips
+the scan while rescue, a storage error, an edit lock, a busy queue or the retry
+backoff holds it back, and for a minute after a scan found nothing ready, unless a
+saved change, such as new settings, comes first. So a prepared photo given one of the
+slideshow's tags can take a minute to be shown. Status requests still scan. A due
+check uses the same immutable snapshot/queue as manual flashing, and serializes the
+check and enqueue with orientation changes, edit locks, and queue operations. Only
+idle queues with no active edit locks can accept an automatic job. Eligible photos
+match the slideshow's tags, or any photo while it shows every photo, and have all
+three current derived assets and no incomplete upload; sort filenames lexically,
+choose after the successful cursor, then wrap. Deleted or untagged cursor photos do
+not disrupt this order. Stale photos are skipped. With none matching, status reports
+`no_matching_photos`; with none ready, `needs_processing`.
 There is no server-side rendering. Stopping does not cancel an accepted job.
 
 The queue worker resets the anchor on **successful completion**, before exposing an
