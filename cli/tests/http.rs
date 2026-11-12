@@ -540,10 +540,10 @@ fn tag_commands_change_tags_without_an_edit_lock() {
     server.join().unwrap();
     // Tags are required, and a path is refused before anything is sent.
     let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
-        .args(["tag", "photo.jpg"])
+        .args(["--device", "http://127.0.0.1:9", "tag", "photo.jpg"])
         .output()
         .unwrap();
-    assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2), "a usage error");
     let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
         .args(["--device", "http://127.0.0.1:9", "--json"])
         .args(["tag", "../photo.jpg", "beach"])
@@ -583,8 +583,18 @@ fn slideshow_commands_patch_only_requested_settings_and_enforce_hours() {
             vec!["slideshow", "all"],
             serde_json::json!({"rotation_all_photos":true}),
         ),
+        (
+            vec!["slideshow", "tags"],
+            serde_json::json!({"rotation_all_photos":false}),
+        ),
     ] {
-        let (url, server) = serve(vec![r#"{"success":true}"#]);
+        // Tag settings are sent only after the frame shows it supports them.
+        let checks_support = matches!(args[1], "tags" | "all");
+        let mut replies = vec![r#"{"success":true}"#];
+        if checks_support {
+            replies.insert(0, r#"{"settings":{"rotation_tags":["favorite"]}}"#);
+        }
+        let (url, server) = serve(replies);
         let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
             .args(["--device", &url, "--json"])
             .args(args)
@@ -596,17 +606,36 @@ fn slideshow_commands_patch_only_requested_settings_and_enforce_hours() {
             String::from_utf8_lossy(&output.stderr)
         );
         let requests = server.join().unwrap();
-        assert!(requests[0].starts_with("POST /api/settings/slideshow "));
-        let body: Value =
-            serde_json::from_str(requests[0].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(
+            requests[0].starts_with("GET /api/slideshow "),
+            checks_support
+        );
+        let post = requests.last().unwrap();
+        assert!(post.starts_with("POST /api/settings/slideshow "));
+        let body: Value = serde_json::from_str(post.split("\r\n\r\n").nth(1).unwrap()).unwrap();
         assert_eq!(body, expected);
     }
+    // Servers older than tags would refuse the settings as unknown fields.
+    let (url, server) = serve(vec![
+        r#"{"settings":{"rotation_enabled":false,"rotation_interval_hours":24},"favorite_count":0}"#,
+    ]);
+    let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+        .args(["--device", &url, "--json", "slideshow", "all"])
+        .output()
+        .unwrap();
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("Update the frame server to support tags"));
+    assert!(server.join().unwrap()[0].starts_with("GET /api/slideshow "));
     for hours in ["0", "169", "1.5", "-1"] {
         let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+            .args(["--device", "http://127.0.0.1:9"])
             .args(["slideshow", "interval", hours])
             .output()
             .unwrap();
-        assert!(!output.status.success());
+        assert_eq!(output.status.code(), Some(2), "{hours} is a usage error");
     }
     let (url, server) = serve(vec![r#"{"paused_reason":"editing","next_due_at":123}"#]);
     let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
@@ -623,8 +652,10 @@ fn slideshow_commands_patch_only_requested_settings_and_enforce_hours() {
 
 #[test]
 fn tag_listings_filter_the_gallery_and_reject_older_servers() {
+    // Saved tags are normalized too, so c matches as a frame with other rules
+    // might save it.
     let gallery = r#"[{"filename":"a","tags":[]},{"filename":"b","tags":["beach trip","favorite"]},
-        {"filename":"c","tags":["beach trip"]}]"#;
+        {"filename":"c","tags":["Beach Trip"]}]"#;
     for (args, reply, expected) in [
         (vec!["favorites"], gallery, Some(vec!["b"])),
         (
@@ -658,6 +689,16 @@ fn tag_listings_filter_the_gallery_and_reject_older_servers() {
         }
         assert!(server.join().unwrap()[0].starts_with("GET /api/images "));
     }
+    // An empty tag is refused before anything is sent.
+    let output = Command::new(env!("CARGO_BIN_EXE_inky-cli"))
+        .args(["--device", "http://127.0.0.1:9", "--json", "tagged", " "])
+        .output()
+        .unwrap();
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(result["error"]
+        .as_str()
+        .unwrap()
+        .contains("A tag can't be empty"));
 }
 
 #[test]

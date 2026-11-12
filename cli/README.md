@@ -329,6 +329,7 @@ also been exercised against the original Pi Zero W over USB and WiFi.
 ./inky-cli slideshow interval 24
 ./inky-cli slideshow tags favorite beach
 ./inky-cli slideshow all
+./inky-cli slideshow tags            # back to the tags chosen before
 ./inky-cli slideshow stop
 ```
 
@@ -346,8 +347,9 @@ timer anchor, so enabling an overdue slideshow can display a photo immediately.
 
 The frame cycles through the ready photos with any of the slideshow's tags in
 filename order, wrapping at the end. `slideshow all` shows every photo instead, and
-`slideshow tags` switches back to tags. Photos that need processing are skipped: use
-the app to save them, or upload a prepared image with `upload --prepared`.
+`slideshow tags` with no tags switches back to the ones chosen before. Photos that
+need processing are skipped: use the app to save them, or upload a prepared image
+with `upload --prepared`.
 Processing remains on the client. An active edit lock on **any** photo pauses
 automatic submission, as does a busy flash queue. Stop prevents future automatic
 jobs; a job already queued finishes. Manual `flash` works for any photo and
@@ -369,7 +371,7 @@ photo (cache, thumbnail, then dithered upload). Uploading just an original,
 changing a photo's angle without saving its rebuilt pixels, partial uploads,
 tag changes, and failed jobs do not reset it. The scheduler's anchor and
 last successfully rotated filename survive server restarts. Android/web controls
-for these settings are separate follow-up work under issue #4.
+for these settings are follow-up work in issue #33.
 
 ## Identity and local discovery
 

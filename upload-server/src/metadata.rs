@@ -3,7 +3,10 @@
 //! Each image has its own JSON file in the metadata directory.
 //! Files are read on demand and written atomically (temp file + rename).
 
-use crate::{config, tags::FAVORITE};
+use crate::{
+    config,
+    tags::{self, FAVORITE},
+};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -196,11 +199,13 @@ pub fn load_metadata(filename: &str) -> ImageMetadata {
 /// Parses a metadata file, including one saved by a server older than tags.
 fn parse(contents: &str) -> serde_json::Result<ImageMetadata> {
     let mut metadata: ImageMetadata = serde_json::from_str(contents)?;
+    let mut saved = tags::normalize_saved(std::mem::take(&mut metadata.tags));
     // Older servers keep the favorite tag only in `favorite`, and drop `tags`
     // when they save a photo.
-    if metadata.tags.is_empty() && metadata.favorite {
-        metadata.tags.push(FAVORITE.into());
+    if saved.is_empty() && metadata.favorite {
+        saved.push(FAVORITE.into());
     }
+    metadata.set_tags(saved);
     Ok(metadata)
 }
 
@@ -464,5 +469,10 @@ mod tests {
         let older: serde_json::Value = serde_json::from_str(&saved).unwrap();
         assert_eq!(older["favorite"], true);
         assert_eq!(parse(&saved).unwrap().tags(), ["beach", FAVORITE]);
+        // Saved tags are normalized where they meet the rules, and `tags` decides
+        // the favorite.
+        let edited = parse(r#"{"favorite":false,"tags":["Favorite","a,b"]}"#).unwrap();
+        assert_eq!(edited.tags(), ["a,b", FAVORITE]);
+        assert!(edited.favorite);
     }
 }

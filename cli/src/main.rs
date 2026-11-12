@@ -233,12 +233,10 @@ enum SlideshowCommand {
         #[arg(value_parser = clap::value_parser!(u16).range(1..=168))]
         hours: u16,
     },
-    /// Show the photos with any of these tags.
-    Tags {
-        #[arg(required = true)]
-        tags: Vec<String>,
-    },
-    /// Show every photo, keeping the chosen tags for later.
+    /// Show the photos with any of these tags; with none given, use the tags
+    /// chosen before.
+    Tags { tags: Vec<String> },
+    /// Show every photo; the tags command switches back.
     All,
 }
 
@@ -441,14 +439,22 @@ fn change_tags(frame: &Frame, filename: &str, change: &str, tags: &[String]) -> 
     frame.json_post("api/settings/tags", &body)
 }
 
-/// Lists the photos with a tag, compared as the frame stores tags: in lowercase,
-/// with each run of whitespace as one space.
-fn tagged(frame: &Frame, tag: &str) -> Result<Value> {
-    let tag = tag
-        .split_whitespace()
+/// Returns a tag as the frame stores it: in lowercase, with each run of whitespace
+/// as one space.
+fn normalized(tag: &str) -> String {
+    tag.split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
-        .to_lowercase();
+        .to_lowercase()
+}
+
+/// Lists the photos with a tag. Saved tags are normalized here too, in case the
+/// frame was built with other Unicode case tables.
+fn tagged(frame: &Frame, tag: &str) -> Result<Value> {
+    let tag = normalized(tag);
+    if tag.is_empty() {
+        bail!("A tag can't be empty");
+    }
     let gallery = frame.get("api/images")?;
     let images = gallery.as_array().context("Invalid gallery")?;
     if images.iter().any(|image| !image["tags"].is_array()) {
@@ -456,8 +462,21 @@ fn tagged(frame: &Frame, tag: &str) -> Result<Value> {
     }
     Ok(json!(images
         .iter()
-        .filter(|image| image["tags"].as_array().unwrap().contains(&json!(tag)))
+        .filter(|image| image["tags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|saved| saved.as_str().is_some_and(|saved| normalized(saved) == tag)))
         .collect::<Vec<_>>()))
+}
+
+/// Fails on a frame server older than tags, which refuses the slideshow's tag
+/// settings as unknown fields.
+fn require_tags(frame: &Frame) -> Result<()> {
+    if !frame.get("api/slideshow")?["settings"]["rotation_tags"].is_array() {
+        bail!("Update the frame server to support tags");
+    }
+    Ok(())
 }
 
 fn valid_filename(name: &str) -> Result<()> {
@@ -781,14 +800,21 @@ fn run(args: &Args) -> Result<Value> {
                 "api/settings/slideshow",
                 &json!({"rotation_interval_hours":hours}),
             ),
-            Some(SlideshowCommand::Tags { tags }) => frame.json_post(
-                "api/settings/slideshow",
-                &json!({"rotation_tags":tags,"rotation_all_photos":false}),
-            ),
-            Some(SlideshowCommand::All) => frame.json_post(
-                "api/settings/slideshow",
-                &json!({"rotation_all_photos":true}),
-            ),
+            Some(SlideshowCommand::Tags { tags }) => {
+                require_tags(&frame)?;
+                let mut settings = json!({"rotation_all_photos":false});
+                if !tags.is_empty() {
+                    settings["rotation_tags"] = json!(tags);
+                }
+                frame.json_post("api/settings/slideshow", &settings)
+            }
+            Some(SlideshowCommand::All) => {
+                require_tags(&frame)?;
+                frame.json_post(
+                    "api/settings/slideshow",
+                    &json!({"rotation_all_photos":true}),
+                )
+            }
         },
         Command::Rescue {
             action,

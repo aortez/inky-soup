@@ -1,7 +1,7 @@
 //! Photo tags: short lowercase labels that also choose what the slideshow shows.
 //! `favorite` is built in as the slideshow's default tag. Tag changes need no
 //! edit lock of their own, since they change no pixels or image settings, but
-//! they wait while another session edits the photo.
+//! are refused while another session edits the photo.
 use crate::{
     api_error::{failure, Failure},
     browser_access::BrowserWrite,
@@ -59,6 +59,35 @@ pub fn normalize_all(tags: &[String]) -> Result<Vec<String>, String> {
     Ok(tags)
 }
 
+/// Normalizes tags read from storage, sorted and without duplicates. A tag that
+/// breaks these rules, such as one saved by a newer server, is kept as saved.
+pub fn normalize_saved(tags: Vec<String>) -> Vec<String> {
+    let mut tags: Vec<_> = tags
+        .into_iter()
+        .map(|tag| normalize(&tag).unwrap_or(tag))
+        .collect();
+    tags.sort();
+    tags.dedup();
+    tags
+}
+
+/// Applies a change to a photo's tags. A photo already over the limit, such as
+/// one tagged by a newer server, can still lose tags.
+fn apply(tags: &[String], add: Vec<String>, remove: &[String]) -> Result<Vec<String>, String> {
+    let mut changed: Vec<_> = tags
+        .iter()
+        .filter(|tag| !remove.contains(tag))
+        .cloned()
+        .chain(add)
+        .collect();
+    changed.sort();
+    changed.dedup();
+    if changed.len() > MAX_TAGS.max(tags.len()) {
+        return Err(format!("A photo can have at most {MAX_TAGS} tags"));
+    }
+    Ok(changed)
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TagChange {
@@ -110,18 +139,7 @@ pub async fn update_tags(
         return Err(failure(Status::NotFound, "Photo not found"));
     }
     let mut meta = metadata::get_all_metadata(filename);
-    let mut tags: Vec<_> = meta
-        .tags()
-        .iter()
-        .filter(|tag| !remove.contains(tag))
-        .cloned()
-        .chain(add)
-        .collect();
-    tags.sort();
-    tags.dedup();
-    if tags.len() > MAX_TAGS {
-        return Err(invalid(format!("A photo can have at most {MAX_TAGS} tags")));
-    }
+    let tags = apply(meta.tags(), add, &remove).map_err(invalid)?;
     meta.set_tags(tags);
     metadata::try_save_metadata(filename, &meta)
         .map_err(|error| failure(Status::InternalServerError, error))?;
@@ -148,5 +166,28 @@ mod tests {
             normalize_all(&["Kids".into(), "beach".into(), "KIDS ".into()]).unwrap(),
             ["beach", "kids"]
         );
+    }
+
+    #[test]
+    fn photos_reach_the_tag_limit_but_only_shrink_past_it() {
+        let numbered = |count: usize| (0..count).map(|n| format!("{n:02}")).collect::<Vec<_>>();
+        let most = numbered(MAX_TAGS);
+        assert_eq!(
+            apply(
+                &numbered(MAX_TAGS - 1),
+                vec![most[MAX_TAGS - 1].clone()],
+                &[]
+            )
+            .unwrap(),
+            most
+        );
+        assert!(apply(&most, vec!["new".into()], &[]).is_err());
+        // A photo over the limit, as a newer server could leave it, can lose tags.
+        let over = numbered(MAX_TAGS + 2);
+        assert_eq!(
+            apply(&over, vec!["new".into()], &["00".into(), "01".into()]).unwrap(),
+            [&over[2..], &["new".into()]].concat()
+        );
+        assert!(apply(&over, vec!["new".into()], &[]).is_err());
     }
 }

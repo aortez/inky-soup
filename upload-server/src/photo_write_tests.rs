@@ -246,7 +246,7 @@ pub(crate) async fn check_photo_write_guards() {
         }
     }
 
-    // A tag change needs no edit lock of its own, but waits while another
+    // A tag change needs no edit lock of its own, but is refused while another
     // session holds one.
     hold_lock(&locks, "other", Instant::now() + Duration::from_secs(30)).await;
     for session in [None, Some("editor")] {

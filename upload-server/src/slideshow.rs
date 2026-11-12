@@ -84,7 +84,7 @@ pub struct Slideshow {
 
 impl Slideshow {
     pub fn load(path: PathBuf, now: u64) -> io::Result<Self> {
-        let settings = match fs::read(&path) {
+        let mut settings = match fs::read(&path) {
             Ok(bytes) => serde_json::from_slice::<Settings>(&bytes)?,
             Err(error) if error.kind() == io::ErrorKind::NotFound => Settings {
                 rotation_enabled: false,
@@ -103,12 +103,9 @@ impl Slideshow {
                 "Invalid slideshow interval",
             ));
         }
-        if rotation_tags(&settings.rotation_tags).as_ref() != Ok(&settings.rotation_tags) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Invalid slideshow tags",
-            ));
-        }
+        // Unlike the interval, saved tags never stop the server from starting: tag
+        // rules can change between releases, and both rootfs slots read this file.
+        settings.rotation_tags = tags::normalize_saved(settings.rotation_tags);
         let mut state = Self {
             settings,
             path,
@@ -647,7 +644,15 @@ mod tests {
             .unwrap();
         assert!(state.settings.shows(&[]));
         assert_eq!(state.settings.rotation_tags, ["beach", "kids"]);
-        let too_many = (0..=tags::MAX_TAGS).map(|n| n.to_string()).collect();
+        let most: Vec<_> = (0..tags::MAX_TAGS).map(|n| format!("{n:02}")).collect();
+        state
+            .configure(&Configure {
+                rotation_tags: Some(most.clone()),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(state.settings.rotation_tags, most);
+        let too_many = [most, vec!["new".into()]].concat();
         for invalid in [vec![], vec!["a,b".into()], too_many] {
             assert!(state
                 .configure(&Configure {
@@ -660,11 +665,12 @@ mod tests {
             Slideshow::load(state.path.clone(), 999).unwrap().settings,
             state.settings
         );
-        // Saved tags are checked at startup, like the interval.
+        // Saved tags are normalized where they meet the rules, and kept otherwise.
         let mut settings = state.settings.clone();
-        settings.rotation_tags = vec!["Beach".into()];
+        settings.rotation_tags = vec!["Beach".into(), "a,b".into(), " beach ".into()];
         fs::write(&state.path, serde_json::to_vec(&settings).unwrap()).unwrap();
-        assert!(Slideshow::load(state.path.clone(), 999).is_err());
+        let state = Slideshow::load(state.path.clone(), 999).unwrap();
+        assert_eq!(state.settings.rotation_tags, ["a,b", "beach"]);
         fs::remove_dir_all(root).unwrap();
     }
 

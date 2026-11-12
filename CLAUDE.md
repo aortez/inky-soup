@@ -73,12 +73,12 @@ reboot does not remove panel power. Test a patched driver without hardware using
 - `cache_worker.rs`: cache path helper.
 - `cleanup.rs`: periodic cleanup of orphaned derived files, under the storage lock.
 
-Server unit tests live in `flash_queue.rs` and `browser_access.rs`. The API tests run as one
-sequence from `orientation_tests.rs`; `photo_write_tests.rs` sends every photo write route and
-`/flash` a request with no session, another session's lock, an expired lock and a queued
-photo, and checks the failure body of each refusal. It checks tag changes, which need no
-edit lock of their own, separately. The old `src/tests.rs` file is unused
-Rocket example code, not an active integration suite.
+Server unit tests sit in `#[cfg(test)]` modules beside the code they test. The API tests run as
+one sequence from `orientation_tests.rs`; `photo_write_tests.rs` sends every photo write route
+and `/flash` a request with no session, another session's lock, an expired lock and a queued
+photo, and checks the failure body of each refusal. It checks tag changes, which need no edit
+lock of their own, separately. The old `src/tests.rs` file is unused Rocket example code, not
+an active integration suite.
 
 ## JavaScript architecture
 
@@ -255,17 +255,21 @@ browser client, just as for mounting changes.
 
 Tags are lowercase labels of 1–32 characters without commas or control characters;
 the server trims them and turns each run of whitespace into one space. A photo has at
-most 20 tags. `favorite` is built in: it is the slideshow's default tag, and clients
-show it as a star. `POST /api/settings/tags` takes JSON `{filename, session_id, add,
-remove}`, where only `filename` and one change are required, and returns the photo's
-sorted `tags`. Another session's unexpired edit lock refuses it with 409; the session
-holding the lock can send its `session_id`. `GET /api/images` includes `tags`, and
-saving other image settings preserves them.
+most 20 tags. `favorite` is built in as the slideshow's default tag.
+`POST /api/settings/tags` takes JSON `{filename, session_id, add, remove}`, where
+only `filename` and one change are required, and returns the photo's sorted `tags`.
+Another session's unexpired edit lock refuses it with 409; the session holding the
+lock can send its `session_id`. `GET /api/images` includes `tags`, and saving other
+image settings preserves them.
 
-Metadata saved before tags keeps the favorite tag as `favorite: true`, which the
-server reads as the favorite tag. The server still writes `favorite`, so an older
-rootfs slot booted on the same `/data` keeps favorites, although it drops other tags
-from any photo it saves.
+Saved tags, on photos and in the slideshow settings, are normalized when read. A tag
+that breaks these rules, such as one saved by a newer server, is kept as saved and
+never stops the server from starting, and a photo over the limit can still lose
+tags. Metadata saved before tags keeps the favorite tag as `favorite: true`, which
+the server reads as the favorite tag. The server still writes `favorite`, so an older
+rootfs slot booted on the same `/data` keeps favorites. That slot drops other tags
+from any photo it saves, and its slideshow goes back to showing favorites the next
+time it saves its settings, after a display, a save or a settings change.
 
 `POST /api/settings/slideshow` takes any of `rotation_enabled: bool`,
 `rotation_interval_hours: integer` (1–168), `rotation_tags` (1–20 tags) and
@@ -300,8 +304,8 @@ endpoints use the existing browser-origin guard. `GET /api/slideshow` returns:
 
 Timestamps are UTC Unix milliseconds. Settings, anchor and successful automatic
 cursor are atomically persisted in `INKY_SOUP_DATA_DIR/settings/slideshow.json`.
-New installations default to disabled/24 hours. Invalid or unreadable settings
-fail startup rather than silently overwriting the user's schedule. Changing
+New installations default to disabled/24 hours. Unreadable settings or an invalid
+interval fail startup rather than silently overwriting the user's schedule. Changing
 settings or tags preserves the anchor. `next_due_at` remains available when
 paused, representing the deadline to resume from, not a promise to refresh then.
 
@@ -348,4 +352,4 @@ binaries ignore it; API/CLI intervals remain 1–168 hours. Combine with disposa
 The API fixture in `slideshow_tests.rs` shares the orientation test's image root,
 exercises the real worker with successful/failing commands, and injects time into
 scheduler checks without waiting for real hours. CLI commands are in `cli/README.md`.
-Android/web controls and physical acceptance remain follow-ups to issue #4.
+Android/web controls (#33) and physical acceptance remain follow-ups.

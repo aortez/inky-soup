@@ -129,13 +129,21 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
     // A due tick waits for the storage lock to read the gallery.
     assert!(!tick_skips_gallery(client, due).await);
     let revision = display_settings::load_runtime_settings().rotation_revision;
-    for filename in ["slideshow-a.png", "slideshow-b.png", "slideshow-c.png"] {
+    // Photos a, b and c are favorites, and d is untagged.
+    for filename in [
+        "slideshow-a.png",
+        "slideshow-b.png",
+        "slideshow-c.png",
+        "slideshow-d.png",
+    ] {
         fs::write(config::original_path(filename), b"original").unwrap();
         assert!(metadata::get_all_metadata(filename).tags().is_empty());
-        assert_eq!(
-            change_tags(client, json!({"filename": filename, "add": [" Favorite "]})).await,
-            json!([tags::FAVORITE])
-        );
+        if filename != "slideshow-d.png" {
+            assert_eq!(
+                change_tags(client, json!({"filename": filename, "add": [" Favorite "]})).await,
+                json!([tags::FAVORITE])
+            );
+        }
         let mut meta = metadata::get_all_metadata(filename);
         meta.cache_rotation_revision = revision;
         meta.thumb_rotation_revision = revision;
@@ -235,6 +243,12 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
     );
     let every = slideshow_status(client).await;
     let gallery = gallery.as_array().unwrap();
+    // The counts include d, which is ready and untagged.
+    assert!(gallery
+        .iter()
+        .any(|image| image["filename"] == "slideshow-d.png"
+            && image["tags"] == json!([])
+            && image["needs_processing"] == false));
     assert_eq!(every["matching_count"], gallery.len());
     assert_eq!(
         every["ready_count"],
