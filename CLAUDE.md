@@ -68,15 +68,17 @@ reboot does not remove panel power. Test a patched driver without hardware using
 - `image_locks.rs`: editing sessions and lock expiry.
 - `storage.rs`: the storage lock and the edit-lock check that photo writes take.
 - `flash_queue.rs`: queue, job status/history, background display worker.
-- `slideshow.rs`: persisted favorites scheduling, status, and completion tracking.
+- `slideshow.rs`: persisted scheduling by tag, status, and completion tracking.
+- `tags.rs`: tag rules and the route that changes a photo's tags.
 - `cache_worker.rs`: cache path helper.
 - `cleanup.rs`: periodic cleanup of orphaned derived files, under the storage lock.
 
-Server unit tests live in `flash_queue.rs` and `browser_access.rs`. The API tests run as one
-sequence from `orientation_tests.rs`; `photo_write_tests.rs` sends every photo write route and
-`/flash` a request with no session, another session's lock, an expired lock and a queued
-photo, and checks the failure body of each refusal. The old `src/tests.rs` file is unused
-Rocket example code, not an active integration suite.
+Server unit tests sit in `#[cfg(test)]` modules beside the code they test. The API tests run as
+one sequence from `orientation_tests.rs`; `photo_write_tests.rs` sends every photo write route
+and `/flash` a request with no session, another session's lock, an expired lock and a queued
+photo, and checks the failure body of each refusal. It checks tag changes, which need no edit
+lock of their own, separately. The old `src/tests.rs` file is unused Rocket example code, not
+an active integration suite.
 
 ## JavaScript architecture
 
@@ -109,7 +111,7 @@ images/
 └── metadata/photo.jpg.json   per-image settings
 ```
 
-Derived images are always PNGs named `{original}.png`. Metadata contains filter,
+Derived images are always PNGs named `{original}.png`. Metadata contains tags, filter,
 fit mode, saturation, brightness, contrast, dithering algorithm, and cache version.
 The legacy shared metadata file is migrated to per-image files on startup.
 
@@ -118,10 +120,10 @@ The legacy shared metadata file is migrated to per-image files on startup.
 | Method | Route | Purpose |
 | --- | --- | --- |
 | GET | `/` | Gallery page |
-| GET | `/api/images` | Gallery metadata, including `favorite` and processing readiness |
-| POST | `/api/settings/favorite` | Set a photo favorite with edit ownership |
+| GET | `/api/images` | Gallery metadata, including `tags` and processing readiness |
+| POST | `/api/settings/tags` | Add or remove a photo's tags unless another session is editing it |
 | GET | `/api/slideshow` | Settings, next due time, and pause reason |
-| POST | `/api/settings/slideshow` | Configure enabled state and interval in hours |
+| POST | `/api/settings/slideshow` | Configure enabled state, interval in hours and the photos shown |
 | GET | `/api/device` | Persisted device ID, process instance, name and capabilities |
 | GET | `/api/display-config` | Display and thumbnail dimensions |
 | POST | `/api/settings/display-rotation` | Persist mount orientation with an expected revision |
@@ -146,12 +148,14 @@ refused lock, `200` with `locked: false` and a `reason`.
 
 Photo writes take the storage lock in `storage.rs` before the flash queue and the
 edit locks; so do orientation changes, rescue, the slideshow scheduler and the
-cleanup worker. Derived uploads, photo rotation, favorites, flashing and deletion
-require the caller's unexpired edit lock, and deletion also refuses a queued or
-refreshing photo. A queued photo can still be saved, because its job displays a
-snapshot. `/upload` has no session field: released Frame apps send a new original
-without the session they hold, so checking it needs a client release first. The
-locks coordinate cooperating editors; the API is unauthenticated.
+cleanup worker. Derived uploads, photo rotation, flashing and deletion require the
+caller's unexpired edit lock, and deletion also refuses a queued or refreshing
+photo. Tag changes need no edit lock of their own, since they change no pixels or
+image settings, but are refused while another session holds one. A queued photo can
+still be saved, because its job displays a snapshot. `/upload` has no session field:
+released Frame apps send a new original without the session they hold, so checking
+it needs a client release first. The locks coordinate cooperating editors; the API
+is unauthenticated.
 
 Mount orientation is 0/90/180/270 degrees clockwise, viewed from the front.
 `/api/display-config` returns logical editing dimensions in `width`/`height`,
@@ -247,22 +251,41 @@ clients to disable these controls on old servers. CLI commands are documented in
 browser client, just as for mounting changes.
 
 
-### Favorites and slideshow API
+### Tags and slideshow API
 
-`POST /api/settings/favorite` takes JSON `{filename, session_id, favorite}` under
-an unexpired edit lock. `GET /api/images` includes `favorite` (false for old
-metadata). Saving other image settings preserves this flag.
+Tags are lowercase labels of 1–32 characters without commas or control characters;
+the server trims them and turns each run of whitespace into one space. A photo has at
+most 20 tags. `favorite` is built in as the slideshow's default tag.
+`POST /api/settings/tags` takes JSON `{filename, session_id, add, remove}`, where
+only `filename` and one change are required, and returns the photo's sorted `tags`.
+Another session's unexpired edit lock refuses it with 409; the session holding the
+lock can send its `session_id`. `GET /api/images` includes `tags`, and saving other
+image settings preserves them.
 
-`POST /api/settings/slideshow` takes either or both `rotation_enabled: bool` and
-`rotation_interval_hours: integer` (1–168). It patches only supplied fields;
-unknown/read-only fields and empty updates are rejected. All new write endpoints
-use the existing browser-origin guard. `GET /api/slideshow` returns:
+Saved tags, on photos and in the slideshow settings, are normalized when read. A tag
+that breaks these rules, such as one saved by a newer server, is kept as saved and
+never stops the server from starting, and a photo over the limit can still lose
+tags. Metadata saved before tags keeps the favorite tag as `favorite: true`, which
+the server reads as the favorite tag. The server still writes `favorite`, so an older
+rootfs slot booted on the same `/data` keeps favorites. That slot drops other tags
+from any photo it saves, and its slideshow goes back to showing favorites the next
+time it saves its settings, after a display, a save or a settings change.
+
+`POST /api/settings/slideshow` takes any of `rotation_enabled: bool`,
+`rotation_interval_hours: integer` (1–168), `rotation_tags` (1–20 tags) and
+`rotation_all_photos: bool`. The slideshow shows the photos with any of
+`rotation_tags`, `["favorite"]` by default, or every photo while `rotation_all_photos`
+is set, which keeps the tags for when it is turned off. It patches only supplied
+fields; unknown/read-only fields and empty updates are rejected. All new write
+endpoints use the existing browser-origin guard. `GET /api/slideshow` returns:
 
 ```json
 {
   "settings": {
     "rotation_enabled": false,
     "rotation_interval_hours": 24,
+    "rotation_all_photos": false,
+    "rotation_tags": ["favorite"],
     "rotation_anchor_at": 1792900000000,
     "last_rotated_filename": null,
     "last_flash_source": null
@@ -271,7 +294,7 @@ use the existing browser-origin guard. `GET /api/slideshow` returns:
   "paused_reason": "disabled",
   "last_flash_source": null,
   "next_filename": null,
-  "favorite_count": 0,
+  "matching_count": 0,
   "ready_count": 0,
   "queued_job_id": null,
   "retry_not_before": 0,
@@ -281,9 +304,9 @@ use the existing browser-origin guard. `GET /api/slideshow` returns:
 
 Timestamps are UTC Unix milliseconds. Settings, anchor and successful automatic
 cursor are atomically persisted in `INKY_SOUP_DATA_DIR/settings/slideshow.json`.
-New installations default to disabled/24 hours. Invalid or unreadable settings
-fail startup rather than silently overwriting the user's schedule. Changing
-settings or favorites preserves the anchor. `next_due_at` remains available when
+New installations default to disabled/24 hours. Unreadable settings or an invalid
+interval fail startup rather than silently overwriting the user's schedule. Changing
+settings or tags preserves the anchor. `next_due_at` remains available when
 paused, representing the deadline to resume from, not a promise to refresh then.
 
 The scheduler checks once per second. Until rotation is enabled and due, a check
@@ -291,23 +314,25 @@ reads only the schedule, without the storage lock or a gallery scan; status
 requests still scan. A due check uses the same immutable snapshot/queue as manual
 flashing, and serializes the check and enqueue with orientation changes, edit
 locks, and queue operations. Only idle queues with no active edit locks can accept
-an automatic job. Eligible favorites have all three current derived assets and no
-incomplete upload; sort filenames lexically, choose after the successful cursor,
-then wrap. Deleted/unfavorited cursor photos do not disrupt this order. Stale
-favorites are skipped; with none ready, status reports `needs_processing`.
+an automatic job. Eligible photos match the slideshow's tags, or any photo while it
+shows every photo, and have all three current derived assets and no incomplete
+upload; sort filenames lexically, choose after the successful cursor, then wrap.
+Deleted or untagged cursor photos do not disrupt this order. Stale photos are
+skipped. With none matching, status reports `no_matching_photos`; with none ready,
+`needs_processing`.
 There is no server-side rendering. Stopping does not cancel an accepted job.
 
-The queue worker resets the anchor on **successful completion**, before exposing
-an idle queue, and records `source: manual|automatic` in job status. Automatic
-success advances the cursor; manual success (including test cards/nonfavorites)
-only resets the timer/source. Automatic failure leaves both untouched and backs
-off for 60 seconds. The backoff is runtime-only; after restart an overdue schedule
-may retry once. If completion persistence fails, `storage_error` pauses automatic
-work until storage is repaired and a save/settings write succeeds. A successful
-physical refresh is retained in memory even if its completion cannot be written;
-the next successful save/settings write persists that completion before rotation
-resumes. Rejected settings writes do not replace the retained completion. An
-unpersisted completion cannot survive a process restart.
+The queue worker resets the anchor on **successful completion**, before exposing an
+idle queue, and records `source: manual|automatic` in job status. Automatic success
+advances the cursor; manual success (including test cards and photos the slideshow
+doesn't show) only resets the timer/source. Automatic failure leaves both untouched
+and backs off for 60 seconds. The backoff is runtime-only; after restart an overdue
+schedule may retry once. If completion persistence fails, `storage_error` pauses
+automatic work until storage is repaired and a save/settings write succeeds. A
+successful physical refresh is retained in memory even if its completion cannot be
+written; the next successful save/settings write persists that completion before
+rotation resumes. Rejected settings writes do not replace the retained completion.
+An unpersisted completion cannot survive a process restart.
 
 Clients save in cache -> thumbnail -> dithered order. The bundled web UI's Save
 button also rebuilds all three assets from the original using captured settings,
@@ -327,4 +352,4 @@ binaries ignore it; API/CLI intervals remain 1–168 hours. Combine with disposa
 The API fixture in `slideshow_tests.rs` shares the orientation test's image root,
 exercises the real worker with successful/failing commands, and injects time into
 scheduler checks without waiting for real hours. CLI commands are in `cli/README.md`.
-Android/web controls and physical acceptance remain follow-ups to issue #4.
+Android/web controls (#33) and physical acceptance remain follow-ups.

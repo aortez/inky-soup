@@ -3,7 +3,10 @@
 //! Each image has its own JSON file in the metadata directory.
 //! Files are read on demand and written atomically (temp file + rename).
 
-use crate::config;
+use crate::{
+    config,
+    tags::{self, FAVORITE},
+};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -31,8 +34,13 @@ pub struct PhotoRotationOperation {
 /// Metadata stored for each image.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageMetadata {
+    /// Whether `tags` has the favorite tag, for servers older than tags, which
+    /// read and write only this field. `set_tags` keeps it in step.
     #[serde(default)]
-    pub favorite: bool,
+    favorite: bool,
+    /// Normalized and sorted as in `tags.rs`.
+    #[serde(default)]
+    tags: Vec<String>,
     /// An original/cache upload has not yet committed its final display pixels.
     #[serde(default)]
     pub processing_pending: bool,
@@ -102,6 +110,7 @@ impl Default for ImageMetadata {
     fn default() -> Self {
         Self {
             favorite: false,
+            tags: Vec::new(),
             processing_pending: false,
             filter: DEFAULT_FILTER.to_string(),
             saturation: DEFAULT_SATURATION,
@@ -120,6 +129,18 @@ impl Default for ImageMetadata {
             thumb_photo_revision: 0,
             dither_photo_revision: 0,
         }
+    }
+}
+
+impl ImageMetadata {
+    pub fn tags(&self) -> &[String] {
+        &self.tags
+    }
+
+    /// Replaces the tags with ones already normalized and sorted.
+    pub fn set_tags(&mut self, tags: Vec<String>) {
+        self.favorite = tags.iter().any(|tag| tag == FAVORITE);
+        self.tags = tags;
     }
 }
 
@@ -155,7 +176,7 @@ pub fn load_metadata(filename: &str) -> ImageMetadata {
     }
 
     match fs::read_to_string(&path) {
-        Ok(contents) => match serde_json::from_str(&contents) {
+        Ok(contents) => match parse(&contents) {
             Ok(metadata) => metadata,
             Err(e) => {
                 warn!(
@@ -173,6 +194,19 @@ pub fn load_metadata(filename: &str) -> ImageMetadata {
             ImageMetadata::default()
         }
     }
+}
+
+/// Parses a metadata file, including one saved by a server older than tags.
+fn parse(contents: &str) -> serde_json::Result<ImageMetadata> {
+    let mut metadata: ImageMetadata = serde_json::from_str(contents)?;
+    let mut saved = tags::normalize_saved(std::mem::take(&mut metadata.tags));
+    // Older servers keep the favorite tag only in `favorite`, and drop `tags`
+    // when they save a photo.
+    if saved.is_empty() && metadata.favorite {
+        saved.push(FAVORITE.into());
+    }
+    metadata.set_tags(saved);
+    Ok(metadata)
 }
 
 /// Saves metadata for an image atomically.
@@ -416,5 +450,29 @@ pub fn migrate_legacy_metadata() {
             "Migration complete: {} entries migrated, legacy file backed up",
             migrated
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn favorites_saved_before_tags_become_the_favorite_tag() {
+        assert_eq!(parse(r#"{"favorite":true}"#).unwrap().tags(), [FAVORITE]);
+        assert!(parse(r#"{"favorite":false}"#).unwrap().tags().is_empty());
+        // Older servers read only `favorite`, so saving keeps it in step.
+        let mut metadata = parse(r#"{"tags":["beach"]}"#).unwrap();
+        assert_eq!(serde_json::to_value(&metadata).unwrap()["favorite"], false);
+        metadata.set_tags(vec!["beach".into(), FAVORITE.into()]);
+        let saved = serde_json::to_string(&metadata).unwrap();
+        let older: serde_json::Value = serde_json::from_str(&saved).unwrap();
+        assert_eq!(older["favorite"], true);
+        assert_eq!(parse(&saved).unwrap().tags(), ["beach", FAVORITE]);
+        // Saved tags are normalized where they meet the rules, and `tags` decides
+        // the favorite.
+        let edited = parse(r#"{"favorite":false,"tags":["Favorite","a,b"]}"#).unwrap();
+        assert_eq!(edited.tags(), ["a,b", FAVORITE]);
+        assert!(edited.favorite);
     }
 }

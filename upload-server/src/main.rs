@@ -21,6 +21,7 @@ mod rescue_tests;
 #[cfg(test)]
 mod slideshow_tests;
 mod storage;
+mod tags;
 mod test_card;
 #[cfg(test)]
 mod orientation_tests;
@@ -83,7 +84,7 @@ struct SubmitNewImage<'v> {
 #[derive(Serialize, Clone)]
 #[serde(crate = "rocket::serde")]
 struct GalleryImage {
-    favorite: bool,
+    tags: Vec<String>,
     path: String,
     filename: String,
     thumb_ready: bool,
@@ -268,7 +269,7 @@ fn get_gallery_images() -> Vec<GalleryImage> {
                 let meta = metadata::get_all_metadata(&filename);
 
                 images.push(GalleryImage {
-                    favorite: meta.favorite,
+                    tags: meta.tags().to_vec(),
                     path: image_path,
                     filename: filename.clone(),
                     thumb_ready: thumb_ready && meta.thumb_rotation_revision == revision
@@ -1056,7 +1057,7 @@ fn rocket() -> _ {
             device::identity,
             orientation::update_display_rotation,
             gallery_images,
-            slideshow::set_favorite,
+            tags::update_tags,
             slideshow::configure,
             slideshow::status,
             rescue::status,
