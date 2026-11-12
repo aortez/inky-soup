@@ -235,6 +235,33 @@ Without `--flash`, it saves without changing the display. It exercises the insta
 APK’s editor/file input, native uploads/downloads, gallery, edit lock, and status.
 It checks temporary-file cleanup and captures a JSON record and screenshot.
 
+For controlled native-network interruption checks, run the diagnostic proxy on a
+LAN host reachable by the phone, then connect the app to that host and proxy port:
+
+```sh
+../inky-cli --device http://WIFI_IP:8000 fault-proxy \
+  --bind 0.0.0.0 --port 18080 --fault-file /tmp/frame-fault.json \
+  --audit-file /tmp/frame-requests.jsonl
+```
+
+Atomically replace the fault file with, for example,
+`{"id":"thumb-1","path":"/api/upload-thumb","mode":"cut-request"}`. Each unique
+ID fires once; the same request then passes on an explicit retry. `cut-request`
+forwards only a prefix of the body and closes both connections. `drop-response`
+forwards the complete request, records the frame's response, then closes the
+phone connection before returning it. Set `method` to `GET` and `prefix` to
+`true` for a path such as `/api/flash/status/`. The proxy makes no retries.
+
+The JSONL audit records request counts, fault IDs, byte counts and job responses,
+without photo bodies or session IDs. Use disposable photos, capture the current
+draft/library/display baseline, and independently observe jobs with the CLI.
+For a matching-picture refresh, use the current prepared display PNG as the
+source with nearest-neighbor resizing and color matching 0; compare the generated
+dithered PNG before allowing a submission. Restore the app's original frame
+addresses and remove the proxy after testing. Proxy regressions run with
+`python3 -m unittest discover -s ../tests -p test_frame_fault_proxy.py -v` from
+`app/`.
+
 ## Android Bluetooth setup
 
 Open a frame’s bounded setup window, then choose **Add frame over Bluetooth** in
