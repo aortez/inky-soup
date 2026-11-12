@@ -8,24 +8,23 @@ use std::time::{Duration, Instant};
 
 const PHOTO: &str = "guarded.png";
 
-/// Every route that changes a photo or queues it for display.
+/// Every route that changes a photo or queues it for display, except tag
+/// changes, which need no edit lock of their own.
 #[derive(Clone, Copy, Debug)]
 enum Write {
     Cache,
     Thumb,
     Dithered,
     Rotation,
-    Favorite,
     Flash,
     Delete,
 }
 
-const WRITES: [Write; 7] = [
+const WRITES: [Write; 6] = [
     Write::Cache,
     Write::Thumb,
     Write::Dithered,
     Write::Rotation,
-    Write::Favorite,
     Write::Flash,
     Write::Delete,
 ];
@@ -78,13 +77,12 @@ async fn send(
             let (kind, body) = multipart(&fields, false);
             client.post("/flash").header(kind).body(body)
         }
-        Write::Rotation | Write::Favorite | Write::Delete => {
+        Write::Rotation | Write::Delete => {
             let (path, mut body) = match write {
                 Write::Rotation => (
                     "/api/settings/photo-rotation",
                     json!({"photo_rotation_degrees": 0, "expected_revision": 0}),
                 ),
-                Write::Favorite => ("/api/settings/favorite", json!({"favorite": true})),
                 _ => ("/api/delete-image", json!({})),
             };
             body["filename"] = json!(PHOTO);
@@ -107,6 +105,26 @@ async fn send(
         status,
         response.into_json::<Value>().await.unwrap()["success"] == true,
     )
+}
+
+/// Adds a tag to the photo and returns the response status. A refused change
+/// must explain itself in the API's failure body.
+async fn add_tag(client: &Client, session: Option<&str>, tag: &str) -> Status {
+    let mut body = json!({"filename": PHOTO, "add": [tag]});
+    if let Some(session) = session {
+        body["session_id"] = json!(session);
+    }
+    let response = client
+        .post("/api/settings/tags")
+        .header(ContentType::JSON)
+        .body(body.to_string())
+        .dispatch()
+        .await;
+    let status = response.status();
+    if status != Status::Ok {
+        api_error::expect_failure(response, status).await;
+    }
+    status
 }
 
 async fn hold_lock(locks: &ImageLocksState, session: &str, expires_at: Instant) {
@@ -140,7 +158,7 @@ pub(crate) async fn check_photo_write_guards() {
                     upload_thumb,
                     upload_dithered,
                     photo_rotation::update_photo_rotation,
-                    slideshow::set_favorite,
+                    tags::update_tags,
                     submit_flash_image,
                     photo_management::delete_image
                 ],
@@ -228,6 +246,24 @@ pub(crate) async fn check_photo_write_guards() {
         }
     }
 
+    // A tag change needs no edit lock of its own, but waits while another
+    // session holds one.
+    hold_lock(&locks, "other", Instant::now() + Duration::from_secs(30)).await;
+    for session in [None, Some("editor")] {
+        assert_eq!(add_tag(&client, session, "Kitchen").await, Status::Conflict);
+        unchanged(&format!(
+            "Tag change by {session:?} under another session's lock"
+        ));
+    }
+    hold_lock(&locks, "other", Instant::now()).await;
+    assert_eq!(add_tag(&client, None, "Kitchen").await, Status::Ok);
+    hold_lock(&locks, "editor", Instant::now() + Duration::from_secs(30)).await;
+    assert_eq!(add_tag(&client, Some("editor"), "hall").await, Status::Ok);
+    assert_eq!(
+        metadata::get_all_metadata(PHOTO).tags(),
+        ["hall", "kitchen"]
+    );
+
     // A display job shows its own snapshot, so the editor of a queued photo can
     // still save it and queue it again, but cannot delete it until the display
     // finishes.
@@ -251,7 +287,11 @@ pub(crate) async fn check_photo_write_guards() {
     for path in &derived {
         assert_eq!(fs::read(path).unwrap(), b"prepared pixels");
     }
-    assert!(metadata::get_all_metadata(PHOTO).favorite);
+    // Saving keeps the photo's tags.
+    assert_eq!(
+        metadata::get_all_metadata(PHOTO).tags(),
+        ["hall", "kitchen"]
+    );
     let jobs = queue.lock().await.get_queued_jobs();
     let shown: Vec<_> = jobs
         .iter()

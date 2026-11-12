@@ -15,6 +15,28 @@ async fn slideshow_status(client: &Client) -> Value {
         .unwrap()
 }
 
+async fn configure(client: &Client, settings: Value) -> Status {
+    client
+        .post("/api/settings/slideshow")
+        .header(ContentType::JSON)
+        .body(settings.to_string())
+        .dispatch()
+        .await
+        .status()
+}
+
+/// Changes a photo's tags and returns them.
+async fn change_tags(client: &Client, change: Value) -> Value {
+    let response = client
+        .post("/api/settings/tags")
+        .header(ContentType::JSON)
+        .body(change.to_string())
+        .dispatch()
+        .await;
+    assert_eq!(response.status(), Status::Ok);
+    response.into_json::<Value>().await.unwrap()["tags"].clone()
+}
+
 /// Whether a scheduler tick at `now` returns while the test holds the storage
 /// lock. Ticks read the gallery under that lock, so one that returns has read no
 /// photo metadata.
@@ -91,7 +113,7 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
     );
     assert_eq!(
         slideshow_status(client).await["paused_reason"],
-        "no_favorites"
+        "no_matching_photos"
     );
     // Restart the timer at the real time, so that the server's own scheduler
     // isn't due while these ticks run at times either side of `due`.
@@ -109,21 +131,12 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
     let revision = display_settings::load_runtime_settings().rotation_revision;
     for filename in ["slideshow-a.png", "slideshow-b.png", "slideshow-c.png"] {
         fs::write(config::original_path(filename), b"original").unwrap();
-        assert!(!metadata::get_all_metadata(filename).favorite);
-        image_locks::try_acquire_lock(locks, filename, "favorites", false)
-            .await
-            .unwrap();
-        for (session, expected) in [("wrong", Status::Forbidden), ("favorites", Status::Ok)] {
-            let result = client
-                .post("/api/settings/favorite")
-                .header(ContentType::JSON)
-                .body(json!({"filename":filename,"session_id":session,"favorite":true}).to_string())
-                .dispatch()
-                .await;
-            assert_eq!(result.status(), expected);
-        }
+        assert!(metadata::get_all_metadata(filename).tags().is_empty());
+        assert_eq!(
+            change_tags(client, json!({"filename": filename, "add": [" Favorite "]})).await,
+            json!([tags::FAVORITE])
+        );
         let mut meta = metadata::get_all_metadata(filename);
-        assert!(meta.favorite);
         meta.cache_rotation_revision = revision;
         meta.thumb_rotation_revision = revision;
         meta.dither_rotation_revision = revision;
@@ -135,9 +148,6 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
         ] {
             fs::write(path, filename.as_bytes()).unwrap();
         }
-        image_locks::release_lock(locks, filename, "favorites")
-            .await
-            .unwrap();
     }
     // A stale favorite is skipped; all other favorites remain eligible.
     let mut stale = metadata::get_all_metadata("slideshow-b.png");
@@ -154,7 +164,117 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
         .as_array()
         .unwrap()
         .iter()
-        .any(|image| image["filename"] == "slideshow-a.png" && image["favorite"] == true));
+        .any(|image| image["filename"] == "slideshow-a.png"
+            && image["tags"] == json!([tags::FAVORITE])));
+    // Tag changes are checked before anything is saved.
+    let too_many: Vec<_> = (0..tags::MAX_TAGS).map(|n| n.to_string()).collect();
+    for (change, status) in [
+        (json!({"filename": "slideshow-a.png"}), Status::BadRequest),
+        (
+            json!({"filename": "slideshow-a.png", "add": ["a,b"]}),
+            Status::BadRequest,
+        ),
+        (
+            json!({"filename": "slideshow-a.png", "add": ["x"], "remove": ["X"]}),
+            Status::BadRequest,
+        ),
+        (
+            json!({"filename": "slideshow-a.png", "add": too_many}),
+            Status::BadRequest,
+        ),
+        (
+            json!({"filename": "../slideshow-a.png", "add": ["x"]}),
+            Status::BadRequest,
+        ),
+        (
+            json!({"filename": "missing.png", "add": ["x"]}),
+            Status::NotFound,
+        ),
+    ] {
+        api_error::expect_failure(
+            client
+                .post("/api/settings/tags")
+                .header(ContentType::JSON)
+                .body(change.to_string())
+                .dispatch()
+                .await,
+            status,
+        )
+        .await;
+    }
+    assert_eq!(
+        metadata::get_all_metadata("slideshow-a.png").tags(),
+        [tags::FAVORITE]
+    );
+    // The slideshow shows the photos with any of its tags, or every photo.
+    assert_eq!(
+        change_tags(
+            client,
+            json!({"filename": "slideshow-c.png", "add": ["Beach"]})
+        )
+        .await,
+        json!(["beach", tags::FAVORITE])
+    );
+    assert_eq!(
+        configure(client, json!({"rotation_tags": ["beach"]})).await,
+        Status::Ok
+    );
+    let beach = slideshow_status(client).await;
+    assert_eq!(beach["matching_count"], 1);
+    assert_eq!(beach["next_filename"], "slideshow-c.png");
+    assert_eq!(
+        configure(client, json!({"rotation_tags": [tags::FAVORITE, "BEACH"]})).await,
+        Status::Ok
+    );
+    let either = slideshow_status(client).await;
+    assert_eq!(either["matching_count"], 3);
+    assert_eq!(either["ready_count"], 2);
+    assert_eq!(
+        configure(client, json!({"rotation_all_photos": true})).await,
+        Status::Ok
+    );
+    let every = slideshow_status(client).await;
+    let gallery = gallery.as_array().unwrap();
+    assert_eq!(every["matching_count"], gallery.len());
+    assert_eq!(
+        every["ready_count"],
+        gallery
+            .iter()
+            .filter(|image| image["needs_processing"] == false)
+            .count()
+    );
+    assert_eq!(
+        every["settings"]["rotation_tags"],
+        json!(["beach", tags::FAVORITE])
+    );
+    for invalid in [json!([]), json!(["a,b"])] {
+        api_error::expect_failure(
+            client
+                .post("/api/settings/slideshow")
+                .header(ContentType::JSON)
+                .body(json!({ "rotation_tags": invalid }).to_string())
+                .dispatch()
+                .await,
+            Status::BadRequest,
+        )
+        .await;
+    }
+    assert_eq!(
+        configure(
+            client,
+            json!({"rotation_all_photos": false, "rotation_tags": [tags::FAVORITE]})
+        )
+        .await,
+        Status::Ok
+    );
+    assert_eq!(
+        change_tags(
+            client,
+            json!({"filename": "slideshow-c.png", "remove": ["BEACH"]})
+        )
+        .await,
+        json!([tags::FAVORITE])
+    );
     state.lock().await.content_completed(0).unwrap();
     let now = flash_queue::current_time_millis();
     image_locks::try_acquire_lock(locks, "unrelated.png", "editor", false)
@@ -219,12 +339,13 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
         queue.lock().await.get_current_job().unwrap().status,
         flash_queue::FlashJobStatus::Failed
     );
-    // A successful nonfavorite manual display resets the timer but not the cursor.
+    // A successful manual display of an untagged photo resets the timer but not
+    // the cursor.
     std::env::set_var("INKY_SOUP_DISPLAY_COMMAND", "/bin/true");
     queue
         .lock()
         .await
-        .enqueue("nonfavorite.png".into(), first_job.dithered_path, false, 0);
+        .enqueue("untagged.png".into(), first_job.dithered_path, false, 0);
     assert!(flash_queue::process_next(queue, state).await);
     let manual = slideshow_status(client).await;
     assert_eq!(manual["last_flash_source"], "manual");
@@ -279,7 +400,10 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
         123
     );
     assert!(metadata::get_all_metadata(filename).processing_pending);
-    assert!(metadata::get_all_metadata(filename).favorite);
+    assert_eq!(
+        metadata::get_all_metadata(filename).tags(),
+        [tags::FAVORITE]
+    );
     assert!(!config::dithered_path(filename).exists());
     image_locks::try_acquire_lock(locks, filename, "save", false)
         .await
@@ -319,7 +443,10 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
             status["settings"]["rotation_anchor_at"] != 123,
             anchor_changed
         );
-        assert!(metadata::get_all_metadata(filename).favorite);
+        assert_eq!(
+            metadata::get_all_metadata(filename).tags(),
+            [tags::FAVORITE]
+        );
         assert_eq!(
             metadata::get_all_metadata(filename).processing_pending,
             !anchor_changed

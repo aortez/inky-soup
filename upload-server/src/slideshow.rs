@@ -1,4 +1,5 @@
-//! Favorites and a persistent, hours-based slideshow over client-prepared images.
+//! A persistent, hours-based slideshow over client-prepared images, showing the
+//! photos with any of its tags, or every photo.
 //! Lock order: storage -> queue -> image locks -> slideshow state.
 use crate::{
     api_error::{failure, Failure},
@@ -6,8 +7,9 @@ use crate::{
     config, display_settings,
     flash_queue::{current_time_millis, FlashJob, FlashQueueState},
     image_locks::ImageLocksState,
-    metadata, orientation,
-    storage::{self, StorageLock},
+    orientation,
+    storage::StorageLock,
+    tags,
 };
 use rocket::{
     http::Status,
@@ -40,10 +42,36 @@ pub enum FlashSource {
 pub struct Settings {
     pub rotation_enabled: bool,
     pub rotation_interval_hours: u16,
+    /// Shows every photo, keeping `rotation_tags` for when this is turned off.
+    #[serde(default)]
+    pub rotation_all_photos: bool,
+    /// Shows the photos with any of these tags, normalized as in `tags.rs`.
+    #[serde(default = "default_tags")]
+    pub rotation_tags: Vec<String>,
     /// UTC Unix timestamps in milliseconds, matching flash job timestamps.
     pub rotation_anchor_at: u64,
     pub last_rotated_filename: Option<String>,
     pub last_flash_source: Option<FlashSource>,
+}
+
+fn default_tags() -> Vec<String> {
+    vec![tags::FAVORITE.into()]
+}
+
+impl Settings {
+    /// Whether the slideshow shows a photo with these tags.
+    fn shows(&self, tags: &[String]) -> bool {
+        self.rotation_all_photos || tags.iter().any(|tag| self.rotation_tags.contains(tag))
+    }
+}
+
+/// The slideshow's tags, normalized, or why they can't be used.
+fn rotation_tags(tags: &[String]) -> Result<Vec<String>, String> {
+    let tags = tags::normalize_all(tags)?;
+    if tags.is_empty() || tags.len() > tags::MAX_TAGS {
+        return Err(format!("Choose 1–{} slideshow tags", tags::MAX_TAGS));
+    }
+    Ok(tags)
 }
 
 pub struct Slideshow {
@@ -61,6 +89,8 @@ impl Slideshow {
             Err(error) if error.kind() == io::ErrorKind::NotFound => Settings {
                 rotation_enabled: false,
                 rotation_interval_hours: 24,
+                rotation_all_photos: false,
+                rotation_tags: default_tags(),
                 rotation_anchor_at: now,
                 last_rotated_filename: None,
                 last_flash_source: None,
@@ -71,6 +101,12 @@ impl Slideshow {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Invalid slideshow interval",
+            ));
+        }
+        if rotation_tags(&settings.rotation_tags).as_ref() != Ok(&settings.rotation_tags) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid slideshow tags",
             ));
         }
         let mut state = Self {
@@ -131,6 +167,13 @@ impl Slideshow {
             }
             settings.rotation_interval_hours = hours;
         }
+        if let Some(all) = request.rotation_all_photos {
+            settings.rotation_all_photos = all;
+        }
+        if let Some(tags) = &request.rotation_tags {
+            settings.rotation_tags = rotation_tags(tags)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
+        }
         // Enabling/changing the interval does not manufacture a completion event.
         self.commit(settings)
     }
@@ -187,7 +230,7 @@ impl Slideshow {
         now: u64,
         editing: bool,
         idle: bool,
-        favorites: usize,
+        matching: usize,
         ready: usize,
     ) -> Option<&'static str> {
         if !self.settings.rotation_enabled {
@@ -198,8 +241,8 @@ impl Slideshow {
             Some("editing")
         } else if !idle {
             Some("display_busy")
-        } else if favorites == 0 {
-            Some("no_favorites")
+        } else if matching == 0 {
+            Some("no_matching_photos")
         } else if ready == 0 {
             Some("needs_processing")
         } else if now < self.retry_not_before {
@@ -211,7 +254,7 @@ impl Slideshow {
 }
 
 fn next_filename<'a>(ready: &'a [String], cursor: Option<&str>) -> Option<&'a str> {
-    // The input is sorted; deletion/unfavoriting the cursor still advances lexically.
+    // The input is sorted; deleting or untagging the cursor still advances lexically.
     ready
         .iter()
         .find(|name| cursor.is_none_or(|cursor| name.as_str() > cursor))
@@ -219,53 +262,16 @@ fn next_filename<'a>(ready: &'a [String], cursor: Option<&str>) -> Option<&'a st
         .map(String::as_str)
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Configure {
     rotation_enabled: Option<bool>,
     rotation_interval_hours: Option<u16>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Favorite {
-    filename: String,
-    favorite: bool,
-    session_id: String,
+    rotation_all_photos: Option<bool>,
+    rotation_tags: Option<Vec<String>>,
 }
 
 type ApiResult = Result<Json<Value>, Failure>;
-
-#[post("/api/settings/favorite", format = "json", data = "<request>")]
-pub async fn set_favorite(
-    _origin: BrowserWrite,
-    request: Json<Favorite>,
-    storage: &State<StorageLock>,
-    locks: &State<ImageLocksState>,
-) -> ApiResult {
-    let filename = &request.filename;
-    if crate::sanitize_filename(filename).as_ref() != Some(filename) || filename.contains('\0') {
-        return Err(failure(Status::BadRequest, "Invalid filename"));
-    }
-    let Some(_storage) =
-        storage::lock_for_editor(storage, locks, filename, &request.session_id).await
-    else {
-        return Err(failure(
-            Status::Forbidden,
-            "Acquire edit access before changing favorites",
-        ));
-    };
-    if !config::original_path(filename).is_file() {
-        return Err(failure(Status::NotFound, "Photo not found"));
-    }
-    let mut meta = metadata::get_all_metadata(filename);
-    meta.favorite = request.favorite;
-    metadata::try_save_metadata(filename, &meta)
-        .map_err(|error| failure(Status::InternalServerError, error))?;
-    Ok(Json(
-        json!({"success": true, "filename": filename, "favorite": meta.favorite}),
-    ))
-}
 
 #[post("/api/settings/slideshow", format = "json", data = "<request>")]
 pub async fn configure(
@@ -273,10 +279,14 @@ pub async fn configure(
     request: Json<Configure>,
     state: &State<SlideshowState>,
 ) -> ApiResult {
-    if request.rotation_enabled.is_none() && request.rotation_interval_hours.is_none() {
+    if request.rotation_enabled.is_none()
+        && request.rotation_interval_hours.is_none()
+        && request.rotation_all_photos.is_none()
+        && request.rotation_tags.is_none()
+    {
         return Err(failure(
             Status::BadRequest,
-            "Provide rotation_enabled or rotation_interval_hours",
+            "Provide rotation_enabled, rotation_interval_hours, rotation_all_photos or rotation_tags",
         ));
     }
     let mut state = state.lock().await;
@@ -317,11 +327,11 @@ pub(crate) async fn inspect_or_tick(
     let mut queue = queue.lock().await;
     let locks = locks.lock().await;
     let mut state = state.lock().await;
-    let favorites: Vec<_> = crate::get_gallery_images()
+    let matching: Vec<_> = crate::get_gallery_images()
         .into_iter()
-        .filter(|image| image.favorite)
+        .filter(|image| state.settings.shows(&image.tags))
         .collect();
-    let mut ready: Vec<_> = favorites
+    let mut ready: Vec<_> = matching
         .iter()
         .filter(|image| !image.needs_processing)
         .map(|image| image.filename.clone())
@@ -331,7 +341,7 @@ pub(crate) async fn inspect_or_tick(
     let paused = if queue.rescue.as_ref().is_some_and(|r| r.blocks_slideshow()) {
         Some("rescue")
     } else {
-        state.paused_reason(now, editing, queue.is_idle(), favorites.len(), ready.len())
+        state.paused_reason(now, editing, queue.is_idle(), matching.len(), ready.len())
     };
     let next = next_filename(&ready, state.settings.last_rotated_filename.as_deref());
     let mut job_id = None;
@@ -357,15 +367,15 @@ pub(crate) async fn inspect_or_tick(
     json!({"settings": state.settings, "next_due_at": state.next_due_at(),
         "paused_reason": if queue.rescue.as_ref().is_some_and(|r| r.blocks_slideshow()) {
             Some("rescue")
-        } else { state.paused_reason(now, editing, queue.is_idle(), favorites.len(), ready.len()) },
+        } else { state.paused_reason(now, editing, queue.is_idle(), matching.len(), ready.len()) },
         "last_flash_source": state.settings.last_flash_source, "next_filename": next,
-        "favorite_count": favorites.len(), "ready_count": ready.len(), "queued_job_id": job_id,
+        "matching_count": matching.len(), "ready_count": ready.len(), "queued_job_id": job_id,
         "retry_not_before": state.retry_not_before, "storage_error": state.storage_error})
 }
 
 /// One scheduler check. Until rotation is enabled and due, which covers most
 /// checks, it returns `None` without taking the storage lock or reading the
-/// gallery. A due check queues the next ready favorite unless a pause holds it
+/// gallery. A due check queues the next ready photo unless a pause holds it
 /// back, and returns the status.
 pub(crate) async fn tick(
     state: &SlideshowState,
@@ -425,7 +435,8 @@ mod tests {
             assert!(state
                 .configure(&Configure {
                     rotation_enabled: Some(true),
-                    rotation_interval_hours: Some(hours)
+                    rotation_interval_hours: Some(hours),
+                    ..Default::default()
                 })
                 .is_err());
             assert!(!state.settings.rotation_enabled);
@@ -435,6 +446,7 @@ mod tests {
                 .configure(&Configure {
                     rotation_enabled: Some(true),
                     rotation_interval_hours: Some(hours),
+                    ..Default::default()
                 })
                 .unwrap();
             assert_eq!(state.settings.rotation_interval_hours, hours);
@@ -468,7 +480,7 @@ mod tests {
             state.settings.last_rotated_filename.as_deref(),
             Some("b.jpg")
         );
-        queue.enqueue("nonfavorite.jpg".into(), "unused".into(), false, 0);
+        queue.enqueue("untagged.jpg".into(), "unused".into(), false, 0);
         let manual = queue.get_queued_jobs()[1].clone();
         state.flash_finished(&manual, false, 400);
         assert_eq!(state.settings.rotation_anchor_at, 300);
@@ -488,6 +500,7 @@ mod tests {
             .configure(&Configure {
                 rotation_enabled: Some(false),
                 rotation_interval_hours: None,
+                ..Default::default()
             })
             .unwrap();
         assert_eq!(state.settings.rotation_anchor_at, 600);
@@ -501,6 +514,7 @@ mod tests {
             .configure(&Configure {
                 rotation_enabled: Some(true),
                 rotation_interval_hours: None,
+                ..Default::default()
             })
             .unwrap();
         let before = state.settings.clone();
@@ -528,6 +542,7 @@ mod tests {
                 .configure(&Configure {
                     rotation_enabled: Some(true),
                     rotation_interval_hours: Some(1),
+                    ..Default::default()
                 })
                 .unwrap();
             let mut queue = FlashQueue::new();
@@ -566,6 +581,7 @@ mod tests {
                 .configure(&Configure {
                     rotation_enabled: Some(false),
                     rotation_interval_hours: Some(2),
+                    ..Default::default()
                 })
                 .is_err());
             assert_eq!(state.settings, completion);
@@ -578,6 +594,7 @@ mod tests {
                 .configure(&Configure {
                     rotation_enabled: None,
                     rotation_interval_hours: Some(2),
+                    ..Default::default()
                 })
                 .unwrap();
             assert_eq!(state.settings.rotation_anchor_at, 900);
@@ -596,6 +613,62 @@ mod tests {
     }
 
     #[test]
+    fn settings_choose_photos_by_tag_or_every_photo() {
+        let (root, state) = fixture("tags");
+        // Settings saved before tags show favorites.
+        fs::write(
+            &state.path,
+            r#"{"rotation_enabled":true,"rotation_interval_hours":2,"rotation_anchor_at":5,
+                "last_rotated_filename":null,"last_flash_source":null}"#,
+        )
+        .unwrap();
+        let mut state = Slideshow::load(state.path.clone(), 100).unwrap();
+        assert_eq!(state.settings.rotation_tags, [tags::FAVORITE]);
+        assert!(!state.settings.rotation_all_photos);
+        assert!(state.settings.shows(&[tags::FAVORITE.into()]));
+        assert!(!state.settings.shows(&["beach".into()]));
+        state
+            .configure(&Configure {
+                rotation_tags: Some(vec!["Beach".into(), " KIDS".into()]),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(state.settings.rotation_tags, ["beach", "kids"]);
+        assert!(state
+            .settings
+            .shows(&["kids".into(), tags::FAVORITE.into()]));
+        assert!(!state.settings.shows(&[tags::FAVORITE.into()]));
+        // Every photo is shown, tagged or not, and the tags are kept.
+        state
+            .configure(&Configure {
+                rotation_all_photos: Some(true),
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(state.settings.shows(&[]));
+        assert_eq!(state.settings.rotation_tags, ["beach", "kids"]);
+        let too_many = (0..=tags::MAX_TAGS).map(|n| n.to_string()).collect();
+        for invalid in [vec![], vec!["a,b".into()], too_many] {
+            assert!(state
+                .configure(&Configure {
+                    rotation_tags: Some(invalid),
+                    ..Default::default()
+                })
+                .is_err());
+        }
+        assert_eq!(
+            Slideshow::load(state.path.clone(), 999).unwrap().settings,
+            state.settings
+        );
+        // Saved tags are checked at startup, like the interval.
+        let mut settings = state.settings.clone();
+        settings.rotation_tags = vec!["Beach".into()];
+        fs::write(&state.path, serde_json::to_vec(&settings).unwrap()).unwrap();
+        assert!(Slideshow::load(state.path.clone(), 999).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn pause_reasons_and_round_robin_survive_a_removed_cursor() {
         let (root, mut state) = fixture("pauses");
         assert_eq!(
@@ -606,6 +679,7 @@ mod tests {
             .configure(&Configure {
                 rotation_enabled: Some(true),
                 rotation_interval_hours: None,
+                ..Default::default()
             })
             .unwrap();
         assert_eq!(state.paused_reason(100, true, true, 1, 1), Some("editing"));
@@ -615,7 +689,7 @@ mod tests {
         );
         assert_eq!(
             state.paused_reason(100, false, true, 0, 0),
-            Some("no_favorites")
+            Some("no_matching_photos")
         );
         assert_eq!(
             state.paused_reason(100, false, true, 1, 0),

@@ -123,7 +123,7 @@ enum Command {
         #[arg(value_parser = parse_orientation)]
         degrees: Option<u16>,
     },
-    /// Mark or unmark a photo as a slideshow favorite.
+    /// Add or remove the favorite tag, which the slideshow shows by default.
     Favorite {
         filename: String,
         #[arg(value_enum)]
@@ -131,7 +131,21 @@ enum Command {
     },
     /// List favorite photos, including whether they need processing.
     Favorites,
-    /// Inspect or configure automatic rotation through favorite photos.
+    /// Add tags to a photo. The frame stores tags in lowercase.
+    Tag {
+        filename: String,
+        #[arg(required = true)]
+        tags: Vec<String>,
+    },
+    /// Remove tags from a photo.
+    Untag {
+        filename: String,
+        #[arg(required = true)]
+        tags: Vec<String>,
+    },
+    /// List the photos with a tag, including whether they need processing.
+    Tagged { tag: String },
+    /// Inspect or configure automatic rotation through tagged photos.
     Slideshow {
         #[command(subcommand)]
         action: Option<SlideshowCommand>,
@@ -194,6 +208,9 @@ enum RescueAction {
     Restore,
 }
 
+/// The tag the frame's slideshow shows by default.
+const FAVORITE: &str = "favorite";
+
 #[derive(Clone, Copy, ValueEnum)]
 enum FavoriteValue {
     On,
@@ -216,6 +233,13 @@ enum SlideshowCommand {
         #[arg(value_parser = clap::value_parser!(u16).range(1..=168))]
         hours: u16,
     },
+    /// Show the photos with any of these tags.
+    Tags {
+        #[arg(required = true)]
+        tags: Vec<String>,
+    },
+    /// Show every photo, keeping the chosen tags for later.
+    All,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -407,6 +431,33 @@ impl Frame {
             thread::sleep(Duration::from_secs(1).min(limit.saturating_sub(started.elapsed())));
         }
     }
+}
+
+/// Adds or removes tags; `change` is "add" or "remove".
+fn change_tags(frame: &Frame, filename: &str, change: &str, tags: &[String]) -> Result<Value> {
+    valid_filename(filename)?;
+    let mut body = json!({ "filename": filename });
+    body[change] = json!(tags);
+    frame.json_post("api/settings/tags", &body)
+}
+
+/// Lists the photos with a tag, compared as the frame stores tags: in lowercase,
+/// with each run of whitespace as one space.
+fn tagged(frame: &Frame, tag: &str) -> Result<Value> {
+    let tag = tag
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    let gallery = frame.get("api/images")?;
+    let images = gallery.as_array().context("Invalid gallery")?;
+    if images.iter().any(|image| !image["tags"].is_array()) {
+        bail!("Update the frame server to support tags");
+    }
+    Ok(json!(images
+        .iter()
+        .filter(|image| image["tags"].as_array().unwrap().contains(&json!(tag)))
+        .collect::<Vec<_>>()))
 }
 
 fn valid_filename(name: &str) -> Result<()> {
@@ -704,25 +755,16 @@ fn run(args: &Args) -> Result<Value> {
             result
         }
         Command::Favorite { filename, value } => {
-            valid_filename(filename)?;
-            let session = uuid::Uuid::new_v4().to_string();
-            frame.lock(filename, &session)?;
-            let result = frame.json_post("api/settings/favorite",
-                &json!({"filename":filename,"session_id":session,"favorite":matches!(value, FavoriteValue::On)}));
-            frame.unlock(filename, &session);
-            result
+            let change = match value {
+                FavoriteValue::On => "add",
+                FavoriteValue::Off => "remove",
+            };
+            change_tags(&frame, filename, change, &[FAVORITE.into()])
         }
-        Command::Favorites => {
-            let gallery = frame.get("api/images")?;
-            let images = gallery.as_array().context("Invalid gallery")?;
-            if images.iter().any(|image| !image["favorite"].is_boolean()) {
-                bail!("Update the frame server to support favorites");
-            }
-            Ok(json!(images
-                .iter()
-                .filter(|image| image["favorite"] == true)
-                .collect::<Vec<_>>()))
-        }
+        Command::Favorites => tagged(&frame, FAVORITE),
+        Command::Tag { filename, tags } => change_tags(&frame, filename, "add", tags),
+        Command::Untag { filename, tags } => change_tags(&frame, filename, "remove", tags),
+        Command::Tagged { tag } => tagged(&frame, tag),
         Command::Slideshow { action } => match action {
             None | Some(SlideshowCommand::Status) => frame.get("api/slideshow"),
             Some(SlideshowCommand::Start { hours }) => {
@@ -738,6 +780,14 @@ fn run(args: &Args) -> Result<Value> {
             Some(SlideshowCommand::Interval { hours }) => frame.json_post(
                 "api/settings/slideshow",
                 &json!({"rotation_interval_hours":hours}),
+            ),
+            Some(SlideshowCommand::Tags { tags }) => frame.json_post(
+                "api/settings/slideshow",
+                &json!({"rotation_tags":tags,"rotation_all_photos":false}),
+            ),
+            Some(SlideshowCommand::All) => frame.json_post(
+                "api/settings/slideshow",
+                &json!({"rotation_all_photos":true}),
             ),
         },
         Command::Rescue {

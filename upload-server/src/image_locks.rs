@@ -129,6 +129,18 @@ pub fn is_editor(locks: &HashMap<String, ImageLock>, filename: &str, session_id:
     })
 }
 
+/// Checks if a session other than `session_id` holds an unexpired lock on an
+/// image. Tag changes check this through `storage::lock_unless_edited_by_another`.
+pub fn is_edited_by_another(
+    locks: &HashMap<String, ImageLock>,
+    filename: &str,
+    session_id: Option<&str>,
+) -> bool {
+    locks.get(filename).is_some_and(|lock| {
+        Some(lock.session_id.as_str()) != session_id && lock.expires_at > Instant::now()
+    })
+}
+
 /// Gets remaining lock time in seconds for an image.
 pub async fn get_lock_remaining_secs(
     locks: &ImageLocksState,
