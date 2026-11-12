@@ -1,0 +1,606 @@
+{
+  "date_local": "2026-11-11",
+  "completed_at_utc": "2026-11-12T00:29:58.732953+00:00",
+  "app": {
+    "application_id": "pizza.allan.frame",
+    "version_name": "0.2.3",
+    "version_code": 2003,
+    "tag": "app-v0.2.3",
+    "source_commit": "6867d5b8c42e3cc4203517ae8b46e51e6c11194f",
+    "apk_sha256": "ba05a98663ce71d9071da344d6c79466fce7eb1c7b684f789691194da8a89535",
+    "signing_sha256": "323dc7c2a994fa3217530c2fa8e7beffc1fc9ed4b4c6c43e92e29baebc7ea605",
+    "binary_modified": false,
+    "phone": "Pixel 9 Pro XL",
+    "android": "17",
+    "sdk": 37,
+    "android_build": "CP2A.260605.016",
+    "webview": "155.0.8059.39"
+  },
+  "test_topology": {
+    "phone_network": "Wi-Fi native HTTP",
+    "proxy_host": "192.168.1.132",
+    "pi_management": "Wi-Fi SSH and HTTP only",
+    "proxy_tool": "app/tools/frame-fault-proxy.py",
+    "proxy_source_sha256_when_recorded": "6f2252694b7aab0ba4dcc3b32e84270a35128d4d63203a1c4e6f88fc9851d0c4",
+    "proxy_unit_tests_passed": 4,
+    "post_hardware_tool_changes": "Added a CLI launcher and adjusted startup/shutdown messages; forwarding logic unchanged",
+    "app_input": "Playwright operates the disposable file input and UI; native transport unchanged",
+    "faults_per_model": 4,
+    "proxy_listeners_stopped": true
+  },
+  "phone_preservation": {
+    "snapshot_digest_encoding": "SHA-256 of JSON with sorted keys and compact separators",
+    "before_sha256": "839d4f3ce8fab76cc00bb267f76e392d7b671680e9f4750f27afedbcd9a5863c",
+    "after_sha256": "839d4f3ce8fab76cc00bb267f76e392d7b671680e9f4750f27afedbcd9a5863c",
+    "draft_blob_sha256": "0a0ee7e9c40a24a2e0756ba88a53a73b99f198be042ed032d935cb151c30e528",
+    "draft_metadata_unchanged": true,
+    "nine_controls_unchanged": true,
+    "registry_unchanged": true,
+    "reserved_addresses_restored": true,
+    "preview_preference_unchanged": true,
+    "selected_device_id": "aa3cdd6af7762024fb2812013228463c",
+    "jobs_after": null,
+    "temporary_on_phone_checkpoint_removed": true,
+    "keep_awake_restored": "0"
+  },
+  "frames": {
+    "small": {
+      "wifi_ip": "192.168.1.100",
+      "proxy_port": 18080,
+      "device_id": "72d38d6af1b56f99ae0fb4407f44f621",
+      "server_instance_id": "520ba3736297147e4db35b5f2387a081",
+      "display": {
+        "color": "multi",
+        "height": 448,
+        "model": "impression-5.7",
+        "orientation_test_supported": true,
+        "photo_rotation_supported": true,
+        "physical_height": 448,
+        "physical_width": 600,
+        "rotation_degrees": 0,
+        "rotation_revision": 0,
+        "thumb_height": 112,
+        "thumb_width": 150,
+        "width": 600
+      },
+      "original_count": 3,
+      "original_and_metadata_file_count": 6,
+      "file_manifest_digest_encoding": "SHA-256 of JSON with sorted keys and compact separators",
+      "before_file_manifest_sha256": "75737ddd956f2dbf2785f1ecdc210048ae6cf07d84a23f822122e7b90d17465d",
+      "after_file_manifest_sha256": "75737ddd956f2dbf2785f1ecdc210048ae6cf07d84a23f822122e7b90d17465d",
+      "before_display_png_sha256": "241d649e06086f1526454278752421e5b038a070b273a4c61ee39dfb496f03ea",
+      "after_display_png_sha256": "241d649e06086f1526454278752421e5b038a070b273a4c61ee39dfb496f03ea",
+      "matching_pixel_preflight": {
+        "filename": "dba5fa2d-56a2-4127-b58f-70f8b5d62e41.png",
+        "size": [
+          600,
+          448
+        ],
+        "rgb_sha256": "e51a430199f638b44dfc2e7987f3ebf88af3d5d25edded003a6a81081bf136b7",
+        "same_pixels": true,
+        "same_png_bytes": true
+      },
+      "gallery_and_mount_unchanged": true,
+      "services": [
+        "active",
+        "active"
+      ],
+      "queue_after": {
+        "current_job": null,
+        "queue": [],
+        "queue_length": 0
+      },
+      "rescue_card_active_after": false,
+      "deleted_test_filename": "dba5fa2d-56a2-4127-b58f-70f8b5d62e41.png",
+      "cases": {
+        "original_upload_cut": {
+          "on_wire_original_attempts": 2,
+          "completed_original_uploads": 1,
+          "cut_created_no_photo": true,
+          "failure_notice": "Could not finish saving",
+          "cold_draft_unchanged": true,
+          "explicit_retry": "Photo saved."
+        },
+        "thumbnail_upload_cut": {
+          "saved_filename_survived": true,
+          "incomplete_before_recovery": true,
+          "cold_relaunch_kept_original": true,
+          "old_edit_lease_seconds": 30,
+          "recovery": "Retry failed photos after lease expiry",
+          "ready_after_recovery": true
+        },
+        "submission_response_dropped": {
+          "job": {
+            "created_at": 1794442470180,
+            "dithered_path": "/data/inky-soup/flash-jobs/1794442470178429818-2.png",
+            "error_message": null,
+            "filename": "dba5fa2d-56a2-4127-b58f-70f8b5d62e41.png",
+            "finished_at": 1794442506693,
+            "flash_twice": false,
+            "job_id": 3,
+            "rotation_degrees": 0,
+            "source": "manual",
+            "started_at": 1794442470220,
+            "status": "Completed"
+          },
+          "failure_notice": "Could not finish saving",
+          "job_receipt": null,
+          "cold_job_receipt": null,
+          "automatic_resubmissions": 0,
+          "guidance": "Check the frame before retrying if the connection was interrupted."
+        },
+        "status_response_dropped": {
+          "job": {
+            "source": "manual",
+            "job_id": 4,
+            "filename": "dba5fa2d-56a2-4127-b58f-70f8b5d62e41.png",
+            "dithered_path": "/data/inky-soup/flash-jobs/1794442606780791207-3.png",
+            "flash_twice": false,
+            "rotation_degrees": 0,
+            "status": "Completed",
+            "created_at": 1794442606782,
+            "started_at": 1794442606907,
+            "finished_at": 1794442643391,
+            "error_message": null
+          },
+          "failure_notice": "Refresh status unavailable",
+          "completion_record_source": "Audited completed status response; CLI also observed completion",
+          "receipt_before_relaunch": {
+            "id": 4,
+            "filename": "dba5fa2d-56a2-4127-b58f-70f8b5d62e41.png",
+            "base": "http://192.168.1.132:18080",
+            "deviceId": "72d38d6af1b56f99ae0fb4407f44f621",
+            "instanceId": "520ba3736297147e4db35b5f2387a081"
+          },
+          "receipt_after_relaunch": {
+            "id": 4,
+            "filename": "dba5fa2d-56a2-4127-b58f-70f8b5d62e41.png",
+            "base": "http://192.168.1.132:18080",
+            "deviceId": "72d38d6af1b56f99ae0fb4407f44f621",
+            "instanceId": "520ba3736297147e4db35b5f2387a081",
+            "createdAt": 1794442606782
+          },
+          "receipt_cleared_after_completion": true,
+          "automatic_resubmissions": 0
+        }
+      },
+      "server_journal": {
+        "job_ids": [
+          3,
+          4
+        ],
+        "lines": [
+          "Flash job 3 queued for dba5fa2d-56a2-4127-b58f-70f8b5d62e41.png at position 1",
+          "Flash job 4 queued for dba5fa2d-56a2-4127-b58f-70f8b5d62e41.png at position 1"
+        ]
+      },
+      "proxy_request_counts": {
+        "GET /api/device": 48,
+        "GET /api/display-config": 7,
+        "GET /api/images": 15,
+        "GET /images/thumbs/b1ec0f94-0b6d-42da-9cf0-f0e98d498b19.png.png": 14,
+        "GET /images/thumbs/7e068f3d-b5c3-464b-a098-4612dae2e463.png.png": 14,
+        "GET /images/thumbs/8a7c252b-95f3-422d-89f3-0560b3872180.jpg.png": 14,
+        "POST /api/lock-image": 31,
+        "POST /upload": 2,
+        "POST /api/settings/photo-rotation": 7,
+        "POST /api/upload-cache": 7,
+        "POST /api/upload-thumb": 7,
+        "POST /api/upload-dithered": 6,
+        "GET /images/thumbs/dba5fa2d-56a2-4127-b58f-70f8b5d62e41.png.png": 12,
+        "POST /api/unlock-image": 8,
+        "GET /images/dba5fa2d-56a2-4127-b58f-70f8b5d62e41.png": 2,
+        "POST /flash": 2,
+        "GET /api/flash/status/4": 14
+      },
+      "fault_and_submission_requests": [
+        {
+          "event": "request",
+          "sequence": 10,
+          "method": "POST",
+          "path": "/upload",
+          "fault": {
+            "id": "small-original-cut",
+            "path": "/upload",
+            "mode": "cut-request"
+          },
+          "time_unix_ms": 1794442269289,
+          "request_bytes": 197421,
+          "request_sha256": "69d6e44503624ea93c003c3c1dd14a2881f9ed6f462030f0d8ca50ee2110323f",
+          "filename": "63d9e694-3057-45bb-a904-bf58286d9029.png",
+          "forwarded_bytes": 4096,
+          "outcome": "request-cut"
+        },
+        {
+          "event": "request",
+          "sequence": 68,
+          "method": "POST",
+          "path": "/api/upload-thumb",
+          "fault": {
+            "id": "small-thumb-cut",
+            "path": "/api/upload-thumb",
+            "mode": "cut-request"
+          },
+          "time_unix_ms": 1794442378399,
+          "request_bytes": 20255,
+          "request_sha256": "a2ac942f0a9c06354e53de7b79d407a77fc05b2d96132b331dc4010c478c963f",
+          "filename": "dba5fa2d-56a2-4127-b58f-70f8b5d62e41.png.png",
+          "forwarded_bytes": 4096,
+          "outcome": "request-cut"
+        },
+        {
+          "event": "request",
+          "sequence": 116,
+          "method": "POST",
+          "path": "/flash",
+          "fault": {
+            "id": "small-submission",
+            "path": "/flash",
+            "mode": "drop-response",
+            "method": "POST"
+          },
+          "time_unix_ms": 1794442470183,
+          "request_bytes": 859,
+          "request_sha256": "685a8df473d8877188820e5f10fc35b2caefb9851fa42f855ac3831b6537dc2e",
+          "forwarded_bytes": 859,
+          "upstream_status": 200,
+          "response_bytes": 88,
+          "upstream_json": {
+            "success": true,
+            "message": "Flash job queued (position 1)",
+            "job_id": 3,
+            "queue_position": 1
+          },
+          "outcome": "response-dropped"
+        },
+        {
+          "event": "request",
+          "sequence": 151,
+          "method": "POST",
+          "path": "/flash",
+          "fault": null,
+          "time_unix_ms": 1794442606785,
+          "request_bytes": 859,
+          "request_sha256": "953917e4ca3428dc01d60e876065ce6113dcaeef139bf1527ff93f38f29e8629",
+          "forwarded_bytes": 859,
+          "upstream_status": 200,
+          "response_bytes": 88,
+          "upstream_json": {
+            "success": true,
+            "message": "Flash job queued (position 1)",
+            "job_id": 4,
+            "queue_position": 1
+          },
+          "outcome": "forwarded"
+        },
+        {
+          "event": "request",
+          "sequence": 154,
+          "method": "GET",
+          "path": "/api/flash/status/4",
+          "fault": {
+            "id": "small-status",
+            "path": "/api/flash/status/",
+            "mode": "drop-response",
+            "method": "GET",
+            "prefix": true
+          },
+          "time_unix_ms": 1794442606873,
+          "request_bytes": 0,
+          "request_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "forwarded_bytes": 0,
+          "upstream_status": 200,
+          "response_bytes": 299,
+          "upstream_json": {
+            "source": "manual",
+            "job_id": 4,
+            "filename": "dba5fa2d-56a2-4127-b58f-70f8b5d62e41.png",
+            "dithered_path": "/data/inky-soup/flash-jobs/1794442606780791207-3.png",
+            "flash_twice": false,
+            "rotation_degrees": 0,
+            "status": "Queued",
+            "created_at": 1794442606782,
+            "started_at": null,
+            "finished_at": null,
+            "error_message": null
+          },
+          "outcome": "response-dropped"
+        }
+      ],
+      "full_audit_sha256": "5a2fcf057af0ac0dbdf4467578c219c4bb251853c55947cb296820c406c4a4f4",
+      "full_audit_events": 420
+    },
+    "large": {
+      "wifi_ip": "192.168.1.109",
+      "proxy_port": 18081,
+      "device_id": "aa3cdd6af7762024fb2812013228463c",
+      "server_instance_id": "451797daaf625e4693fd070202a41e4d",
+      "display": {
+        "color": "multi",
+        "height": 1200,
+        "model": "impression-13.3-2025",
+        "orientation_test_supported": true,
+        "photo_rotation_supported": true,
+        "physical_height": 1200,
+        "physical_width": 1600,
+        "rotation_degrees": 0,
+        "rotation_revision": 4,
+        "thumb_height": 112,
+        "thumb_width": 150,
+        "width": 1600
+      },
+      "original_count": 15,
+      "original_and_metadata_file_count": 30,
+      "file_manifest_digest_encoding": "SHA-256 of JSON with sorted keys and compact separators",
+      "before_file_manifest_sha256": "1934ad7827b7e4f1772fdf1344ace3e036e718071b131ed11ab1135f5fdc6d47",
+      "after_file_manifest_sha256": "1934ad7827b7e4f1772fdf1344ace3e036e718071b131ed11ab1135f5fdc6d47",
+      "before_display_png_sha256": "19608333c2282be674c70f3a24c0f45b83c811f9a6f86b005b66bed68ee01241",
+      "after_display_png_sha256": "19608333c2282be674c70f3a24c0f45b83c811f9a6f86b005b66bed68ee01241",
+      "matching_pixel_preflight": {
+        "filename": "2d4248a2-4059-47dc-8652-e20ed23fa38d.png",
+        "size": [
+          1600,
+          1200
+        ],
+        "rgb_sha256": "70b23b740e843bafbca6aeedc93a81c6fd9ba0ce6b9981f0c32f809c5a5ec638",
+        "same_pixels": true,
+        "same_png_bytes": true
+      },
+      "gallery_and_mount_unchanged": true,
+      "services": [
+        "active",
+        "active"
+      ],
+      "queue_after": {
+        "current_job": null,
+        "queue": [],
+        "queue_length": 0
+      },
+      "rescue_card_active_after": false,
+      "deleted_test_filename": "2d4248a2-4059-47dc-8652-e20ed23fa38d.png",
+      "cases": {
+        "original_upload_cut": {
+          "on_wire_original_attempts": 2,
+          "completed_original_uploads": 1,
+          "cut_created_no_photo": true,
+          "failure_notice": "Could not finish saving",
+          "cold_draft_unchanged": true,
+          "explicit_retry": "Photo saved."
+        },
+        "thumbnail_upload_cut": {
+          "saved_filename_survived": true,
+          "incomplete_before_recovery": true,
+          "cold_relaunch_kept_original": true,
+          "old_edit_lease_seconds": 30,
+          "recovery": "Reconnect after lease expiry regenerates incomplete assets",
+          "ready_after_recovery": true
+        },
+        "submission_response_dropped": {
+          "job": {
+            "created_at": 1794442699856,
+            "dithered_path": "/data/inky-soup/flash-jobs/1794442699830090873-2.png",
+            "error_message": null,
+            "filename": "2d4248a2-4059-47dc-8652-e20ed23fa38d.png",
+            "finished_at": 1794442742671,
+            "flash_twice": false,
+            "job_id": 3,
+            "rotation_degrees": 0,
+            "source": "manual",
+            "started_at": 1794442699915,
+            "status": "Completed"
+          },
+          "failure_notice": "Could not finish saving",
+          "job_receipt": null,
+          "cold_job_receipt": null,
+          "automatic_resubmissions": 0,
+          "guidance": "Check the frame before retrying if the connection was interrupted."
+        },
+        "status_response_dropped": {
+          "job": {
+            "created_at": 1794442788881,
+            "dithered_path": "/data/inky-soup/flash-jobs/1794442788855585100-3.png",
+            "error_message": null,
+            "filename": "2d4248a2-4059-47dc-8652-e20ed23fa38d.png",
+            "finished_at": 1794442831799,
+            "flash_twice": false,
+            "job_id": 4,
+            "rotation_degrees": 0,
+            "source": "manual",
+            "started_at": 1794442789294,
+            "status": "Completed"
+          },
+          "failure_notice": "Refresh status unavailable",
+          "completion_record_source": "Independent CLI JSON",
+          "receipt_before_relaunch": {
+            "id": 4,
+            "filename": "2d4248a2-4059-47dc-8652-e20ed23fa38d.png",
+            "base": "http://192.168.1.132:18081",
+            "deviceId": "aa3cdd6af7762024fb2812013228463c",
+            "instanceId": "451797daaf625e4693fd070202a41e4d"
+          },
+          "receipt_after_relaunch": {
+            "id": 4,
+            "filename": "2d4248a2-4059-47dc-8652-e20ed23fa38d.png",
+            "base": "http://192.168.1.132:18081",
+            "deviceId": "aa3cdd6af7762024fb2812013228463c",
+            "instanceId": "451797daaf625e4693fd070202a41e4d",
+            "createdAt": 1794442788881
+          },
+          "receipt_cleared_after_completion": true,
+          "automatic_resubmissions": 0
+        }
+      },
+      "server_journal": {
+        "job_ids": [
+          3,
+          4
+        ],
+        "lines": [
+          "Flash job 3 queued for 2d4248a2-4059-47dc-8652-e20ed23fa38d.png at position 1",
+          "Flash job 4 queued for 2d4248a2-4059-47dc-8652-e20ed23fa38d.png at position 1"
+        ]
+      },
+      "proxy_request_counts": {
+        "GET /api/device": 45,
+        "GET /api/display-config": 6,
+        "GET /api/images": 13,
+        "GET /images/thumbs/a9d98f36-1c47-4a3d-a696-f5704b110876.jpg.png": 12,
+        "GET /images/thumbs/six-color-validation-1792887610959.png.png": 12,
+        "GET /images/thumbs/e87bf867-9c45-4dc5-a976-9793c5517f7a.jpg.png": 12,
+        "GET /images/thumbs/six-color-validation-1792887666152.png.png": 12,
+        "GET /images/thumbs/8efad0fd-e405-4994-af44-4039fda775e3.png.png": 12,
+        "GET /images/thumbs/9e2b0559-092f-42af-8c42-3947018cceaa.png.png": 12,
+        "GET /images/thumbs/Om_Yggdrasil_by_Fr%C3%B8lich.jpg.png": 12,
+        "GET /images/thumbs/a9a99a0a-68d5-47dd-b048-91f041c88728.jpg.png": 12,
+        "GET /images/thumbs/662e789f-8e36-4165-9c61-9115106a10ab.jpg.png": 12,
+        "GET /images/thumbs/50a07478-f26b-470f-b4d0-4141c0c4d78c.png.png": 12,
+        "GET /images/thumbs/1ec4994f-47ae-4787-a29a-6dbd035034dc.jpg.png": 12,
+        "GET /images/thumbs/2025-07-26-08-12-49-439.jpg.png": 12,
+        "GET /images/thumbs/1422.jpg.png": 12,
+        "GET /images/thumbs/1529.png.png": 12,
+        "GET /images/thumbs/01b0ea7a-5bf9-4ae5-a201-5a659f5fc6ab.png.png": 12,
+        "POST /api/lock-image": 24,
+        "POST /upload": 2,
+        "POST /api/settings/photo-rotation": 5,
+        "POST /api/upload-cache": 5,
+        "POST /api/upload-thumb": 5,
+        "POST /api/upload-dithered": 4,
+        "GET /images/thumbs/2d4248a2-4059-47dc-8652-e20ed23fa38d.png.png": 10,
+        "POST /api/unlock-image": 7,
+        "GET /images/2d4248a2-4059-47dc-8652-e20ed23fa38d.png": 2,
+        "POST /flash": 2,
+        "GET /api/flash/status/4": 18,
+        "GET /images/a9d98f36-1c47-4a3d-a696-f5704b110876.jpg": 1
+      },
+      "fault_and_submission_requests": [
+        {
+          "event": "request",
+          "sequence": 22,
+          "method": "POST",
+          "path": "/upload",
+          "fault": {
+            "id": "large-original-cut",
+            "path": "/upload",
+            "mode": "cut-request",
+            "method": "POST"
+          },
+          "time_unix_ms": 1794442535646,
+          "request_bytes": 1571023,
+          "request_sha256": "cf4cebd1de17d5d5150be0812b334321331b618edebf80a606b349888c521eb9",
+          "filename": "3e122a94-5560-483f-868e-e6414c7cf9ee.png",
+          "forwarded_bytes": 4096,
+          "outcome": "request-cut"
+        },
+        {
+          "event": "request",
+          "sequence": 71,
+          "method": "POST",
+          "path": "/api/upload-thumb",
+          "fault": {
+            "id": "large-thumb-cut",
+            "path": "/api/upload-thumb",
+            "mode": "cut-request",
+            "method": "POST"
+          },
+          "time_unix_ms": 1794442563468,
+          "request_bytes": 38588,
+          "request_sha256": "f58141d7a9f3b94565007e4ffbac24296bd917baf56a9cae038684a43f40e302",
+          "filename": "2d4248a2-4059-47dc-8652-e20ed23fa38d.png.png",
+          "forwarded_bytes": 4096,
+          "outcome": "request-cut"
+        },
+        {
+          "event": "request",
+          "sequence": 189,
+          "method": "POST",
+          "path": "/flash",
+          "fault": {
+            "id": "large-submission",
+            "path": "/flash",
+            "mode": "drop-response",
+            "method": "POST"
+          },
+          "time_unix_ms": 1794442699862,
+          "request_bytes": 859,
+          "request_sha256": "3e19a191122d1299a06ab135e6eae8369044a5875378e3dc66b115efdfe32c13",
+          "forwarded_bytes": 859,
+          "upstream_status": 200,
+          "response_bytes": 88,
+          "upstream_json": {
+            "success": true,
+            "message": "Flash job queued (position 1)",
+            "job_id": 3,
+            "queue_position": 1
+          },
+          "outcome": "response-dropped"
+        },
+        {
+          "event": "request",
+          "sequence": 225,
+          "method": "POST",
+          "path": "/flash",
+          "fault": null,
+          "time_unix_ms": 1794442788883,
+          "request_bytes": 859,
+          "request_sha256": "e81d5270217e5f24893fcbc93af4f4bdf1f7dff943debaf29c0eec91ebbee7a8",
+          "forwarded_bytes": 859,
+          "upstream_status": 200,
+          "response_bytes": 88,
+          "upstream_json": {
+            "success": true,
+            "message": "Flash job queued (position 1)",
+            "job_id": 4,
+            "queue_position": 1
+          },
+          "outcome": "forwarded"
+        },
+        {
+          "event": "request",
+          "sequence": 228,
+          "method": "GET",
+          "path": "/api/flash/status/4",
+          "fault": {
+            "id": "large-status",
+            "path": "/api/flash/status/",
+            "mode": "drop-response",
+            "method": "GET",
+            "prefix": true
+          },
+          "time_unix_ms": 1794442788994,
+          "request_bytes": 0,
+          "request_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "forwarded_bytes": 0,
+          "upstream_status": 200,
+          "response_bytes": 299,
+          "upstream_json": {
+            "source": "manual",
+            "job_id": 4,
+            "filename": "2d4248a2-4059-47dc-8652-e20ed23fa38d.png",
+            "dithered_path": "/data/inky-soup/flash-jobs/1794442788855585100-3.png",
+            "flash_twice": false,
+            "rotation_degrees": 0,
+            "status": "Queued",
+            "created_at": 1794442788881,
+            "started_at": null,
+            "finished_at": null,
+            "error_message": null
+          },
+          "outcome": "response-dropped"
+        }
+      ],
+      "full_audit_sha256": "a16cefcf886fac8980456bc9cf28e0dea7c4e3f953cfb09c1642f0d85c7f6a28",
+      "full_audit_events": 658
+    }
+  },
+  "scope": {
+    "server_revision": "a422fcfe3b12197025ae7410c20ae2c3822f5e86",
+    "server_deployment_or_network_reconfiguration": false,
+    "new_physical_refreshes": 4,
+    "physical_refreshes_per_model": 2,
+    "new_owner_visual_confirmation": false,
+    "refresh_pngs_match_preexisting_display_bytes": true,
+    "lost_submission_requires_manual_inspection": true,
+    "manual_resubmission_not_idempotent": true,
+    "issue_25_complete": false
+  }
+}

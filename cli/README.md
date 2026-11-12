@@ -51,6 +51,30 @@ origin, method, and content-type permissions. It does not submit a write. It exi
 nonzero when the server does not grant browser access. Browser/Android local-network
 permissions and mixed-content rules still need validation on the actual phone.
 
+## Controlled network interruptions
+
+`fault-proxy` runs locally and requires Python 3. It embeds the diagnostic proxy,
+so an installed CLI does not need a separate script. Use a private HTTP IP origin
+for `--device`. Connect the phone app to
+the proxy host's LAN IP and port; `--device` remains the actual frame origin.
+
+```bash
+./inky-cli --device http://192.168.1.100:8000 fault-proxy \
+  --bind 0.0.0.0 --port 18080 --fault-file /tmp/frame-fault.json \
+  --audit-file /tmp/frame-requests.jsonl
+```
+
+Write the fault plan atomically. For example,
+`{"id":"upload-1","path":"/api/upload-thumb","mode":"cut-request"}` cuts one
+request body; `drop-response` lets the frame finish the request and discards its
+response. Each unique ID fires once. `method` defaults to `POST`; use `GET` and
+`prefix:true` with `/api/flash/status/` for a status response. No requests are
+retried by the proxy. Listening progress goes to stderr; the audit contains
+counts, byte hashes and job responses, without photo bodies or session IDs.
+Stop it with Ctrl+C, then restore the app's original frame address. The
+[app guide](../app/README.md) describes disposable fixtures and display-pixel
+checks for hardware acceptance.
+
 ## Temporary browser preview
 
 ```bash

@@ -27,6 +27,14 @@ saved picker imports on both models; one initial small-frame return explicitly
 requested a retry. All original photos/settings and displayed snapshots were
 preserved. This is focused update/import evidence, not complete #25 acceptance.
 
+The [signed interruption follow-up](android-interruption-2026-11-11.md) then
+passed partial-original and thumbnail cuts, lost submission responses and lost
+status responses on both models, including cold relaunch. Proxy/server counts
+confirmed two deliberate jobs per frame and no automatic duplicates. Existing
+display PNGs and all photo/settings hashes were preserved. A lost submission
+receipt still requires manual frame inspection; a manually repeated Send is not
+idempotent.
+
 ## Acceptance evidence and gaps
 
 “Prior pass” means the linked record establishes that behavior on its stated
@@ -39,8 +47,8 @@ is a new hardware pass from this audit.
 | Correct palettes, borders, labels and orientation on both panels | [Small-panel card](inky-impression-5-7.md) has owner confirmation of all seven colors, border and TOP. [Large-panel orientation](frame-orientation-pi-zero-w.json) has physical orientation confirmation through desktop Chromium. | Signed Android submission on both panels, recording visual confirmation of six/seven colors, edge labels and orientation. Preview pixels and completed jobs alone do not establish this. |
 | Gallery, edits and mount orientation on both models | [Native transport](android-pi.md) covers small-frame saves/reads and large-frame gallery reads. Large-frame mount changes are recorded in the orientation evidence above. | Exercise create, reopen, edit, photo rotation, mount change and deletion through the signed app on each real API. Restore mounts and regenerate affected assets. |
 | Offline editor and local use without internet | [Shell](android-shell.md) and [rotation](android-rotation-sync.md) passed offline force-stop/relaunch with a preserved draft. | Keep phone-to-Pi Wi-Fi available while internet access is absent; read gallery, save and physically refresh. Recheck cold launch with the signed build. |
-| Background, termination and relaunch | [Reconnect](android-reconnect.md) passed small-frame refresh reconciliation after background/force-stop, with one completed job and restored edit ownership. | Repeat a short lifecycle check on the acceptance build; explicitly check recovery during an interrupted save. |
-| Interrupted upload and lost submission/status responses cause no duplicate refresh | Reconnect evidence establishes single-job reconciliation after process termination. [Transport tests](android-pi.md) cover native timeout/cancellation; rotation-response tests concern rotation writes, not display submission. | Deliberately interrupt upload and separately drop a display-submission response and a job-status response on hardware. Count submissions/jobs independently, including after relaunch. |
+| Background, termination and relaunch | [Signed 0.2.3 interruptions](android-interruption-2026-11-11.md) passed cold relaunch after interrupted saves and both response-loss cases on both models; expired edit leases recovered by retry/reconnect. | No remaining cold-relaunch check for these save/status cases. Repeat if lifecycle or transport behavior changes. |
+| Interrupted upload and lost submission/status responses cause no duplicate refresh | [Signed 0.2.3 interruptions](android-interruption-2026-11-11.md) cut original/thumbnail bodies and discarded accepted submission/status responses. Proxy logs and both server journals agreed on exactly jobs 3/4; no automatic resubmission after relaunch. | No remaining automatic-retry check for these cases. An unknown submission receipt still needs manual frame inspection; explicit Send is not idempotent. |
 | Permissions, Bluetooth interruption, bad credentials and expiry recover | [BLE hardware record](android-ble.md) covers permission denial/grant, Bluetooth off, cancellation/reconnect, explicit setup-window closure, and wrong credentials/retry. | Recheck on signed build; distinguish explicit closure from natural expiry and deliberately exercise an in-flight disconnect. SDK 37 local-network runtime denial remains outside the current target-SDK-36 claim. |
 | Reboot, address change and multiple frames | [Reconnect](android-reconnect.md) passed both remembered frames, address changes, reboot, persistent selection and stable identity. | Short regression with the selected signed build and both frames available. |
 | Wi-Fi recovery without developer tools in the user flow | Reconnect evidence covers small-Pi offline reboot, native BLE reprovisioning, readable rescue card and automatic photo restoration. [Large-frame rescue](offline-rescue-zero-w.md) covers outage/card/restore. | Physical power-cycle and phone-only recovery flow on both models; record physical results. Developer tools may observe but must not perform the user's setup steps. |

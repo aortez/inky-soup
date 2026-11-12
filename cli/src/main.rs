@@ -14,6 +14,7 @@ use std::{
 mod deploy;
 mod discovery;
 mod display_setup;
+mod fault_proxy;
 mod preview;
 mod ssh;
 mod test_card;
@@ -58,6 +59,19 @@ enum Command {
     BrowserCheck {
         #[arg(long, default_value = "https://allan.pizza")]
         origin: String,
+    },
+    /// Run a local diagnostic proxy that interrupts one request; requires Python 3.
+    FaultProxy {
+        #[arg(long, default_value = "127.0.0.1")]
+        bind: String,
+        #[arg(long, default_value_t = 18080)]
+        port: u16,
+        /// Atomically written JSON fault plan; each unique id fires once.
+        #[arg(long)]
+        fault_file: PathBuf,
+        /// JSONL request audit, without photo bodies or session IDs.
+        #[arg(long)]
+        audit_file: PathBuf,
     },
     /// Temporarily run a preview server/origin; stop or reboot restores normal service.
     Preview {
@@ -441,6 +455,12 @@ fn run(args: &Args) -> Result<Value> {
     let frame = Frame::new(&args.device)?;
     match &args.command {
         Command::Identity => frame.get("api/device"),
+        Command::FaultProxy {
+            bind,
+            port,
+            fault_file,
+            audit_file,
+        } => fault_proxy::run(frame.base.as_str(), bind, *port, fault_file, audit_file),
         Command::Discover => discovery::run(),
         Command::Status => Ok(
             json!({"device":frame.base.as_str(),"display":frame.get("api/display-config")?,"flash":frame.get("api/flash/status")?}),
