@@ -142,6 +142,7 @@ pub(crate) async fn check_rescue() {
         true
     );
     // While the card is shown, a due slideshow check reads no photo metadata.
+    assert_eq!(after["settings"]["rotation_enabled"], true);
     assert!(
         crate::slideshow_tests::tick_skips_gallery(&client, after["next_due_at"].as_u64().unwrap())
             .await
