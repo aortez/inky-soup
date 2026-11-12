@@ -147,9 +147,9 @@ or invalid field. `/api/lock-image` is the exception: clients branch on its answ
 refused lock, `200` with `locked: false` and a `reason`.
 
 Photo writes take the storage lock in `storage.rs` before the flash queue and the
-edit locks; so do orientation changes, rescue, the slideshow scheduler and the
-cleanup worker. Derived uploads, photo rotation, flashing and deletion require the
-caller's unexpired edit lock, and deletion also refuses a queued or refreshing
+edit locks; so do orientation changes, rescue, the slideshow scheduler's scan and
+the cleanup worker. Derived uploads, photo rotation, flashing and deletion require
+the caller's unexpired edit lock, and deletion also refuses a queued or refreshing
 photo. Tag changes need no edit lock of their own, since they change no pixels or
 image settings, but are refused while another session holds one. A queued photo can
 still be saved, because its job displays a snapshot. `/upload` has no session field:
@@ -309,17 +309,21 @@ interval fail startup rather than silently overwriting the user's schedule. Chan
 settings or tags preserves the anchor. `next_due_at` remains available when
 paused, representing the deadline to resume from, not a promise to refresh then.
 
-The scheduler checks once per second. Until rotation is enabled and due, a check
-reads only the schedule, without the storage lock or a gallery scan; status
-requests still scan. A due check uses the same immutable snapshot/queue as manual
-flashing, and serializes the check and enqueue with orientation changes, edit
-locks, and queue operations. Only idle queues with no active edit locks can accept
-an automatic job. Eligible photos match the slideshow's tags, or any photo while it
-shows every photo, and have all three current derived assets and no incomplete
-upload; sort filenames lexically, choose after the successful cursor, then wrap.
-Deleted or untagged cursor photos do not disrupt this order. Stale photos are
-skipped. With none matching, status reports `no_matching_photos`; with none ready,
-`needs_processing`.
+The scheduler checks once per second. Until rotation is enabled and due, a check reads
+only the schedule, without the storage lock or a gallery scan. A due check also skips
+the scan while rescue, a storage error, an edit lock, a busy queue or the retry
+backoff holds it back. After a due check's scan finds nothing ready, the next scan
+waits a minute, unless the slideshow's settings change or a save or display completes
+first. A tag change doesn't end the wait, so a prepared photo given one of the
+slideshow's tags can take a minute to be shown. Status requests still scan, but don't
+start the wait. A due check uses the same immutable snapshot/queue as manual flashing,
+and serializes the check and enqueue with orientation changes, edit locks, and queue
+operations. Only idle queues with no active edit locks can accept an automatic job.
+Eligible photos match the slideshow's tags, or any photo while it shows every photo,
+and have all three current derived assets and no incomplete upload; sort filenames
+lexically, choose after the successful cursor, then wrap. Deleted or untagged cursor
+photos do not disrupt this order. Stale photos are skipped. With none matching, status
+reports `no_matching_photos`; with none ready, `needs_processing`.
 There is no server-side rendering. Stopping does not cancel an accepted job.
 
 The queue worker resets the anchor on **successful completion**, before exposing an
@@ -347,9 +351,11 @@ partial uploads and intermediate settings do not reset the timer.
 
 For hardware-free testing, debug binaries accept
 `INKY_SOUP_TEST_ROTATION_HOUR_MS=2000` (one logical hour = two seconds). Release
-binaries ignore it; API/CLI intervals remain 1–168 hours. Combine with disposable
-`INKY_SOUP_DATA_DIR`/`INKY_SOUP_IMAGES_DIR` and `INKY_SOUP_DISPLAY_COMMAND=/bin/true`.
-The API fixture in `slideshow_tests.rs` shares the orientation test's image root,
-exercises the real worker with successful/failing commands, and injects time into
-scheduler checks without waiting for real hours. CLI commands are in `cli/README.md`.
-Android/web controls (#33) and physical acceptance remain follow-ups.
+binaries ignore it; API/CLI intervals remain 1–168 hours. The retry backoff and the
+wait after a scan that found nothing ready still last a real minute. Combine with
+disposable `INKY_SOUP_DATA_DIR`/`INKY_SOUP_IMAGES_DIR` and
+`INKY_SOUP_DISPLAY_COMMAND=/bin/true`. The API fixture in `slideshow_tests.rs` shares
+the orientation test's image root, exercises the real worker with successful/failing
+commands, and injects time into scheduler checks without waiting for real hours. CLI
+commands are in `cli/README.md`. Android/web controls (#33) and physical acceptance
+remain follow-ups.

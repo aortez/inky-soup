@@ -40,7 +40,7 @@ async fn change_tags(client: &Client, change: Value) -> Value {
 /// Whether a scheduler tick at `now` returns while the test holds the storage
 /// lock. Ticks read the gallery under that lock, so one that returns has read no
 /// photo metadata.
-async fn tick_skips_gallery(client: &Client, now: u64) -> bool {
+pub(crate) async fn tick_skips_gallery(client: &Client, now: u64) -> bool {
     let rocket = client.rocket();
     let storage = rocket.state::<StorageLock>().unwrap();
     let _held = storage.lock().await;
@@ -294,8 +294,10 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
     image_locks::try_acquire_lock(locks, "unrelated.png", "editor", false)
         .await
         .unwrap();
-    let paused = tick(state, storage, queue, locks, now).await.unwrap();
-    assert_eq!(paused["paused_reason"], "editing");
+    // Pauses that need no scan, here an edit lock, hold back a due check before
+    // it reads any photo metadata.
+    assert!(tick_skips_gallery(client, now).await);
+    assert_eq!(slideshow_status(client).await["paused_reason"], "editing");
     assert!(queue.lock().await.is_idle());
     // Expired locks do not pause the scheduler, even before cleanup removes them.
     locks
@@ -304,13 +306,46 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
         .get_mut("unrelated.png")
         .unwrap()
         .expires_at = std::time::Instant::now();
-    let (first, concurrent) = tokio::join!(
+    // Rescue that starts after the check before the scan still keeps the scan from
+    // queueing a photo over the card. Disabled, the card is left alone by the
+    // rescue worker.
+    let directory = config::data_dir().join("slideshow-rescue");
+    fs::create_dir_all(&directory).unwrap();
+    fs::write(directory.join("state.json"), br#"{"active":true}"#).unwrap();
+    let card = crate::rescue::Rescue::load(directory, false);
+    assert!(card.blocks_slideshow());
+    let held = storage.lock().await;
+    let (paused, previous) = tokio::join!(tick(state, storage, queue, locks, now), async move {
+        tokio::task::yield_now().await;
+        let previous = queue.lock().await.rescue.replace(card);
+        drop(held);
+        previous
+    });
+    let paused = paused.unwrap();
+    assert_eq!(paused["paused_reason"], "rescue");
+    assert!(paused["queued_job_id"].is_null());
+    assert!(queue.lock().await.is_idle());
+    queue.lock().await.rescue = previous;
+    // Only one of two concurrent checks queues a photo. Holding the storage lock
+    // lets both pass the check before the scan, so the second finds the busy queue
+    // under all the locks.
+    let held = storage.lock().await;
+    let (first, second, ()) = tokio::join!(
         tick(state, storage, queue, locks, now),
-        tick(state, storage, queue, locks, now)
+        tick(state, storage, queue, locks, now),
+        async move {
+            tokio::task::yield_now().await;
+            drop(held);
+        }
     );
-    assert_eq!(first.unwrap()["ready_count"], 2);
-    assert_eq!(concurrent.unwrap()["paused_reason"], "display_busy");
+    assert!(first.unwrap()["queued_job_id"].is_u64());
+    let second = second.unwrap();
+    assert!(second["queued_job_id"].is_null());
+    assert_eq!(second["paused_reason"], "display_busy");
     assert_eq!(queue.lock().await.get_queued_jobs().len(), 1);
+    assert_eq!(slideshow_status(client).await["ready_count"], 2);
+    // The busy queue holds back the next check before a scan.
+    assert!(tick_skips_gallery(client, now).await);
     let first_job = queue.lock().await.get_queued_jobs()[0].clone();
     assert_eq!(first_job.filename, "slideshow-a.png");
     assert_eq!(first_job.source, FlashSource::Automatic);
@@ -341,9 +376,22 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
     );
     assert_eq!(completed["next_filename"], "slideshow-c.png");
     assert!(tick(state, storage, queue, locks, now).await.is_none());
-    // Failed automatic work neither moves the cursor nor resets the timer.
+    // A job that can't be prepared is retried a minute later, and checks before
+    // then read no photo metadata.
     let due = completed["next_due_at"].as_u64().unwrap();
-    tick(state, storage, queue, locks, due).await;
+    let jobs = config::flash_jobs_dir();
+    let aside = jobs.with_extension("aside");
+    fs::rename(&jobs, &aside).unwrap();
+    fs::write(&jobs, b"").unwrap();
+    assert_eq!(
+        tick(state, storage, queue, locks, due).await.unwrap()["paused_reason"],
+        "retry_backoff"
+    );
+    assert!(tick_skips_gallery(client, due + 59_999).await);
+    fs::remove_file(&jobs).unwrap();
+    fs::rename(&aside, &jobs).unwrap();
+    // Failed automatic work neither moves the cursor nor resets the timer.
+    tick(state, storage, queue, locks, due + 60_000).await;
     std::env::set_var("INKY_SOUP_DISPLAY_COMMAND", "/bin/false");
     assert!(flash_queue::process_next(queue, state).await);
     let failed = slideshow_status(client).await;
@@ -510,6 +558,7 @@ pub(crate) async fn check_slideshow_api_and_worker(client: &Client) {
         slideshow_status(client).await["settings"]
     );
     check_flash_completion_storage_recovery(client).await;
+    check_scan_backoff(client).await;
     assert_eq!(
         client
             .post("/api/settings/slideshow")
@@ -557,11 +606,9 @@ async fn check_flash_completion_storage_recovery(client: &Client) {
         .as_u64()
         .unwrap();
     assert!(anchor > 0);
-    // Even overdue, no further display is allowed until completion is persisted.
-    assert!(tick(state, storage, queue, locks, anchor + 3_600_000)
-        .await
-        .unwrap()["queued_job_id"]
-        .is_null());
+    // Even overdue, no further display is allowed until completion is persisted,
+    // and checks read no photo metadata.
+    assert!(tick_skips_gallery(client, anchor + 3_600_000).await);
     fs::remove_dir(blocker).unwrap();
     assert_eq!(
         client
@@ -585,4 +632,80 @@ async fn check_flash_completion_storage_recovery(client: &Client) {
     assert_ne!(next.filename, first.filename);
     assert!(flash_queue::process_next(queue, state).await);
     std::env::remove_var("INKY_SOUP_DISPLAY_COMMAND");
+}
+
+/// After a due check finds nothing ready, the next scan waits a minute, unless the
+/// settings change first.
+async fn check_scan_backoff(client: &Client) {
+    use slideshow::{inspect_or_tick, tick, SlideshowState};
+    let state = client.rocket().state::<SlideshowState>().unwrap();
+    let storage = client.rocket().state::<StorageLock>().unwrap();
+    let queue = client.rocket().state::<FlashQueueState>().unwrap();
+    let locks = client.rocket().state::<ImageLocksState>().unwrap();
+    // The slideshow shows only b, which is stale.
+    change_tags(
+        client,
+        json!({"filename": "slideshow-b.png", "add": ["later"]}),
+    )
+    .await;
+    assert_eq!(
+        configure(client, json!({"rotation_tags": ["later"]})).await,
+        Status::Ok
+    );
+    // Restart the timer at the real time, so that the server's own scheduler isn't due.
+    state
+        .lock()
+        .await
+        .content_completed(flash_queue::current_time_millis())
+        .unwrap();
+    let due = slideshow_status(client).await["next_due_at"]
+        .as_u64()
+        .unwrap();
+    // A status request finding nothing ready doesn't make the scheduler wait.
+    assert_eq!(
+        inspect_or_tick(state, storage, queue, locks, due, false).await["paused_reason"],
+        "needs_processing"
+    );
+    assert_eq!(
+        tick(state, storage, queue, locks, due).await.unwrap()["paused_reason"],
+        "needs_processing"
+    );
+    // A prepared photo given the tag, which doesn't restart the timer, is found by
+    // the next scan a minute later.
+    change_tags(
+        client,
+        json!({"filename": "slideshow-a.png", "add": ["later"]}),
+    )
+    .await;
+    assert!(tick_skips_gallery(client, due + 59_999).await);
+    std::env::set_var("INKY_SOUP_DISPLAY_COMMAND", "/bin/true");
+    tick(state, storage, queue, locks, due + 60_000).await;
+    assert!(flash_queue::process_next(queue, state).await);
+    std::env::remove_var("INKY_SOUP_DISPLAY_COMMAND");
+    assert_eq!(
+        slideshow_status(client).await["settings"]["last_rotated_filename"],
+        "slideshow-a.png"
+    );
+    // A due check that finds no matching photo, as on a frame with nothing tagged,
+    // waits too, and new settings end the wait.
+    assert_eq!(
+        configure(client, json!({"rotation_tags": ["unused"]})).await,
+        Status::Ok
+    );
+    let due = slideshow_status(client).await["next_due_at"]
+        .as_u64()
+        .unwrap();
+    assert_eq!(
+        tick(state, storage, queue, locks, due).await.unwrap()["paused_reason"],
+        "no_matching_photos"
+    );
+    assert!(tick_skips_gallery(client, due + 1).await);
+    assert_eq!(
+        configure(client, json!({"rotation_tags": [tags::FAVORITE]})).await,
+        Status::Ok
+    );
+    assert!(!tick_skips_gallery(client, due + 1).await);
+    for filename in ["slideshow-a.png", "slideshow-b.png"] {
+        change_tags(client, json!({"filename": filename, "remove": ["later"]})).await;
+    }
 }
